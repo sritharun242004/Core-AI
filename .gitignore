@@ -3,6 +3,10 @@ dist
 .astro
 .vercel
 .turbo
+test-results
+playwright-report
+blob-report
+playwright/.cache
 .venv
 __pycache__
 *.pyc
