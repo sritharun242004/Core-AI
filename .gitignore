@@ -11,3 +11,8 @@ __pycache__
 .ipynb_checkpoints
 .DS_Store
 uv.lock
+package-lock.json
+yarn.lock
+npm-shrinkwrap.json
+Pipfile.lock
+poetry.lock
