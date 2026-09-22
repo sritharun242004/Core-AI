@@ -1,6 +1,16 @@
 ---
+import { Font } from 'astro:assets'
 ---
 <html lang="en">
-  <head><meta charset="utf-8" /><title>Core AI</title></head>
-  <body><h1>Core AI — book scaffold OK</h1></body>
+  <head>
+    <meta charset="utf-8" />
+    <title>Core AI</title>
+    <Font cssVariable="--font-display" preload />
+    <Font cssVariable="--font-body" preload />
+    <Font cssVariable="--font-mono" />
+  </head>
+  <body style="font-family: var(--font-body)">
+    <h1 style="font-family: var(--font-display)">Core AI — fonts OK</h1>
+    <code style="font-family: var(--font-mono)">console.log('mono')</code>
+  </body>
 </html>
