@@ -1,0 +1,8 @@
+---
+interface Props { topic: string }
+const { topic } = Astro.props
+---
+<section class="my-10 border border-border-soft rounded-md p-6 bg-canvas-subtle">
+  <h2 class="font-display text-2xl">🔍 Company Lens — {topic}</h2>
+  <div class="prose-book"><slot /></div>
+</section>

@@ -1,0 +1,9 @@
+---
+interface Props { role: string; company?: string; time?: string }
+const { role, company, time = '20 min' } = Astro.props
+---
+<section class="my-10 border border-accent-p3 rounded-md p-6">
+  <h2 class="font-display text-2xl">🎯 Interview Drill</h2>
+  <p class="text-fg-muted text-sm">Role: <code>{role}</code> · Time: {time}{company && <> · Most-asked at: <strong>{company}</strong></>}</p>
+  <div class="prose-book mt-4"><slot /></div>
+</section>

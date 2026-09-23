@@ -1,0 +1,9 @@
+---
+interface Props { path: string; name: string; hours: string }
+const { path, name, hours } = Astro.props
+---
+<section class="my-10 border-l-4 border-accent-p3 pl-6">
+  <h2 class="font-display text-2xl">🧪 Reference Project — <code>{name}</code></h2>
+  <p class="text-fg-muted text-sm">{hours} · <a href={`https://github.com/tharun/core-ai-book/tree/main/${path}`}>{path}</a></p>
+  <div class="prose-book"><slot /></div>
+</section>

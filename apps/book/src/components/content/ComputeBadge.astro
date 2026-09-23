@@ -1,0 +1,6 @@
+---
+interface Props { tier: 'green' | 'yellow' | 'red' }
+const { tier } = Astro.props
+const label = { green: '🟢 Local (M-series)', yellow: '🟡 M-series stretch or optional cloud', red: '🔴 Cloud GPU required' }[tier]
+---
+<span class="inline-flex items-center gap-2 text-sm px-3 py-1 rounded-full border border-border-soft" aria-label={`Compute tier: ${label}`}>{label}</span>
