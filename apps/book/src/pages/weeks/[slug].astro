@@ -1,5 +1,5 @@
 ---
-import { getCollection, type CollectionEntry } from 'astro:content'
+import { getCollection, render, type CollectionEntry } from 'astro:content'
 import WeekLayout from '../../layouts/WeekLayout.astro'
 
 export async function getStaticPaths() {
@@ -8,7 +8,7 @@ export async function getStaticPaths() {
 }
 interface Props { entry: CollectionEntry<'weeks'> }
 const { entry } = Astro.props
-const { Content } = await entry.render()
+const { Content } = await render(entry)
 ---
 <WeekLayout frontmatter={entry.data}>
   <Content />

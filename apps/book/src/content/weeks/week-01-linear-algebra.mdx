@@ -1,0 +1,135 @@
+---
+week: 1
+part: 1
+slug: "week-01-linear-algebra"
+title: "Linear Algebra — the language of ML"
+hook: "If you can describe your data as vectors and your models as matrices, deep learning stops being a black box."
+hours: 20
+computeTier: "green"
+difficulty: 2
+prereqSlugs: []
+referenceProject: "projects/week-01-linalg-lab"
+accentVar: "--accent-p1"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import CompanyPill from '../../components/callouts/CompanyPill.astro'
+
+<Hook>Every model you will meet — every LLM, every image classifier, every recommender — reads its input as a list of numbers and its weights as a table of numbers. Learn the grammar of *lists* and *tables* and half of ML stops looking like magic.</Hook>
+
+<Intuition>
+A vector is a list of numbers with a *direction*. A matrix is a rule that takes a vector and returns another vector. That's the whole game.
+
+<IntuitionCallout>
+When GPT-4 embeds your prompt, it is turning your text into a **vector** in a 12,288-dimensional space. When it "thinks", it is repeatedly applying **matrices** to that vector.
+</IntuitionCallout>
+
+The four moves you must own by end of week: **dot product** (measures similarity), **matrix–vector product** (applies a rule), **eigendecomposition** (finds a matrix's axes), and **SVD** (breaks any matrix into three simpler pieces).
+</Intuition>
+
+## The math
+
+The **dot product** between two vectors $\mathbf{a}, \mathbf{b} \in \mathbb{R}^n$ is:
+
+<MathBlock latex="\mathbf{a} \cdot \mathbf{b} = \sum_{i=1}^{n} a_i b_i = \|\mathbf{a}\| \, \|\mathbf{b}\| \cos \theta" />
+
+The right-hand form says: two vectors are similar when the angle between them is small. This is exactly how semantic search works — every embedding model is answering "which stored vectors have the largest dot product with my query vector?"
+
+The **singular value decomposition** writes any real $m \times n$ matrix $\mathbf{A}$ as:
+
+<MathBlock latex="\mathbf{A} = \mathbf{U}\,\mathbf{\Sigma}\,\mathbf{V}^\top" />
+
+where $\mathbf{U}$ and $\mathbf{V}$ are orthogonal and $\mathbf{\Sigma}$ is diagonal with descending non-negative entries $\sigma_1 \geq \sigma_2 \geq \dots \geq 0$. Truncating to the top $k$ singular values gives you the best rank-$k$ approximation to $\mathbf{A}$ — this is the same idea behind **LoRA**, PCA, and image compression.
+
+<Gotcha>The order matters. $\mathbf{U}\mathbf{V}^\top \neq \mathbf{V}^\top \mathbf{U}$. If your gradients explode in Week 9, this is often why.</Gotcha>
+
+## The code
+
+Compute a dot product two ways — the slow explicit loop and the vectorized NumPy call — then time them.
+
+```python
+import numpy as np, time
+
+def dot_slow(a, b):
+    total = 0.0
+    for i in range(len(a)):
+        total += a[i] * b[i]
+    return total
+
+rng = np.random.default_rng(0)
+a, b = rng.standard_normal(10_000), rng.standard_normal(10_000)
+
+t = time.perf_counter(); dot_slow(a, b);      slow = time.perf_counter() - t
+t = time.perf_counter(); np.dot(a, b);        fast = time.perf_counter() - t
+print(f"loop: {slow*1000:.2f} ms, vectorized: {fast*1000:.4f} ms, speedup: {slow/fast:.0f}×")
+```
+
+Expect ~500× speedup. NumPy dispatches to BLAS, which is SIMD-vectorized C. Every framework you'll use — PyTorch, JAX — sits on the same idea.
+
+<CompanyLens topic="How the frontier uses linear algebra">
+The dot product is not a starter concept — it is the operation frontier labs spend billions optimizing.
+
+- <CompanyPill company="OpenAI" tint="var(--violet-9)" /> Every attention head is a batched dot product. Their GPT training runs are, arithmetically, dot products in a trench coat.
+- <CompanyPill company="Anthropic" tint="var(--amber-9)" /> Constitutional AI classifiers score model responses by dot product against a "helpfulness" vector.
+- <CompanyPill company="Google DeepMind" tint="var(--indigo-9)" /> Gemini's TPUs are matrix-multiply engines — the entire chip is designed around one operation.
+- <CompanyPill company="Meta AI" tint="var(--teal-9)" /> Llama's grouped-query attention shares key/value projections across heads to cut *how many* dot products are needed at inference.
+- <CompanyPill company="xAI" tint="var(--slate-11)" /> Grok's Colossus cluster is 200k H100s executing dot products in parallel.
+- <CompanyPill company="DeepSeek" tint="var(--tomato-9)" /> DeepSeek-V3's MLA (Multi-head Latent Attention) compresses the KV cache with a low-rank SVD-style decomposition.
+</CompanyLens>
+
+<ReferenceProject path="projects/week-01-linalg-lab" name="linalg-lab" hours="6–8 hrs">
+The `linalg-lab` project contains two hands-on modules:
+
+1. **Vector-space visualizer** — plot 2-D and 3-D vectors, watch dot-products, angles, and projections update as you drag.
+2. **SVD image compressor** — load a photo, compute its SVD, watch the image reappear as you add rank-1 components one at a time. This is the exact idea behind LoRA.
+
+Clone, run `uv sync`, then `pytest`.
+</ReferenceProject>
+
+<Assignments>
+**Warm-up (30 min).** In the reference project, open `src/linalg_lab/vectors.py`, find `cosine_similarity`, and predict what happens if either input is the zero vector. Then run the test suite to see whether the code agrees with you.
+
+**Build (2–3 hrs).** Extend `svd_compress.py` to accept any image file (currently only PNG). Add a CLI flag `--target-quality` that picks the smallest $k$ whose reconstruction MSE is below the target.
+
+**Challenge (3+ hrs).** Implement a "least-squares logo remover": given an image with a watermark you want gone, ask the user to select a rectangular region, then reconstruct that region using a low-rank SVD approximation of the surrounding pixels. Portfolio-worthy if the output looks good.
+</Assignments>
+
+<InterviewDrill role="research-eng" company="Google DeepMind" time="20 min">
+"Derive the closed-form solution to $\min_\mathbf{x} \|\mathbf{A}\mathbf{x} - \mathbf{b}\|^2$ and explain when the normal-equation form $\mathbf{x} = (\mathbf{A}^\top\mathbf{A})^{-1}\mathbf{A}^\top\mathbf{b}$ can be numerically dangerous."
+
+<details>
+<summary>Reveal worked solution</summary>
+
+Take the gradient with respect to $\mathbf{x}$ of $\|\mathbf{A}\mathbf{x} - \mathbf{b}\|^2 = (\mathbf{A}\mathbf{x} - \mathbf{b})^\top(\mathbf{A}\mathbf{x} - \mathbf{b})$:
+
+<MathBlock latex="\nabla_\mathbf{x} = 2\mathbf{A}^\top(\mathbf{A}\mathbf{x} - \mathbf{b}) = 0 \implies \mathbf{A}^\top\mathbf{A}\,\mathbf{x} = \mathbf{A}^\top\mathbf{b}" />
+
+If $\mathbf{A}^\top\mathbf{A}$ is invertible, $\mathbf{x} = (\mathbf{A}^\top\mathbf{A})^{-1}\mathbf{A}^\top\mathbf{b}$. **Danger:** $\text{cond}(\mathbf{A}^\top\mathbf{A}) = \text{cond}(\mathbf{A})^2$, so a mildly ill-conditioned $\mathbf{A}$ becomes catastrophically ill-conditioned. Prefer QR decomposition or SVD-based pseudoinverse in practice.
+</details>
+</InterviewDrill>
+
+<FurtherReading>
+- **Deep Learning**, Goodfellow, Bengio, Courville — Chapter 2 (Linear Algebra)
+- **Introduction to Linear Algebra**, Gilbert Strang — 5th edition
+- **The Matrix Cookbook** (Petersen & Pedersen, free PDF) — identities and derivatives
+- **3Blue1Brown, *Essence of Linear Algebra*** (YouTube, ~3 hours) — the visual companion this week deserves
+- **DeepSeek-V3 paper**, arXiv:2412.19437 — read §3.2 on Multi-head Latent Attention for a working example of low-rank decomposition in production
+</FurtherReading>
+
+<KeyTakeaways>
+- Vectors are lists with direction; matrices are rules that map vectors to vectors.
+- Dot product = cosine × magnitudes. Every semantic-similarity system reduces to this.
+- SVD gives you the best low-rank approximation to any matrix — the mechanism behind LoRA and PCA.
+- $\text{cond}(\mathbf{A}^\top\mathbf{A}) = \text{cond}(\mathbf{A})^2$ — never square a matrix casually.
+- Frontier labs spend billions optimizing exactly the operations you learned this week.
+</KeyTakeaways>
