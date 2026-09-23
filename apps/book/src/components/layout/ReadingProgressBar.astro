@@ -1,0 +1,11 @@
+<div id="progress" class="fixed top-0 left-0 h-1 bg-accent-p1 z-50" style="width: 0%"></div>
+<script is:inline>
+  const bar = document.getElementById('progress')
+  const update = () => {
+    const h = document.documentElement
+    const p = (h.scrollTop / (h.scrollHeight - h.clientHeight || 1)) * 100
+    bar.style.width = `${Math.min(100, p)}%`
+  }
+  addEventListener('scroll', update, { passive: true })
+  update()
+</script>

@@ -1,0 +1,35 @@
+---
+import { Font } from 'astro:assets'
+import Sidebar from './Sidebar.astro'
+import Footer from './Footer.astro'
+import ReadingProgressBar from './ReadingProgressBar.astro'
+import '../../styles/global.css'
+interface Props { title: string; accent?: string }
+const { title, accent = 'var(--accent-p1)' } = Astro.props
+---
+<html lang="en" data-theme="light" style={`--accent: ${accent}`}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · Core AI</title>
+    <Font cssVariable="--font-display" preload />
+    <Font cssVariable="--font-body" preload />
+    <Font cssVariable="--font-mono" />
+  </head>
+  <body class="bg-canvas text-fg font-body">
+    <ReadingProgressBar />
+    <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr_240px] min-h-screen">
+      <Sidebar />
+      <main class="px-4 lg:px-8 py-8 mx-auto w-full max-w-prose">
+        <slot />
+      </main>
+      <aside class="hidden lg:block px-4 py-8" aria-label="Margin notes"></aside>
+    </div>
+    <Footer />
+    <script is:inline>
+      // Restore theme
+      const t = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      document.documentElement.dataset.theme = t
+    </script>
+  </body>
+</html>

@@ -1,21 +1,8 @@
 ---
-import { Font } from 'astro:assets'
-import '../styles/global.css'
+import BookShell from '../components/layout/BookShell.astro'
 ---
-<html lang="en" data-theme="light">
-  <head>
-    <meta charset="utf-8" />
-    <title>Core AI</title>
-    <Font cssVariable="--font-display" preload />
-    <Font cssVariable="--font-body" preload />
-    <Font cssVariable="--font-mono" />
-  </head>
-  <body class="bg-canvas text-fg font-body">
-    <h1 class="font-display text-4xl text-accent-p1">Core AI — tokens OK</h1>
-    <button
-      onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'"
-      class="mt-4 px-3 py-2 rounded-sm border border-border-soft">
-      Toggle theme
-    </button>
-  </body>
-</html>
+<BookShell title="Home">
+  <h1 class="font-display text-5xl">Core AI</h1>
+  <p class="text-md text-fg-muted mt-2">From foundation to frontier · 25 weeks · Zero to interview-ready.</p>
+  <a href="/weeks/week-01-linear-algebra" class="inline-block mt-8 px-4 py-3 bg-accent-p1 text-white rounded-sm">Start Week 1 →</a>
+</BookShell>

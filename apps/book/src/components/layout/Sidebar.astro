@@ -1,0 +1,17 @@
+---
+import { getCollection } from 'astro:content'
+const weeks = (await getCollection('weeks')).sort((a, b) => a.data.week - b.data.week)
+---
+<nav aria-label="Chapter navigation" class="hidden lg:block border-r border-border-soft p-6 sticky top-0 h-screen overflow-y-auto">
+  <a href="/" class="font-display text-lg block mb-6">Core AI</a>
+  <ol class="space-y-1 text-sm">
+    {weeks.map((w) => (
+      <li>
+        <a href={`/weeks/${w.data.slug}`} class="block py-1 hover:text-accent-p1">
+          <span class="text-fg-muted mr-2">W{String(w.data.week).padStart(2, '0')}</span>
+          {w.data.title}
+        </a>
+      </li>
+    ))}
+  </ol>
+</nav>
