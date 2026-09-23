@@ -1,0 +1,18 @@
+@import "./tokens.css";
+@import "./prose.css";
+
+html { color-scheme: light dark; }
+body {
+  font-family: var(--font-body);
+  font-size: 18px;
+  line-height: 1.7;
+  background: var(--canvas);
+  color: var(--fg);
+  text-rendering: optimizeLegibility;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0s !important; transition-duration: 0s !important; }
+}
