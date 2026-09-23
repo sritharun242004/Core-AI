@@ -3,6 +3,8 @@ import mdx from '@astrojs/mdx'
 import preact from '@astrojs/preact'
 import sitemap from '@astrojs/sitemap'
 import tailwindcss from '@tailwindcss/vite'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 
 export default defineConfig({
   site: 'https://core-ai.book',
@@ -14,6 +16,8 @@ export default defineConfig({
     { name: 'JetBrains Mono', cssVariable: '--font-mono', provider: fontProviders.google(), weights: [400, 600] }
   ],
   markdown: {
+    remarkPlugins: [remarkMath],
+    rehypePlugins: [[rehypeKatex, { output: 'html', strict: 'warn' }]],
     shikiConfig: { theme: 'github-dark-dimmed', wrap: false }
   }
 })

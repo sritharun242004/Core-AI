@@ -1,5 +1,6 @@
 @import "./tokens.css";
 @import "./prose.css";
+@import "./math.css";
 
 html { color-scheme: light dark; }
 body {

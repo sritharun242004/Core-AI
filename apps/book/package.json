@@ -18,7 +18,10 @@
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.3.0",
     "astro": "^6.0.0",
+    "katex": "^0.18.7",
     "preact": "^10.24.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0",
     "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
