@@ -1,4 +1,5 @@
 import { defineConfig, fontProviders } from 'astro/config'
+import expressiveCode from 'astro-expressive-code'
 import mdx from '@astrojs/mdx'
 import preact from '@astrojs/preact'
 import sitemap from '@astrojs/sitemap'
@@ -8,7 +9,12 @@ import rehypeKatex from 'rehype-katex'
 
 export default defineConfig({
   site: 'https://core-ai.book',
-  integrations: [mdx(), preact({ compat: false }), sitemap()],
+  integrations: [
+    expressiveCode({ themes: ['github-light', 'github-dark-dimmed'], styleOverrides: { codeFontFamily: 'var(--font-mono)' } }),
+    mdx(),
+    preact({ compat: false }),
+    sitemap()
+  ],
   vite: { plugins: [tailwindcss()] },
   fonts: [
     { name: 'Fraunces', cssVariable: '--font-display', provider: fontProviders.google(), weights: [400, 600, 800], styles: ['normal', 'italic'] },

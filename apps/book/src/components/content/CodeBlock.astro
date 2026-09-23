@@ -1,0 +1,7 @@
+---
+import { Code } from 'astro:components'
+interface Props { code: string; lang?: string; filename?: string }
+const { code, lang = 'python', filename } = Astro.props
+---
+{filename && <p class="text-xs text-fg-muted -mb-2 pl-2">{filename}</p>}
+<Code code={code} lang={lang} />
