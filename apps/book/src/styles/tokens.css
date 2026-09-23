@@ -72,6 +72,23 @@
   --color-accent-p5:     var(--accent-p5);
   --color-accent-p6:     var(--accent-p6);
 
+  /* Font families: these look like self-references, but they are an
+   * intentional bridge, not a bug. Astro's <Font> component (from
+   * 'astro:assets') injects the REAL value into an unlayered
+   * `:root { --font-display: ...actual font stack... }` <style> block in
+   * <head>. Tailwind's `@theme` block, in contrast, compiles into
+   * `@layer theme { :root { --font-display: var(--font-display); } }`.
+   * Per the CSS Cascade Layers spec, unlayered normal-priority
+   * declarations always win over layered ones regardless of source
+   * order, so Astro's real value wins and this "self-reference" resolves
+   * correctly. BUT: if that unlayered override is missing, the property
+   * is invalid at computed-value time and silently falls back to the
+   * browser default font — with no error and nothing for a test to
+   * catch. Any page that uses the font-display/font-body/font-mono
+   * utilities MUST also render the matching
+   * <Font cssVariable="--font-display|--font-body|--font-mono" /> tags
+   * in its <head> (see src/pages/index.astro), or fonts will silently
+   * regress to system defaults. */
   --font-display: var(--font-display);
   --font-body:    var(--font-body);
   --font-mono:    var(--font-mono);
