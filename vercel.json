@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm --filter book build",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "outputDirectory": "apps/book/.vercel/output"
+}

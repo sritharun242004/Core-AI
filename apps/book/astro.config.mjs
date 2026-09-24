@@ -3,12 +3,15 @@ import expressiveCode from 'astro-expressive-code'
 import mdx from '@astrojs/mdx'
 import preact from '@astrojs/preact'
 import sitemap from '@astrojs/sitemap'
+import vercel from '@astrojs/vercel'
 import tailwindcss from '@tailwindcss/vite'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 
 export default defineConfig({
   site: 'https://core-ai.book',
+  output: 'static',
+  adapter: vercel(),
   integrations: [
     expressiveCode({ themes: ['github-light', 'github-dark-dimmed'], styleOverrides: { codeFontFamily: 'var(--font-mono)' } }),
     mdx(),

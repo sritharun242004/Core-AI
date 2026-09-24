@@ -13,6 +13,7 @@
     "@astrojs/mdx": "^6.0.3",
     "@astrojs/preact": "^4.0.0",
     "@astrojs/sitemap": "^3.7.0",
+    "@astrojs/vercel": "^10.0.8",
     "@preact/signals": "^2.0.0",
     "@radix-ui/colors": "^3.0.0",
     "@tailwindcss/typography": "^0.5.15",
