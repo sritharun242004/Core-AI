@@ -11,7 +11,7 @@ const html = katex.renderToString(latex, {
   displayMode: display,
   throwOnError: false,
   output: 'html',
-  strict: 'warn'
+  strict: 'warn',
 })
 ---
 <div class="math-block my-4" set:html={html} />

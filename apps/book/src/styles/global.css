@@ -2,7 +2,9 @@
 @import "./prose.css";
 @import "./math.css";
 
-html { color-scheme: light dark; }
+html {
+  color-scheme: light dark;
+}
 body {
   font-family: var(--font-body);
   font-size: 18px;
@@ -12,8 +14,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-*, *::before, *::after { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0s !important; transition-duration: 0s !important; }
+  * {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
 }

@@ -1,5 +1,9 @@
 ---
-interface Props { role: string; company?: string; time?: string }
+interface Props {
+  role: string
+  company?: string
+  time?: string
+}
 const { role, company, time = '20 min' } = Astro.props
 ---
 <section class="my-10 border border-accent-p3 rounded-md p-6">

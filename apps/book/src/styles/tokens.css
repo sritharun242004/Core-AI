@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@plugin "@tailwindcss/typography";
 @import "@radix-ui/colors/slate.css";
 @import "@radix-ui/colors/slate-dark.css";
 @import "@radix-ui/colors/indigo.css";
@@ -8,24 +7,26 @@
 @import "@radix-ui/colors/amber.css";
 @import "@radix-ui/colors/grass.css";
 @import "@radix-ui/colors/tomato.css";
+@plugin "@tailwindcss/typography";
 
 /* Tailwind v4 is CSS-first: this replaces the `darkMode` key from a JS
  * config. Any selector using the `dark:` variant compiles against
  * `[data-theme="dark"] &` instead of a `.dark` class. */
 @custom-variant dark ([data-theme="dark"] &);
 
-:root, :root[data-theme="light"] {
-  --canvas:        var(--slate-1);
+:root,
+:root[data-theme="light"] {
+  --canvas: var(--slate-1);
   --canvas-subtle: var(--slate-2);
-  --fg:            var(--slate-12);
-  --fg-muted:      var(--slate-11);
-  --border-soft:   var(--slate-6);
-  --accent-p1:     var(--indigo-9);  /* Month 1 */
-  --accent-p2:     var(--teal-9);    /* Month 2 */
-  --accent-p3:     var(--violet-9);  /* Month 3 */
-  --accent-p4:     var(--amber-9);   /* Month 4 */
-  --accent-p5:     var(--grass-9);   /* Month 5 */
-  --accent-p6:     var(--tomato-9);  /* Month 6 */
+  --fg: var(--slate-12);
+  --fg-muted: var(--slate-11);
+  --border-soft: var(--slate-6);
+  --accent-p1: var(--indigo-9); /* Month 1 */
+  --accent-p2: var(--teal-9); /* Month 2 */
+  --accent-p3: var(--violet-9); /* Month 3 */
+  --accent-p4: var(--amber-9); /* Month 4 */
+  --accent-p5: var(--grass-9); /* Month 5 */
+  --accent-p6: var(--tomato-9); /* Month 6 */
 }
 
 /*
@@ -40,37 +41,37 @@
  * scales are designed to stay legible on both light and dark canvases.
  */
 :root[data-theme="dark"] {
-  --canvas:        #111113; /* slate-1 (dark) */
+  --canvas: #111113; /* slate-1 (dark) */
   --canvas-subtle: #18191b; /* slate-2 (dark) */
-  --fg:            #edeef0; /* slate-12 (dark) */
-  --fg-muted:      #b0b4ba; /* slate-11 (dark) */
-  --border-soft:   #363a3f; /* slate-6 (dark) */
+  --fg: #edeef0; /* slate-12 (dark) */
+  --fg-muted: #b0b4ba; /* slate-11 (dark) */
+  --border-soft: #363a3f; /* slate-6 (dark) */
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --canvas:        #111113;
+    --canvas: #111113;
     --canvas-subtle: #18191b;
-    --fg:            #edeef0;
-    --fg-muted:      #b0b4ba;
-    --border-soft:   #363a3f;
+    --fg: #edeef0;
+    --fg-muted: #b0b4ba;
+    --border-soft: #363a3f;
     color-scheme: dark;
   }
 }
 
 @theme {
-  --color-canvas:        var(--canvas);
+  --color-canvas: var(--canvas);
   --color-canvas-subtle: var(--canvas-subtle);
-  --color-fg:            var(--fg);
-  --color-fg-muted:      var(--fg-muted);
-  --color-border-soft:   var(--border-soft);
-  --color-accent-p1:     var(--accent-p1);
-  --color-accent-p2:     var(--accent-p2);
-  --color-accent-p3:     var(--accent-p3);
-  --color-accent-p4:     var(--accent-p4);
-  --color-accent-p5:     var(--accent-p5);
-  --color-accent-p6:     var(--accent-p6);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-border-soft: var(--border-soft);
+  --color-accent-p1: var(--accent-p1);
+  --color-accent-p2: var(--accent-p2);
+  --color-accent-p3: var(--accent-p3);
+  --color-accent-p4: var(--accent-p4);
+  --color-accent-p5: var(--accent-p5);
+  --color-accent-p6: var(--accent-p6);
 
   /* Font families: these look like self-references, but they are an
    * intentional bridge, not a bug. Astro's <Font> component (from
@@ -90,27 +91,27 @@
    * in its <head> (see src/pages/index.astro), or fonts will silently
    * regress to system defaults. */
   --font-display: var(--font-display);
-  --font-body:    var(--font-body);
-  --font-mono:    var(--font-mono);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
 
   /* 1.250 Major Third scale */
-  --text-xs:   12px;
-  --text-sm:   14px;
+  --text-xs: 12px;
+  --text-sm: 14px;
   --text-base: 16px;
-  --text-md:   18px;
-  --text-lg:   20px;
-  --text-xl:   25px;
-  --text-2xl:  31px;
-  --text-3xl:  39px;
-  --text-4xl:  49px;
-  --text-5xl:  61px;
+  --text-md: 18px;
+  --text-lg: 20px;
+  --text-xl: 25px;
+  --text-2xl: 31px;
+  --text-3xl: 39px;
+  --text-4xl: 49px;
+  --text-5xl: 61px;
 
-  --spacing-1:  4px;
-  --spacing-2:  8px;
-  --spacing-3:  12px;
-  --spacing-4:  16px;
-  --spacing-6:  24px;
-  --spacing-8:  32px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
   --spacing-12: 48px;
   --spacing-16: 64px;
   --spacing-24: 96px;

@@ -1,12 +1,14 @@
 ---
-import { getCollection, render, type CollectionEntry } from 'astro:content'
+import { type CollectionEntry, getCollection, render } from 'astro:content'
 import WeekLayout from '../../layouts/WeekLayout.astro'
 
 export async function getStaticPaths() {
   const weeks = await getCollection('weeks')
   return weeks.map((entry) => ({ params: { slug: entry.data.slug }, props: { entry } }))
 }
-interface Props { entry: CollectionEntry<'weeks'> }
+interface Props {
+  entry: CollectionEntry<'weeks'>
+}
 const { entry } = Astro.props
 const { Content } = await render(entry)
 ---

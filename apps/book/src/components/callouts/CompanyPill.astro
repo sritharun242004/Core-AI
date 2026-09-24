@@ -1,5 +1,8 @@
 ---
-interface Props { company: string; tint?: string }
+interface Props {
+  company: string
+  tint?: string
+}
 const { company, tint = 'var(--accent-p1)' } = Astro.props
 ---
 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs" style={`background: color-mix(in oklab, ${tint} 15%, transparent); color: ${tint}`}>

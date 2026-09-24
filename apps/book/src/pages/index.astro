@@ -5,8 +5,15 @@ import BookShell from '../components/layout/BookShell.astro'
 const weeks = (await getCollection('weeks')).sort((a, b) => a.data.week - b.data.week)
 const parts = [1, 2, 3, 4, 5, 6].map((p) => ({
   part: p,
-  title: ['Math & Programming', 'Classical ML', 'Deep Learning', 'Transformers & LLMs', 'Systems & Production', 'Specialization & Interview'][p - 1],
-  weeks: weeks.filter((w) => w.data.part === p)
+  title: [
+    'Math & Programming',
+    'Classical ML',
+    'Deep Learning',
+    'Transformers & LLMs',
+    'Systems & Production',
+    'Specialization & Interview',
+  ][p - 1],
+  weeks: weeks.filter((w) => w.data.part === p),
 }))
 ---
 <BookShell title="Home">

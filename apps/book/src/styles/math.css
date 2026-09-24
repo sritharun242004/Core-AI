@@ -1,4 +1,11 @@
 @import "katex/dist/katex.min.css";
-.math-block { overflow-x: auto; padding-block: 8px; }
-.katex { font-size: 1.05em; }
-:root[data-theme="dark"] .katex { color: var(--fg); }
+.math-block {
+  overflow-x: auto;
+  padding-block: 8px;
+}
+.katex {
+  font-size: 1.05em;
+}
+:root[data-theme="dark"] .katex {
+  color: var(--fg);
+}

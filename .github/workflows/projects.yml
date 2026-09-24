@@ -1,0 +1,12 @@
+name: projects
+on: [push, pull_request]
+jobs:
+  pytest:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --all-packages --all-extras
+      - run: uv run pytest projects/
+      - run: uv run ruff check projects/
+      - run: uv run pyright projects/

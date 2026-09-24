@@ -3,11 +3,40 @@
   font-family: var(--font-body);
   color: var(--fg);
 }
-.prose-book :where(h1, h2, h3, h4) { font-family: var(--font-display); color: var(--fg); letter-spacing: -0.01em; }
-.prose-book h1 { font-size: 49px; line-height: 1.1; margin-block: 48px 24px; }
-.prose-book h2 { font-size: 31px; line-height: 1.2; margin-block: 48px 16px; }
-.prose-book h3 { font-size: 25px; line-height: 1.3; margin-block: 32px 12px; }
-.prose-book p  { margin-block: 12px; }
-.prose-book :where(code, pre) { font-family: var(--font-mono); font-size: 15px; }
-.prose-book a  { color: var(--accent-p1); text-underline-offset: 3px; }
-.prose-book blockquote { border-inline-start: 3px solid var(--accent-p1); padding-inline-start: 16px; color: var(--fg-muted); font-style: italic; }
+.prose-book :where(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+.prose-book h1 {
+  font-size: 49px;
+  line-height: 1.1;
+  margin-block: 48px 24px;
+}
+.prose-book h2 {
+  font-size: 31px;
+  line-height: 1.2;
+  margin-block: 48px 16px;
+}
+.prose-book h3 {
+  font-size: 25px;
+  line-height: 1.3;
+  margin-block: 32px 12px;
+}
+.prose-book p {
+  margin-block: 12px;
+}
+.prose-book :where(code, pre) {
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+.prose-book a {
+  color: var(--accent-p1);
+  text-underline-offset: 3px;
+}
+.prose-book blockquote {
+  border-inline-start: 3px solid var(--accent-p1);
+  padding-inline-start: 16px;
+  color: var(--fg-muted);
+  font-style: italic;
+}
