@@ -1,0 +1,23 @@
+---
+export const prerender = false
+import BookShell from '../../components/layout/BookShell.astro'
+import CompareTable from '../../components/companies/CompareTable.astro'
+import { COMPANY_SLUGS, type CompanySlug } from '../../lib/companies'
+
+const url = new URL(Astro.request.url)
+const raw = url.searchParams.get('companies')
+const requested = raw ? raw.split(',') : COMPANY_SLUGS
+const slugs = requested.filter((s): s is CompanySlug => (COMPANY_SLUGS as readonly string[]).includes(s))
+const axis = ((): 'philosophy' | 'timeline' | 'loop' | 'papers' | 'angles' => {
+  const a = url.searchParams.get('axis')
+  return a === 'timeline' || a === 'loop' || a === 'papers' || a === 'angles' ? a : 'philosophy'
+})()
+---
+<BookShell title="Compare companies">
+  <header class="mb-6">
+    <h1 class="font-display text-4xl">Compare</h1>
+    <p class="text-fg-muted text-sm mt-2">Pass <code>?companies=openai,anthropic</code> and <code>?axis=philosophy|timeline|loop|papers|angles</code>.</p>
+  </header>
+  <CompareTable slugs={slugs} axis={axis} />
+  <p class="text-sm text-fg-muted mt-4">Current: <code>{slugs.join(', ')}</code> on axis <code>{axis}</code>.</p>
+</BookShell>

@@ -1,0 +1,38 @@
+---
+import { type CompanySlug } from '../../lib/companies'
+import { getCollection } from 'astro:content'
+interface Props { slugs: CompanySlug[]; axis: 'philosophy' | 'timeline' | 'loop' | 'papers' | 'angles' }
+const { slugs, axis } = Astro.props
+
+const all = await getCollection('companies')
+const rows = slugs.map((s) => {
+  const entry = all.find((c) => c.data.slug === s)
+  if (!entry) throw new Error(`No profile for ${s}`)
+  const d = entry.data
+  const cell =
+    axis === 'philosophy' ? d.philosophyLead :
+    axis === 'timeline'   ? d.modelTimeline.map((m) => `${m.year}: ${m.note}`).join(' · ') :
+    axis === 'loop'       ? d.loop.map((r) => r.round).join(' · ') :
+    axis === 'papers'     ? d.papers.slice(0, 5).join(' · ') :
+                            d.seededAngles.map((a) => `W${a.week}: ${a.note}`).join(' · ')
+  return { name: d.name, tint: d.tint, cell }
+})
+---
+<div class="overflow-x-auto border border-border-soft rounded-md my-6">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-left border-b border-border-soft">
+        <th class="p-3">Lab</th>
+        <th class="p-3">{axis}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((r) => (
+        <tr class="border-b border-border-soft/50 align-top">
+          <td class="p-3 whitespace-nowrap" style={`color: ${r.tint}`}>{r.name}</td>
+          <td class="p-3">{r.cell}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>

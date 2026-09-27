@@ -34,3 +34,16 @@ test('/companies has zero horizontal overflow on mobile', async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(0)
 })
+
+test('/companies/compare defaults to all 7 companies on philosophy axis', async ({ page }) => {
+  await page.goto('/companies/compare')
+  const rows = page.locator('tbody tr')
+  await expect(rows).toHaveCount(7)
+  await expect(page.locator('code').first()).toContainText('openai')
+})
+
+test('/companies/compare filters companies via query string', async ({ page }) => {
+  await page.goto('/companies/compare?companies=openai,anthropic&axis=timeline')
+  const rows = page.locator('tbody tr')
+  await expect(rows).toHaveCount(2)
+})
