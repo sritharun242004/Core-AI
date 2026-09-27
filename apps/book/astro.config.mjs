@@ -18,10 +18,20 @@ export default defineConfig({
       styleOverrides: { codeFontFamily: 'var(--font-mono)' },
     }),
     mdx(),
-    preact({ compat: false }),
+    preact({ compat: true }),
     sitemap(),
   ],
-  vite: { plugins: [tailwindcss()] },
+  vite: {
+    plugins: [tailwindcss()],
+    resolve: {
+      alias: {
+        'react/jsx-runtime': 'preact/jsx-runtime',
+        react: 'preact/compat',
+        'react-dom/test-utils': 'preact/test-utils',
+        'react-dom': 'preact/compat',
+      },
+    },
+  },
   fonts: [
     {
       name: 'Fraunces',

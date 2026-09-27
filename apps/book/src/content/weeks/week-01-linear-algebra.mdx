@@ -76,16 +76,38 @@ print(f"loop: {slow*1000:.2f} ms, vectorized: {fast*1000:.4f} ms, speedup: {slow
 
 Expect ~500× speedup. NumPy dispatches to BLAS, which is SIMD-vectorized C. Every framework you'll use — PyTorch, JAX — sits on the same idea.
 
-<CompanyLens topic="How the frontier uses linear algebra">
-The dot product is not a starter concept — it is the operation frontier labs spend billions optimizing.
-
-- <CompanyPill company="OpenAI" tint="var(--violet-9)" /> Every attention head is a batched dot product. Their GPT training runs are, arithmetically, dot products in a trench coat.
-- <CompanyPill company="Anthropic" tint="var(--amber-9)" /> Constitutional AI classifiers score model responses by dot product against a "helpfulness" vector.
-- <CompanyPill company="Google DeepMind" tint="var(--indigo-9)" /> Gemini's TPUs are matrix-multiply engines — the entire chip is designed around one operation.
-- <CompanyPill company="Meta AI" tint="var(--teal-9)" /> Llama's grouped-query attention shares key/value projections across heads to cut *how many* dot products are needed at inference.
-- <CompanyPill company="xAI" tint="var(--slate-11)" /> Grok's Colossus cluster is 200k H100s executing dot products in parallel.
-- <CompanyPill company="DeepSeek" tint="var(--tomato-9)" /> DeepSeek-V3's MLA (Multi-head Latent Attention) compresses the KV cache with a low-rank SVD-style decomposition.
-</CompanyLens>
+<CompanyLens
+  topic="Linear algebra"
+  tldr={{
+    openai:    "Dot product is what attention is. Everything scales from there.",
+    anthropic: "Same substrate; safety layer sits on top of the same tensor math.",
+    deepmind:  "Matrix decompositions (SVD, Cholesky) show up everywhere in JAX code.",
+    meta:      "PyTorch is a linear-algebra library first; everything else is layered.",
+    xai:       "Cluster-scale matmuls; the linear algebra is unchanged, the hardware isn't.",
+    deepseek:  "MoE routing is a sparse linear projection; understand it before V3.",
+    qwen:      "Open-weight matrices at every family size — you can literally inspect them.",
+  }}
+  whyDiffer="All labs agree that linear algebra is the substrate; they differ in what they emphasize downstream — RLHF (OpenAI, Anthropic), scaling laws (DeepMind), tooling (Meta/PyTorch), cluster efficiency (xAI), routing (DeepSeek), and open-weight breadth (Qwen)."
+  sources={{
+    openai:    { paper: "GPT-1 tech report",              blog: "openai.com/research" },
+    anthropic: { paper: "Toy Models of Superposition",    blog: "transformer-circuits.pub" },
+    deepmind:  { paper: "Attention Is All You Need (Vaswani et al., 2017, Google Brain pre-merger)", blog: "deepmind.google/discover/blog" },
+    meta:      { paper: "Llama 3 tech report",            blog: "ai.meta.com/blog" },
+    xai:       { paper: "Grok 3 technical report",        blog: "x.ai/blog" },
+    deepseek:  { paper: "DeepSeek-V3 (arXiv:2412.19437)", blog: "deepseek.com/research" },
+    qwen:      { paper: "Qwen 2.5 technical report",      blog: "qwenlm.github.io" },
+  }}
+  caseStudy="SVD image compression (this week's reference project) is a working demonstration of low-rank approximation, the same trick LoRA uses in W15 to make a 7B model fine-tunable on a single GPU."
+  interviewAngle={{
+    openai:    "Derive attention from the dot product.",
+    anthropic: "How does a linear-probing SAE work — why the linear part?",
+    deepmind:  "Chinchilla-style scaling law fits; what's the linear model?",
+    meta:      "Implement matmul in NumPy without loops; verify against @.",
+    xai:       "Cluster comms: why does ring-all-reduce beat all-to-all?",
+    deepseek:  "Sparse expert routing — write the top-k gate.",
+    qwen:      "Given a family of sizes, how would you compare per-parameter compute?",
+  }}
+/>
 
 <ReferenceProject path="projects/week-01-linalg-lab" name="linalg-lab" hours="6–8 hrs">
 The `linalg-lab` project contains two hands-on modules:
