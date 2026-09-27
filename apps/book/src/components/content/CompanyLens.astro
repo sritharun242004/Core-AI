@@ -1,10 +1,64 @@
 ---
+import { COMPANIES, assertAll7, type CompanySlug } from '../../lib/companies'
 interface Props {
   topic: string
+  tldr: Partial<Record<CompanySlug, string>>
+  whyDiffer: string
+  sources: Partial<Record<CompanySlug, { paper: string; blog: string }>>
+  caseStudy: string
+  interviewAngle: Partial<Record<CompanySlug, string>>
 }
-const { topic } = Astro.props
+const { topic, tldr, whyDiffer, sources, caseStudy, interviewAngle } = Astro.props
+assertAll7(tldr, 'tldr')
+assertAll7(sources, 'sources')
+assertAll7(interviewAngle, 'interviewAngle')
 ---
 <section class="my-10 border border-border-soft rounded-md p-6 bg-canvas-subtle">
   <h2 class="font-display text-2xl">🔍 Company Lens — {topic}</h2>
-  <div class="prose-book"><slot /></div>
+
+  <h3 class="font-display text-lg mt-6">TL;DR</h3>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm mt-2">
+      <thead>
+        <tr class="text-left border-b border-border-soft">
+          <th class="py-2 pr-4">Lab</th>
+          <th class="py-2">Their take on <em>{topic}</em></th>
+        </tr>
+      </thead>
+      <tbody>
+        {COMPANIES.map((c) => (
+          <tr class="border-b border-border-soft/50">
+            <td class="py-2 pr-4 whitespace-nowrap">
+              <a href={`/companies/${c.slug}`} class="hover:text-accent-p1">
+                <span aria-hidden="true">{c.emoji}</span> {c.name}
+              </a>
+            </td>
+            <td class="py-2">{tldr[c.slug]}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="font-display text-lg mt-6">Why they differ</h3>
+  <div class="prose-book"><p>{whyDiffer}</p></div>
+
+  <h3 class="font-display text-lg mt-6">Primary sources</h3>
+  <ul class="space-y-1 text-sm">
+    {COMPANIES.map((c) => (
+      <li>
+        <strong>{c.name}:</strong> {sources[c.slug]?.paper} · {sources[c.slug]?.blog}
+      </li>
+    ))}
+  </ul>
+
+  <h3 class="font-display text-lg mt-6">Case study</h3>
+  <div class="prose-book"><p>{caseStudy}</p></div>
+
+  <h3 class="font-display text-lg mt-6">Interview angle</h3>
+  <ul class="space-y-1 text-sm">
+    {COMPANIES.map((c) => (
+      <li><strong>{c.name}:</strong> {interviewAngle[c.slug]}</li>
+    ))}
+  </ul>
 </section>
