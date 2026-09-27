@@ -1,0 +1,15 @@
+---
+import BookShell from '../../components/layout/BookShell.astro'
+import { InterviewDashboard } from '../../components/interactive/InterviewDashboard'
+import { WeakSpotHeatmap } from '../../components/interactive/WeakSpotHeatmap'
+---
+<BookShell title="Interview">
+  <header class="mb-6">
+    <h1 class="font-display text-5xl">Interview</h1>
+    <p class="text-fg-muted mt-2 text-sm">Local-only. Progress persists in this browser's <code>localStorage</code>. No cross-device sync — accepted trade-off (spec §6.6).</p>
+  </header>
+  <InterviewDashboard client:only="preact" />
+  <h2 class="font-display text-2xl mt-8">Weak spots</h2>
+  <WeakSpotHeatmap client:only="preact" />
+  <p class="mt-8"><a href="/interview/coding-set" class="text-accent-p1 underline">→ 20-problem Leetcode-ML companion set</a></p>
+</BookShell>

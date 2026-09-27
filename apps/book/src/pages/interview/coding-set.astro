@@ -1,0 +1,42 @@
+---
+import BookShell from '../../components/layout/BookShell.astro'
+
+const set = [
+  { tag: 'arrays',   items: [
+    { title: 'Sliding-window max', diff: 'M' }, { title: 'Product of array except self', diff: 'M' },
+    { title: 'Longest consecutive sequence', diff: 'M' }, { title: 'Trapping rain water', diff: 'H' },
+  ]},
+  { tag: 'strings',  items: [
+    { title: 'Longest palindromic substring', diff: 'M' }, { title: 'Group anagrams', diff: 'M' },
+    { title: 'Edit distance', diff: 'H' },
+  ]},
+  { tag: 'graphs',   items: [
+    { title: 'Course schedule (topological sort)', diff: 'M' }, { title: 'Number of islands', diff: 'M' },
+    { title: 'Word ladder', diff: 'H' },
+  ]},
+  { tag: 'ml-flavored', items: [
+    { title: 'K-means one iteration', diff: 'M' }, { title: 'Softmax + cross-entropy (numerically stable)', diff: 'M' },
+    { title: 'Batch matrix multiply in NumPy', diff: 'M' }, { title: 'Top-k with a heap', diff: 'M' },
+    { title: 'Sample from a categorical without replacement', diff: 'M' }, { title: 'Implement a min-heap', diff: 'M' },
+    { title: 'Precision @ k / Recall @ k', diff: 'E' },
+  ]},
+  { tag: 'systems', items: [
+    { title: 'LRU cache', diff: 'M' }, { title: 'Rate limiter (token bucket)', diff: 'M' },
+    { title: 'Consistent hashing', diff: 'H' },
+  ]},
+]
+---
+<BookShell title="Coding set — 20 Leetcode-ML problems">
+  <h1 class="font-display text-5xl">Coding set</h1>
+  <p class="text-fg-muted mt-2">20 problems tagged for the four surfaces. Solve, then log with an ID of the form <code>coding:&lt;slug&gt;</code>.</p>
+  {set.map((g) => (
+    <section class="my-8">
+      <h2 class="font-display text-2xl">{g.tag}</h2>
+      <ol class="mt-2 list-decimal list-inside space-y-1">
+        {g.items.map((it) => (
+          <li><strong>[{it.diff}]</strong> {it.title}</li>
+        ))}
+      </ol>
+    </section>
+  ))}
+</BookShell>
