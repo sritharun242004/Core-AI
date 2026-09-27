@@ -1,0 +1,13 @@
+---
+export const prerender = false
+import BookShell from '../components/layout/BookShell.astro'
+import { ScrollReveal } from '../components/motion/ScrollReveal'
+const url = new URL(Astro.request.url)
+const belowFold = url.searchParams.has('belowFold')
+---
+<BookShell title="Motion probe">
+  {belowFold && <div style="height: 120vh"></div>}
+  <ScrollReveal client:load data-testid="reveal-box">
+    <p style="padding: 24px; background: var(--canvas-subtle);">Hello, motion.</p>
+  </ScrollReveal>
+</BookShell>
