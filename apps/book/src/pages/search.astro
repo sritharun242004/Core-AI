@@ -1,0 +1,13 @@
+---
+import BookShell from '../components/layout/BookShell.astro'
+import { SearchDialog } from '../components/interactive/SearchDialog'
+---
+<BookShell title="Search">
+  <h1 class="font-display text-5xl">Search</h1>
+  <p class="text-fg-muted mt-2">Press <kbd>⌘K</kbd> anywhere to search. This page hosts the same dialog for deep-linking.</p>
+  <SearchDialog client:only="preact" />
+  <script is:inline>
+    // Auto-open on this page.
+    setTimeout(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true })), 200)
+  </script>
+</BookShell>
