@@ -1,0 +1,52 @@
+---
+import { COMPANIES } from '../../lib/companies'
+import { getCollection } from 'astro:content'
+const weeks = (await getCollection('weeks')).sort((a, b) => a.data.week - b.data.week)
+const companies = await getCollection('companies')
+const angles: Record<string, Record<number, string>> = Object.fromEntries(
+  companies.map((c) => [c.data.slug, Object.fromEntries(c.data.seededAngles.map((a) => [a.week, a.note]))]),
+)
+---
+<div class="overflow-x-auto border border-border-soft rounded-md">
+  <table class="w-full text-sm border-separate" style="border-spacing: 0;">
+    <thead>
+      <tr>
+        <th class="sticky left-0 top-0 z-30 bg-canvas p-2 text-left">Company \ Week</th>
+        {Array.from({ length: 25 }, (_, i) => i + 1).map((wn) => {
+          const w = weeks.find((x) => x.data.week === wn)
+          return (
+            <th class="sticky top-0 z-20 bg-canvas p-2 whitespace-nowrap">
+              {w ? (
+                <a href={`/weeks/${w.data.slug}`} class="hover:text-accent-p1 text-xs">
+                  W{String(wn).padStart(2, '0')}
+                </a>
+              ) : (
+                <span class="text-xs text-fg-muted/40">W{String(wn).padStart(2, '0')}</span>
+              )}
+            </th>
+          )
+        })}
+      </tr>
+    </thead>
+    <tbody>
+      {COMPANIES.map((c) => (
+        <tr>
+          <th class="sticky left-0 z-10 bg-canvas p-2 text-left whitespace-nowrap">
+            <a href={`/companies/${c.slug}`} class="hover:text-accent-p1">
+              <span aria-hidden="true">{c.emoji}</span> {c.name}
+            </a>
+          </th>
+          {Array.from({ length: 25 }, (_, i) => i + 1).map((wn) => (
+            <td class="p-2 border-t border-border-soft/50 align-top max-w-[240px]">
+              {angles[c.slug]?.[wn] ? (
+                <span class="text-xs">{angles[c.slug][wn]}</span>
+              ) : (
+                <span class="text-xs text-fg-muted/40">·</span>
+              )}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>

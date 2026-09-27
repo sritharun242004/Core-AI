@@ -18,3 +18,19 @@ for (const slug of SLUGS) {
     await expect(page.getByRole('heading', { name: 'Reading list' })).toBeVisible()
   })
 }
+
+test('/companies renders 7 rows and 25 week columns', async ({ page }) => {
+  await page.goto('/companies')
+  const rowHeaders = page.locator('tbody th')
+  await expect(rowHeaders).toHaveCount(7)
+  const colHeaders = page.locator('thead th')
+  // 1 corner + 25 weeks
+  await expect(colHeaders).toHaveCount(26)
+})
+
+test('/companies has zero horizontal overflow on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 })
+  await page.goto('/companies')
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(0)
+})
