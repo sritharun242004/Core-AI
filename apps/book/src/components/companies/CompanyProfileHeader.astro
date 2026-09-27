@@ -1,0 +1,19 @@
+---
+interface Props {
+  name: string
+  tint: string
+  tagline: string
+  founded: number
+  hq: string
+  leaders: string[]
+}
+const { name, tint, tagline, founded, hq, leaders } = Astro.props
+---
+<header class="mb-8">
+  <p class="text-sm text-fg-muted">Founded {founded} · {hq}</p>
+  <h1 class="font-display text-5xl mt-1" style={`color: ${tint}`}>{name}</h1>
+  <p class="text-md text-fg-muted italic mt-2">{tagline}</p>
+  {leaders.length > 0 && (
+    <p class="text-sm mt-4"><strong>Leaders:</strong> {leaders.join(' · ')}</p>
+  )}
+</header>

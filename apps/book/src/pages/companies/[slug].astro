@@ -1,0 +1,17 @@
+---
+import { type CollectionEntry, getCollection, render } from 'astro:content'
+import CompanyLayout from '../../layouts/CompanyLayout.astro'
+
+export async function getStaticPaths() {
+  const companies = await getCollection('companies')
+  return companies.map((entry) => ({ params: { slug: entry.data.slug }, props: { entry } }))
+}
+interface Props {
+  entry: CollectionEntry<'companies'>
+}
+const { entry } = Astro.props
+const { Content } = await render(entry)
+---
+<CompanyLayout frontmatter={entry.data}>
+  <Content />
+</CompanyLayout>

@@ -1,0 +1,19 @@
+---
+interface Round { round: string; note: string }
+interface Props { rounds: Round[] }
+const { rounds } = Astro.props
+---
+<section class="my-10">
+  <h2 class="font-display text-2xl">Loop guide</h2>
+  {rounds.length === 0 ? (
+    <p class="text-fg-muted italic mt-2">Not publicly documented.</p>
+  ) : (
+    <ol class="mt-4 space-y-2 list-decimal list-inside">
+      {rounds.map((r) => (
+        <li>
+          <strong>{r.round}</strong>{r.note && <> — <span class="text-fg-muted">{r.note}</span></>}
+        </li>
+      ))}
+    </ol>
+  )}
+</section>

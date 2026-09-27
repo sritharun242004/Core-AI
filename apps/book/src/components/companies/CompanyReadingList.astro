@@ -1,0 +1,25 @@
+---
+interface Props { papers: string[]; blogs: string[]; books: string[] }
+const { papers, blogs, books } = Astro.props
+---
+<section class="my-10">
+  <h2 class="font-display text-2xl">Reading list</h2>
+  {papers.length > 0 && (
+    <>
+      <h3 class="font-display text-lg mt-4">Papers</h3>
+      <ul class="mt-2 list-disc list-inside">{papers.map((p) => <li>{p}</li>)}</ul>
+    </>
+  )}
+  {blogs.length > 0 && (
+    <>
+      <h3 class="font-display text-lg mt-4">Blogs</h3>
+      <ul class="mt-2 list-disc list-inside">{blogs.map((b) => <li>{b}</li>)}</ul>
+    </>
+  )}
+  {books.length > 0 && (
+    <>
+      <h3 class="font-display text-lg mt-4">Books</h3>
+      <ul class="mt-2 list-disc list-inside">{books.map((b) => <li>{b}</li>)}</ul>
+    </>
+  )}
+</section>

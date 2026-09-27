@@ -1,0 +1,58 @@
+---
+import BookShell from '../components/layout/BookShell.astro'
+import CompanyProfileHeader from '../components/companies/CompanyProfileHeader.astro'
+import LoopGuide from '../components/companies/LoopGuide.astro'
+import CompanyReadingList from '../components/companies/CompanyReadingList.astro'
+
+interface Props {
+  frontmatter: {
+    slug: string
+    name: string
+    tint: string
+    tagline: string
+    founded: number
+    hq: string
+    leaders: string[]
+    modelTimeline: { year: number; note: string }[]
+    loop: { round: string; note: string }[]
+    papers: string[]
+    blogs: string[]
+    books: string[]
+    seededAngles: { week: number; note: string }[]
+  }
+}
+const { frontmatter: f } = Astro.props
+---
+<BookShell title={f.name} accent={f.tint}>
+  <CompanyProfileHeader name={f.name} tint={f.tint} tagline={f.tagline} founded={f.founded} hq={f.hq} leaders={f.leaders} />
+
+  {f.modelTimeline.length > 0 && (
+    <section class="my-10">
+      <h2 class="font-display text-2xl">Model timeline</h2>
+      <ol class="mt-4 space-y-1">
+        {f.modelTimeline.map((m) => (
+          <li class="flex gap-4 border-b border-border-soft py-2">
+            <span class="text-fg-muted w-16 font-mono">{m.year}</span>
+            <span>{m.note}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )}
+
+  <LoopGuide rounds={f.loop} />
+  <CompanyReadingList papers={f.papers} blogs={f.blogs} books={f.books} />
+
+  {f.seededAngles.length > 0 && (
+    <section class="my-10">
+      <h2 class="font-display text-2xl">Seeded interview angles</h2>
+      <ul class="mt-2 space-y-1">
+        {f.seededAngles.map((a) => (
+          <li><strong>W{String(a.week).padStart(2, '0')}</strong> — {a.note}</li>
+        ))}
+      </ul>
+    </section>
+  )}
+
+  <article class="prose-book mt-10"><slot /></article>
+</BookShell>
