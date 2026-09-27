@@ -1,0 +1,72 @@
+---
+slug: "anthropic"
+name: "Anthropic"
+tint: "#D97757"
+tagline: "Constitutional AI, MCP, interpretability, safety-first."
+founded: 2021
+hq: "San Francisco, CA"
+philosophyLead: "Safety and interpretability as first-class engineering, not marketing. Every capability advance shipped with a system card, an RSP threshold check, and an interpretability program (Circuits) trying to understand what the model actually learned."
+leaders:
+  - "Dario Amodei — CEO"
+  - "Daniela Amodei — President"
+  - "Jared Kaplan — Chief Science Officer"
+  - "Chris Olah — Interpretability lead"
+modelTimeline:
+  - { year: 2022, note: "Claude 1 — Constitutional AI at scale." }
+  - { year: 2023, note: "Claude 2 — 100k context." }
+  - { year: 2024, note: "Claude 3 (Opus / Sonnet / Haiku) — tier system." }
+  - { year: 2025, note: "MCP — Model Context Protocol, open standard." }
+  - { year: 2026, note: "Claude 4/5 families; RSP v3.0." }
+loop:
+  - { round: "Recruiter screen",             note: "Fit + interest in safety." }
+  - { round: "CodeSignal take-home (90 min)",note: "Signature: Anthropic-style 90-min timed problem." }
+  - { round: "ML fundamentals oral",         note: "Derivation-heavy — why does BatchNorm behave differently at train vs inference?" }
+  - { round: "ML system design",             note: "Serve Claude at 100k QPS; caching; cost." }
+  - { round: "Behavioral + RSP values",      note: "Where do you disagree with the RSP? Show they've read it." }
+papers:
+  - "Constitutional AI — arXiv:2212.08073"
+  - "Toy Models of Superposition"
+  - "Scaling Monosemanticity"
+  - "Sleeper Agents — arXiv:2401.05566"
+  - "Anthropic RSP v3.0 (Feb 2026)"
+  - "MCP specification"
+blogs:
+  - "anthropic.com/research"
+  - "transformer-circuits.pub — Chris Olah"
+books:
+  - "'Machines of Loving Grace' — Dario Amodei"
+seededAngles:
+  - { week: 15, note: "Constitutional AI vs RLHF — pick a hill, defend it." }
+  - { week: 20, note: "Inspect AI + LLM-judge — Anthropic's evals stack." }
+  - { week: 21, note: "SAE + logit-lens interp — how to speak Circuits fluently." }
+---
+
+## Philosophy
+
+Safety-first interpretability. Every capability advance ships alongside a system card, an RSP threshold check, and Circuits work that tries to explain what the model actually learned.
+
+## Model timeline
+
+See frontmatter.
+
+## Loop guide
+
+5 rounds; the 90-minute CodeSignal take-home is signature-Anthropic. RSP-alignment questions in the values round — expect to name specific thresholds.
+
+## Reading list
+
+- Constitutional AI — arXiv:2212.08073.
+- **Toy Models of Superposition** — the interpretability primer.
+- **Scaling Monosemanticity** — SAE at production scale.
+- **Sleeper Agents** — safety failure-mode case study.
+- The MCP spec (docs.anthropic.com/mcp).
+
+## Books
+
+- Dario Amodei — *Machines of Loving Grace* (essay).
+
+## Interview angles seeded in this book
+
+- **W15** — Constitutional AI vs pure RLHF.
+- **W20** — Evals stack (Inspect AI, LLM-judge).
+- **W21** — Interpretability (logit lens, SAE, dictionary learning).
