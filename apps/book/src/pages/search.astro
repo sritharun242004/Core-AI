@@ -1,13 +1,24 @@
 ---
 import BookShell from '../components/layout/BookShell.astro'
-import { SearchDialog } from '../components/interactive/SearchDialog'
 ---
 <BookShell title="Search">
   <h1 class="font-display text-5xl">Search</h1>
-  <p class="text-fg-muted mt-2">Press <kbd>⌘K</kbd> anywhere to search. This page hosts the same dialog for deep-linking.</p>
-  <SearchDialog client:only="preact" />
+  <p class="text-fg-muted mt-2">Press <kbd class="px-1 py-0.5 rounded-sm border border-border-soft text-sm">⌘K</kbd> anywhere in the book to search.</p>
+  <p class="text-fg-muted mt-2 text-sm">If your browser blocked the shortcut, the button in the top-right corner opens the same dialog.</p>
   <script is:inline>
-    // Auto-open on this page.
-    setTimeout(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true })), 200)
+    // Poll for the imperative opener installed by the client:only SearchDialog
+    // island; hydration timing is not guaranteed, so we retry briefly.
+    ;(function () {
+      let attempts = 0
+      const t = setInterval(() => {
+        attempts++
+        if (typeof window.openSearch === 'function') {
+          window.openSearch()
+          clearInterval(t)
+        } else if (attempts > 40) {
+          clearInterval(t) // give up after ~4s; button still works
+        }
+      }, 100)
+    })()
   </script>
 </BookShell>

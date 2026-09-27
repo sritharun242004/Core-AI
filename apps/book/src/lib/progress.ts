@@ -7,7 +7,9 @@ function safeParse(raw: string | null): Progress {
   if (!raw) return { answers: {} }
   try {
     const p = JSON.parse(raw)
-    if (!p || typeof p !== 'object' || typeof p.answers !== 'object') return { answers: {} }
+    if (!p || typeof p !== 'object') return { answers: {} }
+    // typeof null === 'object' — must guard for it explicitly.
+    if (p.answers === null || typeof p.answers !== 'object') return { answers: {} }
     return p as Progress
   } catch {
     return { answers: {} }

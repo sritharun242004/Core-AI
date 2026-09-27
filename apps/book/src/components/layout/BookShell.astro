@@ -12,18 +12,30 @@ interface Props {
 }
 const { title, accent = 'var(--accent-p1)' } = Astro.props
 ---
-<html lang="en" data-theme="light" style={`--accent: ${accent}`}>
+<html lang="en" style={`--accent: ${accent}`}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title} · Core AI</title>
+    <script is:inline>
+      // Set theme BEFORE first paint — no flash-of-wrong-theme.
+      (function () {
+        try {
+          var t = localStorage.getItem('theme') ||
+            (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          document.documentElement.dataset.theme = t
+        } catch (_) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
     <Font cssVariable="--font-display" preload />
     <Font cssVariable="--font-body" preload />
     <Font cssVariable="--font-mono" />
   </head>
   <body class="bg-canvas text-fg font-body">
     <ReadingProgressBar />
-    <div class="hidden md:flex fixed top-3 right-4 z-40 gap-2">
+    <div class="flex fixed top-3 right-3 z-40 gap-2">
       <SearchOpener client:load />
       <ThemeToggle client:load />
     </div>
@@ -36,10 +48,5 @@ const { title, accent = 'var(--accent-p1)' } = Astro.props
     </div>
     <Footer />
     <SearchDialog client:only="preact" />
-    <script is:inline>
-      // Restore theme
-      const t = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      document.documentElement.dataset.theme = t
-    </script>
   </body>
 </html>

@@ -24,6 +24,8 @@ import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
 import IntuitionCallout from '../../components/callouts/Intuition.astro'
 import Gotcha from '../../components/callouts/Gotcha.astro'
 import CompanyPill from '../../components/callouts/CompanyPill.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { VectorPlayground } from '@core-ai/viz'
 
 <Hook>Every model you will meet — every LLM, every image classifier, every recommender — reads its input as a list of numbers and its weights as a table of numbers. Learn the grammar of *lists* and *tables* and half of ML stops looking like magic.</Hook>
 
@@ -35,6 +37,26 @@ When GPT-4 embeds your prompt, it is turning your text into a **vector** in a 12
 </IntuitionCallout>
 
 The four moves you must own by end of week: **dot product** (measures similarity), **matrix–vector product** (applies a rule), **eigendecomposition** (finds a matrix's axes), and **SVD** (breaks any matrix into three simpler pieces).
+
+<VectorPlayground
+  vectors={[
+    { x: 3, y: 2, label: 'v₁' },
+    { x: -1, y: 3, label: 'v₂' },
+    { x: 4, y: -2, label: 'v₃' },
+  ]}
+  client:visible
+/>
+
+<MicroRecall
+  questions={[{
+    id: 'week1-recall-dotproduct',
+    prompt: 'The dot product of two vectors is largest when they point…',
+    choices: ['in opposite directions', 'perpendicular to each other', 'in the same direction'],
+    correct: 2,
+    explain: 'Dot product = |a||b|cosθ, which is maximized when θ = 0 (same direction).',
+  }]}
+  client:visible
+/>
 </Intuition>
 
 ## The math

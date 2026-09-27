@@ -33,4 +33,13 @@ describe('progress store', () => {
     })
     expect(() => setProgress({ answers: { q1: { attempts: 1, correct: 1 } } })).not.toThrow()
   })
+
+  it('coerces {"answers":null} to a fresh empty progress (typeof null === "object")', () => {
+    localStorage.setItem('core-ai:progress', JSON.stringify({ answers: null }))
+    expect(() => getProgress()).not.toThrow()
+    expect(getProgress()).toEqual({ answers: {} })
+    // Downstream helpers must also survive the shape.
+    expect(() => recordAnswer('q1', true)).not.toThrow()
+    expect(getMastery('q1')).toBe(1)
+  })
 })

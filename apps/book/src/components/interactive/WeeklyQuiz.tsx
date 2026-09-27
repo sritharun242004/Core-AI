@@ -1,4 +1,4 @@
-import { signal, computed } from '@preact/signals'
+import { useSignal, useComputed } from '@preact/signals'
 import { recordAnswer } from '../../lib/progress'
 import { nextDueDate, type Sm2State } from '../../lib/quiz'
 import type { RecallQuestion } from './MicroRecall'
@@ -6,18 +6,19 @@ import type { RecallQuestion } from './MicroRecall'
 export interface WeeklyQuizProps { weekId: number; questions: RecallQuestion[] }
 
 export function WeeklyQuiz({ weekId, questions }: WeeklyQuizProps) {
-  const idx = signal(0)
-  const answers = signal<{ i: number; correct: boolean }[]>([])
-  const pick = signal<number | null>(null)
+  const idx = useSignal(0)
+  const answers = useSignal<{ i: number; correct: boolean }[]>([])
+  const pick = useSignal<number | null>(null)
 
-  const done = computed(() => answers.value.length === questions.length)
-  const score = computed(() => answers.value.filter((a) => a.correct).length)
+  const done = useComputed(() => answers.value.length === questions.length)
+  const score = useComputed(() => answers.value.filter((a) => a.correct).length)
 
   const submit = (i: number) => {
     pick.value = i
     const correct = i === questions[idx.value].correct
     answers.value = [...answers.value, { i, correct }]
     recordAnswer(`week${weekId}-q${idx.value}`, correct)
+    if (typeof window !== 'undefined') dispatchEvent(new Event('progress:changed'))
   }
   const next = () => {
     idx.value = idx.value + 1
@@ -45,13 +46,13 @@ export function WeeklyQuiz({ weekId, questions }: WeeklyQuizProps) {
   }
 
   const q = questions[idx.value]
+  const revealed = pick.value !== null
   return (
     <section class="my-10 border border-border-soft rounded-md p-6">
       <p class="text-fg-muted text-sm">Question {idx.value + 1} of {questions.length}</p>
       <p class="font-display text-lg mt-2">{q.prompt}</p>
       <ul class="mt-3 space-y-2">
         {q.choices.map((c, i) => {
-          const revealed = pick.value !== null
           const chosen = pick.value === i
           const isRight = i === q.correct
           const cls =
@@ -69,7 +70,7 @@ export function WeeklyQuiz({ weekId, questions }: WeeklyQuizProps) {
           )
         })}
       </ul>
-      {pick.value !== null && (
+      {revealed && (
         <div class="mt-3 text-sm">
           <p>{q.explain}</p>
           <button type="button" onClick={next} class="mt-2 text-accent-p1 underline">Next →</button>

@@ -37,6 +37,9 @@ if (typeof window !== 'undefined') {
     if (e.key === 'Escape') open.value = false
   })
   effect(() => { runSearch(query.value) })
+  // Expose an imperative opener so pages (e.g. /search) can trigger the dialog
+  // without depending on synthetic KeyboardEvent bubbling / hydration timing.
+  ;(window as unknown as { openSearch?: () => void }).openSearch = () => { open.value = true }
 }
 
 export function SearchDialog() {
