@@ -10,6 +10,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter book build
+      - name: Vitest — unit tests
+        run: pnpm --filter book run test:unit
+      - name: Viz package — unit tests
+        run: pnpm --filter @core-ai/viz test
+      - name: Build book (includes pagefind postbuild)
+        run: pnpm --filter book build
       - run: pnpm --filter book exec playwright install --with-deps chromium
-      - run: pnpm --filter book test
+      - name: Playwright — integration tests
+        run: pnpm --filter book test
