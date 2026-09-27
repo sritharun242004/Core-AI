@@ -1,0 +1,10 @@
+---
+import { getEntry, render } from 'astro:content'
+import ExtraLayout from '../layouts/ExtraLayout.astro'
+const entry = await getEntry('extras', 'glossary')
+if (!entry) throw new Error('missing extras entry: glossary')
+const { Content } = await render(entry)
+---
+<ExtraLayout frontmatter={entry.data}>
+  <Content />
+</ExtraLayout>
