@@ -1,5 +1,6 @@
-import { motion, useReducedMotion } from 'motion/react'
+import { motion } from 'motion/react'
 import type { ComponentChildren } from 'preact'
+import { useEffect, useState } from 'preact/hooks'
 
 export interface ScrollRevealProps {
   children: ComponentChildren
@@ -9,6 +10,21 @@ export interface ScrollRevealProps {
   'data-testid'?: string
 }
 
+function useReducedMotionSafe(): boolean {
+  const [reduce, setReduce] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const listener = (e: MediaQueryListEvent) => setReduce(e.matches)
+    mq.addEventListener('change', listener)
+    return () => mq.removeEventListener('change', listener)
+  }, [])
+  return reduce
+}
+
 export function ScrollReveal({
   children,
   delay = 0,
@@ -16,7 +32,7 @@ export function ScrollReveal({
   once = true,
   'data-testid': testId,
 }: ScrollRevealProps) {
-  const reduce = useReducedMotion()
+  const reduce = useReducedMotionSafe()
   if (reduce) {
     return (
       <div data-testid={testId} style={{ opacity: 1 }}>

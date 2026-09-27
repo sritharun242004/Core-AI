@@ -15,7 +15,7 @@ for (const slug of SLUGS) {
   test(`/companies/${slug} renders header + reading list`, async ({ page }) => {
     await page.goto(`/companies/${slug}`)
     await expect(page.locator('h1')).toContainText(NAMES[slug])
-    await expect(page.getByRole('heading', { name: 'Reading list' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reading list' }).first()).toBeVisible()
   })
 }
 

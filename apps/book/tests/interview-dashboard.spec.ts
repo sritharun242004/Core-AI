@@ -24,6 +24,6 @@ test('/interview reflects a seeded localStorage progress record', async ({ page 
 
 test('/interview/coding-set has all 20 problems', async ({ page }) => {
   await page.goto('/interview/coding-set')
-  const items = page.locator('ol li')
+  const items = page.locator('main ol li')
   await expect(items).toHaveCount(20)
 })

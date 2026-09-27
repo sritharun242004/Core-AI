@@ -31,6 +31,9 @@ export default defineConfig({
         'react-dom': 'preact/compat',
       },
     },
+    ssr: {
+      noExternal: ['motion', 'framer-motion'],
+    },
   },
   fonts: [
     {
