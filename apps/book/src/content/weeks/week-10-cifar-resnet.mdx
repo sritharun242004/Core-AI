@@ -1,0 +1,197 @@
+---
+week: 10
+part: 3
+slug: "week-10-cifar-resnet"
+title: "CNNs and ResNets — give vision a useful shortcut"
+hook: "What if a deeper vision model could learn new features without having to relearn the identity function at every layer?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-09-mini-torch"]
+referenceProject: "projects/week-10-cifar-resnet"
+accentVar: "--accent-p3"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>What if a deeper vision model could learn new features without having to relearn the identity function at every layer?</Hook>
+
+<Intuition>
+A convolutional network is a sequence of small, shared detectors. Early filters can respond to edges and colour contrasts; later filters combine those responses into textures, parts, and class evidence. Sharing a kernel across positions gives a useful inductive bias: a cat ear is still an edge-and-texture pattern when it moves across the image.
+
+<IntuitionCallout>A residual block does not demand that every new layer invent a complete representation. It learns a correction `F(x)` and adds it to a route that already carries `x`: `y = ReLU(F(x) + S(x))`. If the correction is not useful, the identity route is still available.</IntuitionCallout>
+
+This week has four moves: turn local patches into feature maps, preserve signal with identity or projection skips, perturb only the training view with augmentation, and reuse a learned backbone while replacing the task-specific head. The project keeps these contracts visible in small PyTorch modules and CPU/offline tests.
+
+<MicroRecall questions={[{
+  id: 'week10-recall-skip',
+  prompt: 'When does a residual block need a projection skip?',
+  choices: ['Whenever a nonlinearity is present', 'When the skip tensor and residual output have different channels or spatial size', 'Only when the batch size changes', 'Never; addition broadcasts every shape safely'],
+  correct: 1,
+  explain: 'Elementwise addition needs matching shapes. A learned 1×1 convolution with the stage stride maps the identity path when channels or resolution change.'
+}, {
+  id: 'week10-recall-augmentation',
+  prompt: 'Why should random crop and flip normally be applied only to training images?',
+  choices: ['They make labels unnecessary', 'They estimate test accuracy more honestly by changing the training prior, not the evaluation target', 'They remove the need for normalization', 'They guarantee invariance for every class'],
+  correct: 1,
+  explain: 'Augmentation expands the training distribution. Validation and test data should use a fixed transform so the metric estimates the deployment view; domain-specific flips still require a label-preservation argument.'
+}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. A convolution is shared local correlation
+
+For a one-channel input `X` and kernel `K`, a valid cross-correlation at output location `(i,j)` is:
+
+<MathBlock latex="Y_{i,j} = b + \sum_{u=0}^{K_h-1}\sum_{v=0}^{K_w-1} K_{u,v}X_{i+u,j+v}" />
+
+Deep-learning libraries call this operation convolution even though they usually do not reverse the kernel. With `C_in` input channels and `C_out` filters, each output channel has a kernel for every input channel. Padding `P` and stride `S` determine the spatial output:
+
+<MathBlock latex="H_{out}=\left\lfloor\frac{H+2P-K_h}{S}\right\rfloor+1,\qquad W_{out}=\left\lfloor\frac{W+2P-K_w}{S}\right\rfloor+1" />
+
+A 3×3 kernel with padding 1 and stride 1 preserves a 32×32 CIFAR image. A stride-2 stage approximately halves it while increasing channel capacity. Batch normalization then standardizes each channel during training, and ReLU supplies a piecewise-linear gate:
+
+<MathBlock latex="\operatorname{ReLU}(z)=\max(0,z),\qquad \frac{\partial\operatorname{ReLU}}{\partial z}=\mathbf{1}[z>0]" />
+
+The receptive field grows as layers compose: a later unit can combine nearby edges into a shape, while shared weights make the detector translation-tolerant rather than position-specific.
+
+### 2. Why residual addition changes optimization
+
+A plain block asks its layers to learn `H(x)`. A residual block writes `H(x)=F(x)+x` when shapes match:
+
+<MathBlock latex="y=\operatorname{ReLU}(F(x)+S(x)),\qquad S(x)=x\ \text{or}\ P_s x" />
+
+Before the final gate, the derivative with respect to the input contains a direct route:
+
+<MathBlock latex="\frac{\partial L}{\partial x}=\frac{\partial L}{\partial y}\left(\frac{\partial F}{\partial x}+\frac{\partial S}{\partial x}\right),\qquad \frac{\partial S}{\partial x}=I\ \text{for an identity skip}" />
+
+The identity term does not guarantee a non-vanishing gradient after every operation, but it gives optimization a useful baseline. When a stage changes from `(B,C,H,W)` to `(B,C',H/2,W/2)`, `S` is a 1×1 convolution with stride 2 plus normalization, so both branches land at the same shape before addition. The reference `BasicBlock` tests both cases and backpropagates a real loss through them.
+
+### 3. Augmentation estimates an invariance prior
+
+Let `T` be a random transform sampled from an augmentation distribution `q(T)`. Training minimizes an expected loss over transformed views:
+
+<MathBlock latex="\min_\theta\ \mathbb{E}_{(x,y)\sim D}\,\mathbb{E}_{T\sim q}\left[-\log p_\theta(y\mid T(x))\right]" />
+
+Random crop and horizontal flip are useful when the label remains unchanged under those transformations. Padding before cropping changes framing without inventing pixels at the border of the original image. The project passes a seeded `torch.Generator` into its tensor-only transform so this expectation is testable without a global RNG or a network dataset.
+
+Augmentation is not a free accuracy button. An upside-down digit, a mirrored traffic sign, or a medical laterality cue may change the label. The deployment distribution—not convention—decides whether a transformation is valid.
+
+### 4. Transfer learning is constrained adaptation
+
+Suppose a backbone `f_\phi` maps pixels to features and a new head `g_\psi` maps features to task labels. A frozen-backbone run optimizes:
+
+<MathBlock latex="\min_\psi\ \frac{1}{n}\sum_{i=1}^{n}\ell\left(g_\psi(f_{\phi_0}(x_i)),y_i\right),\qquad \phi=\phi_0" />
+
+Freezing reduces trainable parameters and preserves a useful representation when the new data is small or related. Unfreezing the last stage allows controlled adaptation, usually with a smaller learning rate than the fresh head. The code's `replace_classifier` and `freeze_backbone` make the parameter boundary inspectable; BatchNorm running statistics still need an explicit train/eval policy.
+
+<Gotcha>Accuracy is not a property of “ResNet” in the abstract. The result depends on data split, normalization, augmentation, schedule, seed, device, and training time. The offline fixture proves plumbing, not CIFAR-10 performance; roughly 90% locally on MPS is realistic for a careful run, while 93%+ generally needs cloud/MLX time.</Gotcha>
+
+## The code, from scratch
+
+```python
+from torch.utils.data import DataLoader
+
+from cifar_resnet import CIFARTrainTransform, make_fake_cifar, resnet18
+from cifar_resnet.train import fit
+
+# This is deterministic, in-memory, CIFAR-shaped data — not a CIFAR benchmark.
+train = make_fake_cifar(128, seed=7, transform=CIFARTrainTransform(padding=2))
+model = resnet18(num_classes=10, widths=(8, 16, 32, 64), blocks=(1, 1, 1, 1))
+history = fit(
+    model,
+    DataLoader(train, batch_size=32, shuffle=False),
+    epochs=2,
+    learning_rate=0.02,
+    device='cpu',
+)
+print(history['train_loss'][-1])
+```
+
+The complete project at `projects/week-10-cifar-resnet/` contains a compact CNN
+baseline, CIFAR-sized ResNet blocks, deterministic fake data, seeded
+augmentation, transfer helpers, shape/skip/gradient tests, and an optional
+lazy torchvision loader. Tests never download CIFAR-10. The compute note is
+intentionally explicit: this is a 🟡 experiment, not a promise that a laptop
+can reproduce a cloud-tuned leaderboard number.
+
+<CompanyLens
+  topic="CNNs, residual learning, and transfer learning"
+  tldr={{
+    openai: "Public vision research and product documentation support convolutional and multimodal feature-learning fundamentals; the exact current training stack is not public.",
+    anthropic: "Public evidence emphasizes model safety and evaluation rather than a canonical vision architecture; use residual blocks as a transferable optimization exercise, not an internal reconstruction.",
+    deepmind: "Published vision work makes architectures and objectives inspectable in selected studies, while hardware, data curation, and current production choices remain project-specific.",
+    meta: "PyTorch and FAIR publications make CNN/ResNet mechanics unusually reproducible; a public framework does not reveal every Meta production pipeline or recipe.",
+    xai: "Public information about xAI's exact vision stack is limited; the useful claim here is the general CNN/residual derivation, not an attribution of a private implementation.",
+    deepseek: "Public DeepSeek reports expose selected architectures and training methods, mostly for language models; CNN transfer concepts remain a fundamentals analogy rather than a claimed internal choice.",
+    qwen: "Qwen's open multimodal releases expose some visual encoders and interfaces, but data mixtures and production training details still require release-specific evidence."
+  }}
+  whyDiffer="The same equations support very different engineering decisions. A vision team must choose receptive fields, resolution schedules, augmentation policies, pretrained checkpoints, and hardware; a public paper may establish one of those choices without establishing the full production system. This lens separates a reproducible PyTorch exercise from claims about private data, kernels, or deployment trade-offs."
+  sources={{
+    openai: { paper: "CLIP, Radford et al. 2021 — public image/text representation learning", blog: "openai.com/research — public research index; release-specific evidence required" },
+    anthropic: { paper: "Public Constitutional AI and model-card materials — not evidence of a private vision stack", blog: "anthropic.com/research — public research index" },
+    deepmind: { paper: "Residual Learning for Image Recognition, He et al. 2015 — public ResNet evidence", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "PyTorch: An Imperative Style, High-Performance Deep Learning Library, Paszke et al. 2019", blog: "ai.meta.com/research — public FAIR research index" },
+    xai: { paper: "Public Grok multimodal documentation — inspect the release-specific evidence", blog: "x.ai/blog — announcements; exact CNN stack is not asserted" },
+    deepseek: { paper: "DeepSeek-VL technical reports — public release-specific visual evidence", blog: "deepseek.com/research — public research index" },
+    qwen: { paper: "Qwen-VL technical report — public visual-language architecture evidence", blog: "qwenlm.github.io/blog — public release posts" }
+  }}
+  caseStudy="A reproducibility boundary is the case study. The project can establish that a projection skip produces matching shapes, gradients reach its parameters, and seeded fake data makes an offline smoke test repeatable. It cannot establish a company's image corpus, augmentation policy, accelerator kernel, or current accuracy. Before comparing two numbers, name the dataset, split, normalization, schedule, seed, device, and evidence source."
+  interviewAngle={{
+    openai: "Derive the output shape and parameter count of a convolution, then state which public source would support any claim about a multimodal training recipe.",
+    anthropic: "How would you test that an augmentation preserves labels, and how would you separate a robust vision result from an unsupported claim about internal practice?",
+    deepmind: "Explain the identity-gradient route in a residual block and identify which experimental details a published architecture paper may leave unspecified.",
+    meta: "Compare a plain CNN and ResNet at equal parameter budgets; explain how framework abstractions reduce shape and optimizer errors without hiding the math.",
+    xai: "When evidence about a company's vision stack is sparse, distinguish a general residual-learning principle from an attribution claim.",
+    deepseek: "Read a public multimodal report, derive one feature-map shape or loss gradient, and list what the report does not disclose.",
+    qwen: "Design a transfer-learning experiment for an open visual-language model and document checkpoint provenance, transforms, and the frozen/trainable boundary."
+  }}
+/>
+
+<ReferenceProject path="projects/week-10-cifar-resnet" name="cifar-resnet" hours="6-8 hrs">
+A dependency-light PyTorch CNN and CIFAR-friendly ResNet-18, with projection skips, seeded crop/flip augmentation, transfer-learning helpers, deterministic fake data, and CPU/offline shape, gradient, and training smoke tests. The real-CIFAR loader is opt-in and lazy.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30-45 min):** draw the identity and projection paths for two `BasicBlock` shapes, then verify output and gradient shapes with a failing test first.
+- **Build (2-3 hrs):** run the fake-data smoke test, add an opt-in torchvision CIFAR-10 pipeline with normalization and a validation split, and report CNN versus ResNet parameter counts and curves.
+- **Challenge (3+ hrs):** perform a transfer-learning head-only versus last-stage-unfrozen ablation. Record seed, device, transforms, schedule, and checkpoint provenance; explain whether the result supports an optimization or data-prior hypothesis.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“Your ResNet's training accuracy rises to 99%, but held-out accuracy stays at 65%. What do you inspect before adding more layers?”**
+
+Rubric:
+- **Baseline signal:** checks labels, split, normalization, output shape, train/eval mode, and whether metrics aggregate the final short batch correctly.
+- **Senior signal:** separates augmentation mismatch, leakage, optimization, capacity, and distribution shift; inspects skip projection shapes and verifies gradients on a tiny batch.
+- **Staff signal:** proposes a reproducible experiment matrix with seeds, checkpoint provenance, calibration/error slices, and a pre-registered validation protocol instead of tuning on the test set.
+
+Worked solution: `projects/week-10-cifar-resnet/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Deep Learning, chapters 9-11** — convolutional networks, optimization, and practical methodology.
+- **Deep Residual Learning for Image Recognition** — He et al., 2015; the residual-learning paper and projection shortcuts.
+- **A Recipe for Training Neural Networks** — Karpathy's practical checklist for debugging data and optimization before scaling.
+- **PyTorch transfer learning tutorial** — public API evidence for replacing heads and freezing feature extractors; verify version-specific behavior.
+</FurtherReading>
+
+<KeyTakeaways>
+- Convolutions trade dense connectivity for local receptive fields and shared weights; padding and stride determine every feature-map shape.
+- A residual block learns a correction beside an identity or projection route, making shape alignment and gradient flow explicit.
+- Augmentation optimizes expected loss over transformed training views; it is valid only when the transform preserves the deployment label.
+- Transfer learning freezes or gently adapts a backbone while a new head learns the task; BatchNorm state needs an explicit policy.
+- Deterministic CPU/offline tests validate model plumbing, not CIFAR accuracy. Roughly 90% on local MPS is realistic with a careful run; 93%+ generally needs cloud/MLX resources.
+</KeyTakeaways>
