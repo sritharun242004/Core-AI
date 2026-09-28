@@ -14,8 +14,9 @@ const NAMES: Record<(typeof SLUGS)[number], string> = {
 for (const slug of SLUGS) {
   test(`/companies/${slug} renders header + reading list`, async ({ page }) => {
     await page.goto(`/companies/${slug}`)
-    await expect(page.locator('h1')).toContainText(NAMES[slug])
-    await expect(page.getByRole('heading', { name: 'Reading list' }).first()).toBeVisible()
+    // Scope to <main> — astro dev's toolbar injects h1s for audit panels.
+    await expect(page.locator('main h1')).toContainText(NAMES[slug])
+    await expect(page.locator('main').getByRole('heading', { name: 'Reading list' }).first()).toBeVisible()
   })
 }
 
