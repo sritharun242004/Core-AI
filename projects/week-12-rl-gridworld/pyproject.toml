@@ -1,0 +1,17 @@
+[project]
+name = "rl-gridworld"
+version = "0.1.0"
+description = "Week 12 — offline gridworld, Q-learning, policy gradients, and PPO-Clip concepts"
+requires-python = ">=3.13"
+dependencies = ["numpy>=2.1", "torch>=2.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.7", "pyright>=1.1"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-v --strict-markers"
+testpaths = ["tests"]

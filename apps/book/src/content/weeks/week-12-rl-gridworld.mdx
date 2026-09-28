@@ -1,0 +1,235 @@
+---
+week: 12
+part: 3
+slug: "week-12-rl-gridworld"
+title: "Optimizers and reinforcement learning — learn which action pays"
+hook: "How do we update a policy when the target is delayed reward rather than a labeled answer?"
+hours: 20
+computeTier: "green"
+difficulty: 5
+prereqSlugs: ["week-11-char-rnn-attention"]
+referenceProject: "projects/week-12-rl-gridworld"
+accentVar: "--accent-p3"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>How do we update a policy when the target is delayed reward rather than a labeled answer?</Hook>
+
+<Intuition>
+An optimizer decides how a parameter moves after a gradient has been measured. SGD takes a step in the negative-gradient direction; Adam keeps moving averages of gradient and squared-gradient magnitudes; AdamW separates weight decay from the adaptive step. These rules solve supervised objectives well, but reinforcement learning changes the source of the learning signal: an action changes the future state, and the reward may arrive much later.
+
+<IntuitionCallout>A gridworld is a microscope for credit assignment. Q-learning writes a Bellman target into a table, while a policy-gradient method nudges the probability of the sampled action in proportion to its return. Same environment, different object being estimated.</IntuitionCallout>
+
+This week has five moves: derive optimization and regularization updates, state a Markov decision process precisely, implement a terminal-aware Bellman backup, derive REINFORCE from log-probabilities and discounted returns, and inspect PPO's clipped objective without pretending that one equation is a complete trainer. The reference project stays deterministic and CPU/offline: a 4×4 gridworld, a tabular Q learner, a small one-hot policy, and an executable PPO-Clip algebra demo.
+
+<MicroRecall questions={[{
+  id: 'week12-recall-bellman',
+  prompt: 'When should a Q-learning target stop bootstrapping from the next state?',
+  choices: ['On every negative reward', 'Only when the episode truly terminates at a terminal state', 'Whenever epsilon is below 0.1', 'After the optimizer has taken one step'],
+  correct: 1,
+  explain: 'A terminal transition has no future return, so its target is r. A time-limit truncation is a data-collection boundary; whether to bootstrap there must be an explicit convention, and this project bootstraps through truncation.'
+}, {
+  id: 'week12-recall-ppo',
+  prompt: 'What does PPO-Clip constrain when a new policy ratio moves too far?',
+  choices: ['The number of gridworld states', 'The signed surrogate contribution r times the advantage', 'The vocabulary size of a policy network', 'The reward before it enters the environment'],
+  correct: 1,
+  explain: 'PPO compares new and old action probabilities. Clipping the ratio inside the signed minimum prevents an advantageous action from improving the objective by changing its probability beyond the chosen trust-region-like interval.'
+}]} client:visible />
+</Intuition>
+
+## The anatomy of learning from an environment
+
+A supervised example supplies `(x, y)` and a direct loss. An RL interaction supplies an observation or state `s_t`, an action `a_t`, a reward `r_{t+1}`, and a next state `s_{t+1}`. The agent is trying to maximize expected discounted return:
+
+<MathBlock latex="G_t = r_{t+1} + \gamma r_{t+2} + \gamma^2 r_{t+3} + \cdots = \sum_{k=0}^{\infty}\gamma^k r_{t+k+1},\qquad 0\leq\gamma\leq1" />
+
+Discounting makes a far-away reward count less and makes an infinite-horizon objective finite when rewards are bounded. In the project, a small step penalty prefers short routes and the goal reward ends an episode. The map is not a benchmark: it is a controlled object for checking transitions, updates, normalization, and policy improvement.
+
+### 1. SGD, Adam, and AdamW
+
+For parameters `\\theta`, objective `L(\\theta)`, gradient `g_t = \\nabla_\\theta L`, and learning rate `\\eta`, vanilla stochastic gradient descent is:
+
+<MathBlock latex="g_t=\nabla_\theta L_t(\theta_t),\qquad \theta_{t+1}=\theta_t-\eta g_t" />
+
+SGD has one state per parameter: the parameter itself. Momentum adds a low-pass filtered direction. Adam keeps two filtered moments, correcting their initial bias:
+
+<MathBlock latex="m_t=\beta_1m_{t-1}+(1-\beta_1)g_t,\quad v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2" />
+
+<MathBlock latex="\hat m_t=\frac{m_t}{1-\beta_1^t},\quad \hat v_t=\frac{v_t}{1-\beta_2^t},\quad \theta_{t+1}=\theta_t-\eta\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}" />
+
+Adam adapts the effective step to a parameter's recent gradient scale. That can be useful when policy logits or network layers receive very different signals, but the optimizer does not repair an incorrect reward, state encoding, or terminal flag.
+
+AdamW decouples weight decay from the adaptive gradient update:
+
+<MathBlock latex="\theta_{t+1}=(1-\eta\lambda)\theta_t-\eta\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}" />
+
+The distinction matters. Passing `weight_decay` to AdamW is not the same operation as adding a penalty to `L` and then using Adam. The reference project exposes SGD, Adam, and AdamW by name so an ablation can state which update was actually used.
+
+### 2. Regularization: constrain the objective, not the story
+
+Coupled L2 adds a squared-parameter penalty:
+
+<MathBlock latex="L_{total}=L_{data}+\lambda\sum_i\theta_i^2,\qquad \frac{\partial L_{total}}{\partial\theta_i}=\frac{\partial L_{data}}{\partial\theta_i}+2\lambda\theta_i" />
+
+L1 instead adds `\\lambda\\sum_i|\\theta_i|` and has a sign subgradient away from zero. Both encode a preference for smaller parameters, but neither guarantees better reward or generalization. In a policy, regularization can also reduce the ability to represent a sharply preferred action, so report the coefficient and the policy entropy rather than only the final return.
+
+<Gotcha>Do not casually combine an L2 term, optimizer weight decay, and entropy regularization, then call the result “Adam.” They affect different parts of the update. Name every term and record whether it was applied to policy logits, a value baseline, or both.</Gotcha>
+
+## MDPs and tabular control
+
+A finite Markov decision process is `(S, A, P, R, \\gamma)`. `P(s'|s,a)` describes the next-state distribution and `R(s,a,s')` the reward. The Markov property says that the current state contains the information needed for the next transition; the history used to reach `s_t` is not required. The reference gridworld encodes `(x,y)` as `s=y\\,width+x`, has four actions, and makes `P` deterministic. Its transition table is therefore directly inspectable.
+
+The state-value and action-value functions are:
+
+<MathBlock latex="V^\pi(s)=\mathbb{E}_\pi[G_t\mid s_t=s],\qquad Q^\pi(s,a)=\mathbb{E}_\pi[G_t\mid s_t=s,a_t=a]" />
+
+For a fixed policy, the Bellman expectation equation averages over its next action. For control, Q-learning uses the greedy Bellman optimality target:
+
+<MathBlock latex="y_t=r_{t+1}+\gamma(1-d_t)\max_{a'}Q(s_{t+1},a'),\qquad Q(s_t,a_t)\leftarrow Q(s_t,a_t)+\alpha\big[y_t-Q(s_t,a_t)\big]" />
+
+Here `d_t` is one only for a true terminal transition. A goal transition must not bootstrap from the goal's outgoing row. The project makes the goal row absorbing for the model table and separately records `terminated` versus `truncated` in `step()`; that distinction prevents a time limit from accidentally becoming a terminal reward boundary.
+
+The behavior policy is epsilon-greedy:
+
+<MathBlock latex="a_t=\begin{cases}\text{random action},&\text{with probability }\epsilon\\\arg\max_a Q(s_t,a),&\text{otherwise.}\end{cases}" />
+
+Exploration is not the same as evaluation. Training samples exploratory actions; evaluation uses the greedy table and reports both mean return and goal success. On this known map, those numbers verify that the learned route improved. They do not measure transfer to an unseen map.
+
+## Policy gradients: optimize probabilities directly
+
+A stochastic policy emits logits `z_\\theta(s)` and a normalized distribution:
+
+<MathBlock latex="\pi_\theta(a\mid s)=\operatorname{softmax}(z_\theta(s))_a=\frac{\exp z_{\theta,a}(s)}{\sum_b\exp z_{\theta,b}(s)}" />
+
+For a sampled trajectory, the probability of the action sequence is the product of action probabilities. Products are awkward numerically, so take logs:
+
+<MathBlock latex="\log p_\theta(\tau)=\sum_t\log\pi_\theta(a_t\mid s_t)" />
+
+The log-derivative identity gives the policy-gradient estimator:
+
+<MathBlock latex="\nabla_\theta J(\theta)=\mathbb{E}\left[\sum_t G_t\nabla_\theta\log\pi_\theta(a_t\mid s_t)\right]" />
+
+To use a minimization optimizer, negate it:
+
+<MathBlock latex="L_{REINFORCE}=-\frac{1}{T}\sum_{t=0}^{T-1}G_t\log\pi_\theta(a_t\mid s_t)" />
+
+A positive return makes the selected action more likely; a negative return makes it less likely. This is a high-variance estimate because one sampled trajectory carries the credit signal. Standardizing returns can improve numerical conditioning without changing the policy probabilities. An entropy bonus preserves exploration:
+
+<MathBlock latex="L=L_{REINFORCE}-\beta\,\mathbb{E}_s[H(\pi_\theta(\cdot\mid s))],\qquad H(\pi)=-\sum_a\pi(a)\log\pi(a)" />
+
+The baseline policy uses one-hot state features, so every probability row can be inspected. Its `softmax` is normalized over actions, not states, batch items, or hidden features. A finite gradient confirms the computation graph; a rising success rate under a fixed greedy evaluation is stronger evidence that the update is useful on this fixture.
+
+## PPO-Clip as a conceptual bridge
+
+Policy gradients can change a policy too aggressively when a high-return sample receives a large update. PPO compares the new policy to a frozen old policy at the sampled action:
+
+<MathBlock latex="r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{old}(a_t\mid s_t)}=\exp\left(\log\pi_\theta-\log\pi_{old}\right)" />
+
+With an advantage estimate `A_t`, the clipped surrogate is:
+
+<MathBlock latex="L^{CLIP}_t=\min\left(r_tA_t,\operatorname{clip}(r_t,1-\epsilon,1+\epsilon)A_t\right)" />
+
+For a positive advantage, increasing a ratio above `1+\\epsilon` no longer earns a larger surrogate contribution. For a negative advantage, pushing the ratio below `1-\\epsilon` no longer improves the objective. The sign must be multiplied before the minimum; clipping a ratio without its advantage is not PPO's objective.
+
+The project implements `ppo_clip_demo` and tests this algebra with fixed old/new log-probabilities. It is deliberately labeled conceptual: a complete PPO system also needs rollout collection, a value function, advantage estimation, minibatch epochs, and stability diagnostics. Keeping the clip term standalone makes the policy-update boundary easy to derive and test without claiming a benchmark.
+
+## The code, offline and inspectable
+
+```python
+import torch
+from rl_gridworld import Gridworld, train_policy_gradient, train_q_learning
+
+env = Gridworld()
+q = train_q_learning(env, episodes=260, alpha=0.35, gamma=0.95, seed=7)
+pg = train_policy_gradient(
+    env, episodes=320, learning_rate=0.08, gamma=0.98, hidden_size=16, seed=11
+)
+print(q['evaluation_mean_reward'], q['evaluation_success_rate'])
+print(pg['evaluation_mean_reward'], pg['evaluation_success_rate'])
+with torch.no_grad():
+    print(pg['policy'].action_probabilities(torch.tensor(env.start_state)))
+```
+
+The complete reference project at `projects/week-12-rl-gridworld/` contains the deterministic environment, transition table, terminal-aware Q-learning, normalized REINFORCE baseline, optimizer/regularization helpers, PPO-Clip conceptual demo, assignments, and 23 offline tests. No default path downloads data or requires an accelerator.
+
+<CompanyLens
+  topic="optimizers, policy gradients, and small-gridworld reinforcement learning"
+  tldr={{
+    openai: "Public OpenAI research describes reinforcement-learning objectives and optimization in selected releases; the exact current policy stack, data mixture, and serving recipe are not public, so this gridworld is a fundamentals exercise rather than a reconstruction.",
+    anthropic: "Public Anthropic materials emphasize model behavior, safety, and evaluation. They support discussing reward design and policy updates at a high level, not attributing this REINFORCE or PPO implementation to an internal system.",
+    deepmind: "Public Google DeepMind papers make selected RL algorithms and environments reproducible, while each current project has its own evidence boundary. Use the Bellman and policy-gradient derivations without inferring undisclosed production choices.",
+    meta: "Meta/FAIR research and open tooling provide public evidence for optimization and RL experiments, but a framework or paper does not reveal every deployed policy, reward pipeline, or regularization decision.",
+    xai: "Public evidence about xAI's exact reinforcement-learning and optimizer stack is limited. The transferable claim is how to test a policy update on a deterministic MDP, not how any private system is trained.",
+    deepseek: "Public DeepSeek technical reports document selected training and optimization choices for named releases; they do not establish that a toy gridworld, optimizer, or clipped objective matches an undisclosed internal workflow.",
+    qwen: "Public Qwen releases and reports provide release-specific model and training evidence. They are useful comparison sources only when a named version is cited; this local policy lab makes no claim about private Qwen reward or optimizer systems."
+  }}
+  whyDiffer="The same Bellman equation and log-derivative identity can support very different decisions about reward design, exploration, policy parameterization, optimizer state, regularization, rollout scale, and evaluation. Public papers usually establish a bounded method or release, not every current production detail. The seven entries therefore separate public evidence from a practice prompt: none claims access to private data, hardware, reward models, kernels, or deployment metrics. The reference project establishes only deterministic local contracts and improvement on one known map."
+  sources={{
+    openai: { paper: "Learning from Human Preferences, Christiano et al. 2017 — public preference-optimization evidence; not a complete current system description", blog: "openai.com/research — public research index; verify the named release and date" },
+    anthropic: { paper: "Public Anthropic alignment and model-card reports — inspect the named release before attributing an objective", blog: "anthropic.com/research — public research index, not evidence of undocumented internals" },
+    deepmind: { paper: "Playing Atari with Deep Reinforcement Learning, Mnih et al. 2013 — public deep-RL evidence; scope is the cited work", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "TorchRL documentation and FAIR publications — public tooling/research evidence, not a deployment inventory", blog: "ai.meta.com/research — public FAIR research index" },
+    xai: { paper: "Public Grok technical materials — inspect the specific version; exact RL objective is not asserted", blog: "x.ai/blog — public announcements with release-specific caveats" },
+    deepseek: { paper: "DeepSeek-V3 technical report, arXiv:2412.19437 — public release-specific optimization evidence", blog: "deepseek.com/research — public research index; do not generalize across versions" },
+    qwen: { paper: "Qwen technical reports — public release-specific training evidence; private optimizer choices remain unknown", blog: "qwenlm.github.io/blog — public release posts with version boundaries" }
+  }}
+  caseStudy="The concrete case study is the offline 4×4 map. It can establish that the transition table is deterministic, terminal Bellman updates do not bootstrap, policy probabilities normalize, a seeded REINFORCE run has finite gradients, and greedy reward improves on the known fixture. It cannot establish a company's current RL pipeline, human-feedback process, model quality, reward-model behavior, safety guarantee, data provenance, or generalization to another map. Report map, reward, time limit, seed, optimizer, episode budget, evaluation policy, and the named public source before making a comparison."
+  interviewAngle={{
+    openai: "Derive the policy-gradient log-probability estimator and explain what public, release-specific evidence would be required before attributing a particular reward or optimizer pipeline to OpenAI.",
+    anthropic: "Separate a reward specification from a behavior or safety claim. Design a gridworld ablation that reports failure modes and public evidence without turning a toy PPO equation into an internal-architecture claim.",
+    deepmind: "Derive the terminal-aware Bellman target and PPO ratio, then state which map, rollout, and evaluation details a public RL paper must disclose for a fair comparison.",
+    meta: "Compare SGD, Adam, and AdamW on a fixed policy-gradient budget; explain why open tooling helps reproduce an update while not proving a production policy uses the same regularization.",
+    xai: "When public evidence is sparse, distinguish the general fact that policy gradients use sampled returns from an unsupported claim about xAI's current reward or optimizer system.",
+    deepseek: "Read a named public technical report, derive one optimizer or RL objective, and list the data, rollout, infrastructure, and evaluation details that remain unspecified.",
+    qwen: "Design a reproducible policy-optimization ablation using a named open release only as evidence context; record version, objective, seed, evaluation, and what cannot be inferred about private training."
+  }}
+/>
+
+<ReferenceProject path="projects/week-12-rl-gridworld" name="rl-gridworld" hours="6-8 hrs">
+An offline PyTorch and NumPy reinforcement-learning lab with a deterministic 4×4 MDP, transition-table inspection, tabular Q-learning, a normalized REINFORCE baseline, explicit SGD/Adam/AdamW and L2 helpers, a clearly labeled PPO-Clip objective demonstration, assignments, and 23 CPU tests.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30-45 min):** encode the gridworld states, inspect boundary and goal transitions, derive one terminal and one nonterminal Bellman update, normalize a softmax row by hand, and evaluate PPO clipping for positive and negative advantages.
+- **Build (2-3 hrs):** run the notebook, plot Q-learning rewards and REINFORCE moving averages, compare SGD/Adam/AdamW at a matched budget, add one named regularization ablation, and report map, seed, gamma, episode budget, and greedy evaluation protocol.
+- **Challenge (3+ hrs):** generalize to held-out maps, add a variance-reduction baseline, or implement a clearly separated minimal PPO loop using rollout data. Add tests before changing the trainer, and report success distributions rather than one lucky trajectory.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“Your policy-gradient return improves on one gridworld but collapses on a new map. What do you inspect before changing the optimizer?”**
+
+Rubric:
+- **Baseline signal:** checks state encoding, action semantics, reward scale, terminal/time-limit handling, probability normalization, train/eval sampling mode, and the evaluation map.
+- **Senior signal:** separates exploration, credit assignment, optimizer step size, entropy/regularization, map distribution shift, and variance; compares Q-learning and REINFORCE under matched seeds and budgets.
+- **Staff signal:** proposes a pre-registered multi-map protocol with held-out layouts, success/return distributions, failure slices, checkpoint provenance, compute budget, and a public-evidence boundary rather than a claim about a company's private RL stack.
+
+Worked solution: `projects/week-12-rl-gridworld/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Reinforcement Learning: An Introduction** — Sutton and Barto; MDPs, value functions, Bellman equations, and policy gradients.
+- **Policy Gradient Methods for Reinforcement Learning with Function Approximation** — Sutton et al.; the log-derivative policy-gradient foundation.
+- **Proximal Policy Optimization Algorithms** — Schulman et al.; the clipped surrogate and practical PPO objective.
+- **Adam: A Method for Stochastic Optimization** — Kingma and Ba; adaptive moments and bias correction.
+- **Decoupled Weight Decay Regularization** — Loshchilov and Hutter; why AdamW separates decay from the adaptive gradient step.
+</FurtherReading>
+
+<KeyTakeaways>
+- SGD, Adam, and AdamW differ in optimizer state and in how regularization enters the parameter update; record the exact choice.
+- An MDP makes state, action, transition, reward, and discount explicit; terminal flags determine whether a Bellman target may bootstrap.
+- Q-learning estimates action values with a greedy Bellman target, while REINFORCE changes action probabilities using sampled discounted returns.
+- Softmax probabilities must normalize over actions, and entropy or return standardization changes the learning dynamics without changing the MDP.
+- PPO-Clip limits the signed surrogate contribution relative to an old policy; an executable clip demo is not a complete PPO trainer or a production claim.
+</KeyTakeaways>
