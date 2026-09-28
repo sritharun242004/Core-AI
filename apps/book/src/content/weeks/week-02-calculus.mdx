@@ -1,0 +1,187 @@
+---
+week: 2
+part: 1
+slug: "week-02-calculus"
+title: "Calculus — the machinery of learning"
+hook: "Every training loop in every AI system is one equation: subtract the gradient. Learn what the gradient IS and half of ML becomes bookkeeping."
+hours: 20
+computeTier: "green"
+difficulty: 2
+prereqSlugs: ["week-01-linear-algebra"]
+referenceProject: "projects/week-02-micrograd"
+accentVar: "--accent-p1"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Every model you'll ever train is doing one thing 100 million times: take the derivative of the loss with respect to a parameter, then subtract a small multiple of it. Get comfortable with derivatives and gradients, and 100% of training-time debugging becomes tractable.</Hook>
+
+<Intuition>
+A **derivative** answers: "if I nudge this input up by ε, how much does the output change?" It is a *sensitivity*.
+
+<IntuitionCallout>
+A gradient is a **vector of derivatives** — one per parameter. It points in the direction of steepest increase of the loss. Training subtracts a small multiple of it (SGD). The learning rate is that small multiple.
+</IntuitionCallout>
+
+The four moves you must own by end of week: **derivative of a scalar function** (rate of change), **partial derivative** (rate w.r.t. one input, others fixed), **gradient** (vector of partials), and **chain rule** (compose them).
+
+<MicroRecall
+  questions={[{
+    id: 'week2-recall-chainrule',
+    prompt: 'If y = f(g(x)) and g(x) = 2x, f(u) = u², what is dy/dx at x = 3?',
+    choices: ['6', '12', '24', '36'],
+    correct: 2,
+    explain: 'y = (2x)² = 4x²; dy/dx = 8x; at x=3 → 24. Equivalently by chain rule: f\'(g) · g\'(x) = 2u · 2 = 4·2x = 8x.',
+  }]}
+  client:visible
+/>
+</Intuition>
+
+## The math, derived
+
+We build calculus in the exact order training uses it: **scalar derivative → partial → gradient → chain rule → backpropagation**.
+
+### 1. Scalar derivative
+
+The derivative of `f(x)` at `x` is the slope of the tangent line:
+
+<MathBlock latex="f'(x) = \lim_{h \to 0} \frac{f(x+h) - f(x)}{h}" />
+
+Two rules you must know cold: **power rule** `d/dx x^n = n x^{n-1}` and **sum rule** `d/dx [f + g] = f' + g'`. Every derivative in ML is a composition of these plus the chain rule.
+
+### 2. Partial derivatives
+
+If `f(x, y) = x²y + y`, then `∂f/∂x = 2xy` (treat `y` as constant) and `∂f/∂y = x² + 1` (treat `x` as constant). That's it. Partials are just single-variable derivatives with the other inputs frozen.
+
+### 3. Gradient
+
+<MathBlock latex="\nabla f(\mathbf{x}) = \begin{bmatrix}\partial f / \partial x_1 \\ \partial f / \partial x_2 \\ \vdots \\ \partial f / \partial x_n\end{bmatrix}" />
+
+The gradient is a **vector** the same shape as the parameter it takes partials of. In a neural network with 1B parameters, `∇L(θ)` is a 1B-dimensional vector — one gradient per parameter.
+
+### 4. Chain rule
+
+If `y = f(g(x))`, then
+
+<MathBlock latex="\frac{dy}{dx} = \frac{dy}{du} \cdot \frac{du}{dx} \quad \text{where } u = g(x)" />
+
+This is the entire content of backpropagation. Every op in your model contributes its local `du/dx`; backprop multiplies them together in reverse topological order.
+
+<Gotcha>
+Common trap: at a **branching point** in the graph (a `Value` used in two downstream ops), the gradients from each downstream path **add**, they don't overwrite. This is the *multivariable chain rule*, and forgetting it is Karpathy's most-cited micrograd bug.
+</Gotcha>
+
+### 5. Gradient descent
+
+Given a loss `L(θ)` and a learning rate `η`, one training step is:
+
+<MathBlock latex="\theta \leftarrow \theta - \eta \nabla L(\theta)" />
+
+Small `η` → slow but safe. Large `η` → fast but can overshoot and diverge. Whole cottage industries (Adam, momentum, warmup) exist to pick `η` well.
+
+## The code, from scratch
+
+Build a scalar autodiff engine in ~150 lines. Every op — `+`, `*`, `relu`, `exp` — stores its parents and a local backward function. `backward()` topo-sorts the graph and runs each op's backward in reverse order.
+
+```python
+class Value:
+    def __init__(self, data, _children=(), _op=""):
+        self.data = data
+        self.grad = 0.0
+        self._prev = _children
+        self._backward = lambda: None
+
+    def __mul__(self, other):
+        out = Value(self.data * other.data, (self, other), "*")
+        def _b():
+            self.grad  += other.data * out.grad
+            other.grad += self.data  * out.grad
+        out._backward = _b
+        return out
+```
+
+<Gotcha>
+`self.grad += ...` — the `+=` is what makes the multivariable chain rule work at branching points. Never write `self.grad = ...` inside a `_backward`.
+</Gotcha>
+
+Full implementation: `projects/week-02-micrograd/src/micrograd/engine.py`.
+
+<CompanyLens
+  topic="Calculus & autodiff"
+  tldr={{
+    openai:    "Chain rule + gradients = the whole training story. RLHF is a chain of chain rules.",
+    anthropic: "Constitutional AI runs the same gradient descent — with a different loss shape.",
+    deepmind:  "AlphaFold's loss surface is calculus at protein scale; the derivatives are physics-informed.",
+    meta:      "PyTorch's autograd IS the calculus of Week 2 — first-class citizen in the framework.",
+    xai:       "Grok's training pipeline burns cluster-hours on one operation: subtract the gradient.",
+    deepseek:  "GRPO's advantage estimate is a Monte Carlo mean of a policy's gradient.",
+    qwen:      "Open-weight models publish gradients-at-checkpoint — read them to see training dynamics.",
+  }}
+  whyDiffer="Every lab agrees on the machinery (backprop). They differ in what loss they optimize (next-token vs preference vs constitutional vs reward-model) and how they distribute the gradient across a cluster (FSDP, ZeRO, ring-attention). Weeks 15 and 18 revisit both axes."
+  sources={{
+    openai:    { paper: "InstructGPT — arXiv:2203.02155 (RLHF loss)",     blog: "openai.com/research" },
+    anthropic: { paper: "Constitutional AI — arXiv:2212.08073",           blog: "anthropic.com/research" },
+    deepmind:  { paper: "AlphaFold 2 (Jumper et al.)",                    blog: "deepmind.google/discover/blog" },
+    meta:      { paper: "PyTorch autograd docs",                          blog: "pytorch.org/docs/stable/autograd.html" },
+    xai:       { paper: "Grok 3 tech report",                             blog: "x.ai/blog" },
+    deepseek:  { paper: "DeepSeek-R1 arXiv:2501.12948 (GRPO)",            blog: "deepseek.com/research" },
+    qwen:      { paper: "Qwen 2.5 tech report",                           blog: "qwenlm.github.io" },
+  }}
+  caseStudy="Karpathy's original micrograd (~200 LOC) is small enough that OpenAI, Anthropic, and DeepMind engineers cite it in onboarding docs as 'read this once, then you understand autograd.' We rebuild it this week."
+  interviewAngle={{
+    openai:    "Debug a training loop: they hand you a loss curve that plateaus at loss 5.0. What's wrong?",
+    anthropic: "Derive the gradient of a KL divergence — expect to write it on the whiteboard.",
+    deepmind:  "Given a graph with a branching Value, hand-compute its backward pass on paper.",
+    meta:      "Implement Value's `_backward` for `**power` from scratch. No PyTorch.",
+    xai:       "Live-write a gradient-descent loop in Python without a framework. 5 minutes.",
+    deepseek:  "Explain policy gradient's `E[log π(a|s) · A(s,a)]` — where's the derivative?",
+    qwen:      "Given two checkpoints (10k steps apart), what does the gradient direction tell you?",
+  }}
+/>
+
+<ReferenceProject path="projects/week-02-micrograd" name="micrograd" hours="6-8 hrs">
+Build a ~200-LOC scalar autodiff engine. Extend it to a tiny MLP that overfits XOR in 300 GD steps. The numeric-parity test against `torch.autograd` is the acceptance gate.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** add `Value.tanh()` and `Value.sigmoid()` with correct backward rules.
+- **Build (2-3 hrs):** train a 2-layer MLP on `sklearn.datasets.make_moons`. Plot the decision boundary at step 0, 100, 500. Slow — that's the point; you'll feel it against W4's NumPy vs PyTorch.
+- **Challenge (3+ hrs):** extend `engine.py` to a `Tensor` class holding a numpy array. Support broadcasting, `dot`, and `softmax`. Retrain the moons MLP with the tensor version; measure the speedup.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**"Explain what `.backward()` is doing on a graph with a branching node, without hand-waving."**
+
+Rubric:
+- Can they draw the graph and mark the branching node? (baseline)
+- Do they say "gradients **add** at a branching node"? (senior signal — this is the multivariable chain rule)
+- Can they name at least one framework failure mode: forgetting to zero grads, in-place ops, retain_graph=False? (staff signal)
+
+Worked solution: see `SOLUTION_NOTES.md` in `projects/week-02-micrograd/`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Karpathy — "The spelled-out intro to neural networks and backpropagation"** (YouTube). The 2.5-hour lecture that this project is built from.
+- **Goodfellow, Bengio, Courville — Deep Learning, Chapter 6.5** — "Back-Propagation and Other Differentiation Algorithms."
+- **PyTorch autograd docs** — read them front-to-back. Meta hires with this doc in mind.
+- **Bishop — PRML, Chapter 5.3** — Backpropagation derivation (the classical view).
+</FurtherReading>
+
+<KeyTakeaways>
+- Derivative = sensitivity. Gradient = vector of partial derivatives, one per parameter.
+- The **chain rule** is the entire content of backprop. Local gradient × upstream gradient.
+- At a **branching node**, gradients from downstream paths **add** (multivariable chain rule).
+- Training is `θ ← θ − η ∇L(θ)`. Every optimizer (Adam, SGD-momentum) is a variation on this line.
+- If you can implement `backward()` in ~40 lines, you understand deep learning training at the algorithm level.
+</KeyTakeaways>
