@@ -1,0 +1,169 @@
+---
+week: 3
+part: 1
+slug: "week-03-probability"
+title: "Probability & Statistics — the grammar of uncertainty"
+hook: "Every model is a probability distribution in a trench coat. Learn to read the coat off, and you can debug any model by asking one question: what distribution does this claim to represent?"
+hours: 20
+computeTier: "green"
+difficulty: 2
+prereqSlugs: ["week-02-calculus"]
+referenceProject: "projects/week-03-prob-lab"
+accentVar: "--accent-p1"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Every neural net output is a probability. Every loss function is a distance between two distributions. When your model "hallucinates," it is *sampling from the wrong distribution*. Own probability, own debugging.</Hook>
+
+<Intuition>
+A **probability distribution** answers: "over this space of outcomes, how does the mass get allocated?" Discrete distributions (dice, coin flips, next-token) put point masses on outcomes; continuous ones (heights, gradients, weights) put density on regions.
+
+<IntuitionCallout>
+**Bayes' rule** answers: "given what I've seen, what should I now believe?" It converts a **prior** (before-data belief) plus a **likelihood** (data-given-hypothesis) into a **posterior** (after-data belief). RLHF, active learning, and Bayesian model averaging are all applied Bayes.
+</IntuitionCallout>
+
+The four moves you must own by end of week: **conditional probability & Bayes' rule**, **expectation & variance**, **maximum likelihood estimation**, and **entropy / KL / cross-entropy** (the losses of ML).
+
+<MicroRecall
+  questions={[{
+    id: 'week3-recall-bayes',
+    prompt: 'A test for disease D has 99% sensitivity and 99% specificity. Prevalence is 1%. You test positive. What is P(disease | positive)?',
+    choices: ['~99%', '~50%', '~9%', '~1%'],
+    correct: 1,
+    explain: 'Bayes: P(D|+) = 0.99·0.01 / (0.99·0.01 + 0.01·0.99) = 0.5. Base rates dominate — this is the classic "test paradox."',
+  }]}
+  client:visible
+/>
+</Intuition>
+
+## The math, derived
+
+### 1. Conditional probability & Bayes' rule
+
+<MathBlock latex="P(A \mid B) = \frac{P(A \cap B)}{P(B)} \implies P(A \mid B) = \frac{P(B \mid A) \cdot P(A)}{P(B)}" />
+
+Read: "posterior = likelihood × prior / evidence." The denominator normalizes; often you can ignore it when comparing hypotheses (Bayes factors).
+
+### 2. Expectation & variance
+
+<MathBlock latex="E[X] = \sum_x x \cdot P(X = x), \quad \text{Var}(X) = E[(X - E[X])^2]" />
+
+For a continuous X with density f: `E[X] = ∫ x f(x) dx`. Expectation is linear (`E[aX + b] = aE[X] + b`); variance is not (`Var(aX + b) = a² Var(X)`).
+
+### 3. Maximum likelihood estimation
+
+Given data `x₁, …, xₙ` iid from a distribution with parameters `θ`, MLE picks `θ̂` that maximizes the **likelihood**:
+
+<MathBlock latex="\hat\theta_{\text{MLE}} = \arg\max_\theta \prod_i p(x_i \mid \theta) = \arg\max_\theta \sum_i \log p(x_i \mid \theta)" />
+
+In practice we maximize the **log-likelihood** — same argmax, better numerics. MAP adds a `log p(θ)` prior term.
+
+<Gotcha>
+MLE for Gaussian variance uses `1/n`, not `1/(n-1)`. The `1/(n-1)` version is the **unbiased** estimator; MLE is *biased downward*. Both are correct — for different objectives.
+</Gotcha>
+
+### 4. Entropy, KL, cross-entropy
+
+<MathBlock latex="H(p) = -\sum_i p_i \log p_i" />
+<MathBlock latex="\text{KL}(p \| q) = \sum_i p_i \log \frac{p_i}{q_i} \ge 0" />
+<MathBlock latex="H(p, q) = -\sum_i p_i \log q_i = H(p) + \text{KL}(p \| q)" />
+
+Cross-entropy is the loss function of every classifier. Minimize cross-entropy = maximize likelihood (they differ by a constant). This is why "next-token cross-entropy loss" and "next-token log-likelihood" refer to the same objective.
+
+## The code, from scratch
+
+Zero-safe entropy (Review Focus anchor) — the pitfall every fresh grad hits:
+
+```python
+import numpy as np
+
+def entropy(p):
+    p = np.asarray(p, dtype=float)
+    mask = p > 0            # ← skip zeros, never add epsilon
+    return float(-(p[mask] * np.log(p[mask])).sum())
+```
+
+Adding a small ε to `p` biases the estimate. Masking is correct.
+
+Full implementations: `projects/week-03-prob-lab/src/prob_lab/`.
+
+<CompanyLens
+  topic="Probability & information"
+  tldr={{
+    openai:    "Next-token cross-entropy is the loss. Everything downstream (RLHF, alignment) minimizes a variant.",
+    anthropic: "Constitutional AI uses KL to keep the policy close to a reference distribution — the RL constraint.",
+    deepmind:  "Bayesian NNs (MacKay 1992) shaped DeepMind's uncertainty-first approach — worth reading the original.",
+    meta:      "Every Llama tech report reports token-level perplexity — the exponentiated cross-entropy.",
+    xai:       "First-principles rejection sampling used inside Grok's serving pipeline — a Monte Carlo choice, not neural.",
+    deepseek:  "V3's expert routing is a discrete probability distribution over 256 experts. Read the load-balancing loss.",
+    qwen:      "Cross-modal alignment loss between text & vision distributions.",
+  }}
+  whyDiffer="Every lab uses the same losses (cross-entropy, KL); they diverge in how they constrain sampling at inference. Anthropic's Constitutional AI, DeepMind's Bayesian uncertainty, and DeepSeek's MoE routing are three answers to 'what distribution should we sample from?'"
+  sources={{
+    openai:    { paper: "GPT-4 System Card — Section on hallucination distributions", blog: "openai.com/research" },
+    anthropic: { paper: "Constitutional AI arXiv:2212.08073 (KL constraint)",         blog: "anthropic.com/research" },
+    deepmind:  { paper: "MacKay 1992 — Bayesian Interpolation",                       blog: "deepmind.google/discover/blog" },
+    meta:      { paper: "Llama 3 tech report — perplexity tables",                    blog: "ai.meta.com/blog" },
+    xai:       { paper: "Grok 3 tech report",                                         blog: "x.ai/blog" },
+    deepseek:  { paper: "DeepSeek-V3 arXiv:2412.19437 — expert routing loss",         blog: "deepseek.com/research" },
+    qwen:      { paper: "Qwen-VL tech report",                                        blog: "qwenlm.github.io" },
+  }}
+  caseStudy="The 'Bayesian test paradox' (see MicroRecall above) — 99% sensitivity + 99% specificity + 1% prevalence gives P(disease | positive) ≈ 50%, not 99%. This is why interpreting model confidence scores WITHOUT knowing the base rate leads senior engineers astray."
+  interviewAngle={{
+    openai:    "Derive perplexity from cross-entropy. Why is it more human-readable?",
+    anthropic: "Write the KL constraint in Constitutional AI. What happens as β → 0?",
+    deepmind:  "Bayesian NN vs MC dropout — pick one and defend it.",
+    meta:      "MLE vs MAP: when does the prior term matter?",
+    xai:       "Rejection sampling: given a hard-to-sample target, when does IS beat MCMC?",
+    deepseek:  "Load-balancing loss in MoE: what does the auxiliary loss actually prevent?",
+    qwen:      "Cross-modal alignment: derive the InfoNCE loss.",
+  }}
+/>
+
+<ReferenceProject path="projects/week-03-prob-lab" name="prob-lab" hours="6-8 hrs">
+Build Monte Carlo estimators, a Beta-Binomial Bayesian analysis, and a zero-safe entropy/KL/cross-entropy module. Notebook: infer a coin's bias from 100 flips, watch the posterior tighten.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** verify MC standard error scales like `1/√n` on `estimate_pi`. Add a closed-form `posterior_variance` for Beta.
+- **Build (2-3 hrs):** coin-bias inference notebook — 100 flips, Beta(2,2) prior, plot posterior evolution every 10 flips.
+- **Challenge (3+ hrs):** importance sampling on a heavy-tailed truncated Gaussian. Compare variance-vs-samples with naive MC.
+</Assignments>
+
+<InterviewDrill role="applied-ml" time="20 min">
+**"You train a 99% accuracy model on a 1%-prevalence disease. Interpret the model's positive predictions."**
+
+Rubric:
+- Do they invoke Bayes and compute the posterior? (baseline)
+- Do they name "base-rate neglect" as the cognitive trap? (senior signal)
+- Do they discuss calibration — the model may be 99% accurate but its 90%-confidence positives could actually be 50% correct? (staff signal)
+
+Worked solution: `projects/week-03-prob-lab/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Bishop — PRML, Chapters 1-2** — the standard reference.
+- **MacKay — Information Theory, Inference, and Learning Algorithms** — free PDF from the Cambridge site. Chapter 2 on entropy is a career-long companion.
+- **Jaynes — Probability Theory: The Logic of Science** — the Bayesian bible. Dense; skim first, deep-read after Week 8.
+- **StatQuest videos** — Josh Starmer on Bayes, MLE, entropy. Excellent for intuition.
+</FurtherReading>
+
+<KeyTakeaways>
+- Bayes' rule turns priors + data into posteriors. Never omit the base rate.
+- MLE = maximize log-likelihood = minimize cross-entropy (they differ by a constant).
+- Entropy H(p) = -Σ p log p. KL(p‖q) ≥ 0. Cross-entropy H(p,q) = H(p) + KL(p‖q).
+- Zero-safe entropy uses masking, not epsilon-nudging. Never add ε to a probability.
+- Perplexity = exp(cross-entropy). Every LLM tech report cites it; know what it means.
+</KeyTakeaways>
