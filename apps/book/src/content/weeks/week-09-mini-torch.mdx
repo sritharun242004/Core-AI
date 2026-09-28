@@ -1,0 +1,193 @@
+---
+week: 9
+part: 3
+slug: "week-09-mini-torch"
+title: "Neural nets from scratch — make backprop inspectable"
+hook: "What if every weight update came with a receipt showing exactly how each input contributed to the loss?"
+hours: 20
+computeTier: "green"
+difficulty: 4
+prereqSlugs: ["week-08-ml-eval-suite"]
+referenceProject: "projects/week-09-mini-torch"
+accentVar: "--accent-p3"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>What if every weight update came with a receipt showing exactly how each input contributed to the loss?</Hook>
+
+<Intuition>
+A neural network is a composition of small functions. A linear layer mixes the input features; a non-linearity bends that mixture; another linear layer turns the hidden representation into class scores. Training does not require a mysterious “AI signal.” It requires answering one local question repeatedly: if the final loss moved a little, which direction should each intermediate value move?
+
+<IntuitionCallout>Backpropagation is bookkeeping in reverse. The forward pass saves the graph of dependencies; the backward pass sends a sensitivity from the loss to each parent, multiplying local slopes along the way and adding contributions when a value is reused.</IntuitionCallout>
+
+Think of a package moving through a sorting centre. The forward pass records every conveyor junction. At the end, a damaged package produces a loss. Backprop walks the route backwards, leaving each junction a note: “one extra unit here would have changed the damage score by this much.” A tensor engine is useful because the notes are arrays, not one scalar per neuron.
+
+The four moves are: compose affine maps and ReLUs, reduce a batch of class losses, apply the chain rule in reverse topological order, and update parameters only after all examples have contributed their gradients.
+
+<MicroRecall questions={[{
+  id: 'week9-recall-chain-rule',
+  prompt: 'Why does backprop visit a computation graph in reverse order?',
+  choices: ['Each parent gradient needs the output sensitivity first', 'Reverse order makes matrix multiplication commutative', 'It removes the need for a loss function', 'It changes ReLU into sigmoid'],
+  correct: 0,
+  explain: 'A local derivative multiplies the sensitivity arriving from its child. A topological reverse traversal guarantees that sensitivity is ready before the parent rule runs.',
+}, {
+  id: 'week9-recall-reduction',
+  prompt: 'What does mean cross-entropy do to a batch gradient compared with sum cross-entropy?',
+  choices: ['It divides the example contributions by batch size', 'It removes the target labels', 'It makes every class equally likely', 'It turns logits into probabilities before backprop'],
+  correct: 0,
+  explain: 'Mean reduction divides the summed per-example loss, so the gradient scale is less sensitive to batch size than sum reduction.',
+}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. A neuron is an affine map plus a gate
+
+Let one batch be $X \in \mathbb{R}^{B\times d}$, a weight matrix be $W \in \mathbb{R}^{d\times h}$, and a bias be $b \in \mathbb{R}^{h}$. The hidden pre-activation and activation are:
+
+<MathBlock latex="Z = XW + b, \qquad H = \operatorname{ReLU}(Z) = \max(0,Z)" />
+
+The bias is broadcast across the $B$ rows. ReLU is deliberately simple: positive coordinates pass through with slope $1$; negative coordinates have slope $0$. A two-layer classifier adds a second affine map, $S = HW_2+b_2$, whose rows are logits rather than probabilities.
+
+For a concrete row $x=(2,-1)$, $w=(0.5,0.25)$, and $b=0.1$, the pre-activation is $2(0.5)-1(0.25)+0.1=0.85$, so ReLU passes $0.85$. If the pre-activation were $-0.2$, the output would be zero and its local derivative would be zero.
+
+### 2. Cross-entropy turns logits into a learning signal
+
+For class logits $s_1,\ldots,s_C$, softmax defines a normalized probability without requiring the model to produce probabilities directly:
+
+<MathBlock latex="p_c = \frac{e^{s_c}}{\sum_{k=1}^{C}e^{s_k}}, \qquad \ell(s,y)=-\log p_y" />
+
+The exponential can overflow for large logits, so the implementation subtracts $m=\max_k s_k$ before exponentiating. Since the same constant cancels between numerator and denominator, this preserves the probability while making the computation safer:
+
+<MathBlock latex="\log p_c = (s_c-m)-\log\!\left(\sum_{k=1}^{C}e^{s_k-m}\right)" />
+
+For a batch, `reduction="sum"` adds each row's loss. `reduction="mean"` divides that sum by $B$; `reduction="none"` keeps the vector so an investigator can inspect hard examples. The mini-torch tests assert all three relationships rather than treating reduction as a cosmetic option.
+
+### 3. The chain rule is a vector-Jacobian product
+
+Suppose $u=f(v)$ and the loss is $L(u)$. Backprop does not need to materialize the full Jacobian. It receives an upstream sensitivity $\bar u=\partial L/\partial u$ and computes:
+
+<MathBlock latex="\bar v = \frac{\partial L}{\partial v} = \frac{\partial u}{\partial v}^{\mathsf T}\bar u" />
+
+For $Z=XW+b$, if $\bar Z$ is known, the useful matrix forms are:
+
+<MathBlock latex="\frac{\partial L}{\partial X}=\bar ZW^{\mathsf T}, \qquad \frac{\partial L}{\partial W}=X^{\mathsf T}\bar Z, \qquad \frac{\partial L}{\partial b}=\sum_{i=1}^{B}\bar Z_i" />
+
+The last sum is the derivative of broadcasting. For ReLU, $\bar Z=\bar H\,\mathbf{1}[Z>0]$. At exactly zero, this teaching engine chooses the zero branch; a framework also has to define a subgradient convention.
+
+### 4. Why reverse mode fits neural-network training
+
+A classifier has many parameters but one scalar loss. Forward mode would carry one tangent per input direction. Reverse mode carries one scalar sensitivity from the loss and reuses it to reach every parameter. If the graph is $v_1\to v_2\to\cdots\to L$, the engine builds a topological order and evaluates local `_backward` closures from $L$ back toward the leaves. Shared parents add their incoming sensitivities:
+
+<MathBlock latex="\frac{\partial L}{\partial x}=\sum_{j\in\operatorname{children}(x)}\frac{\partial L}{\partial v_j}\frac{\partial v_j}{\partial x}" />
+
+This is the core idea behind larger autograd systems, even though production frameworks add compiled kernels, devices, mixed precision, checkpointing, and many more operators.
+
+<Gotcha>Correct values are not enough. A broadcast bias can have a shape-correct forward pass and a wrong backward pass, and a summed loss can make a larger batch look like it has a different learning rate. Inspect shapes and reduction semantics before tuning the optimizer.</Gotcha>
+
+## The code, from scratch
+
+```python
+import numpy as np
+from mini_torch import MLP, Tensor, cross_entropy, train_mlp
+
+# The engine records parents for @, +, ReLU, exp, log, sum, and mean.
+features = Tensor(np.array([[0.2, -0.4], [1.1, 0.7]]), requires_grad=True)
+weights = Tensor(np.array([[0.3, -0.8], [0.5, 0.6]]), requires_grad=True)
+logits = (features @ weights).relu()
+loss = cross_entropy(logits, np.array([0, 1]), reduction='mean')
+loss.backward()
+print(loss.item(), weights.grad)
+
+# The same graph powers a classifier training loop.
+model = MLP(28 * 28, hidden=(32,), out_features=10, seed=7)
+history = train_mlp(model, x_train, y_train, epochs=20, learning_rate=0.1,
+                     batch_size=50, seed=7)
+```
+
+The complete implementation is intentionally small and inspectable at
+`projects/week-09-mini-torch/src/mini_torch/`. It includes NumPy broadcasting
+backpropagation, stable cross-entropy, SGD, and a deterministic seven-segment
+MNIST-shaped fixture. The fixture is a local teaching aid, not a downloaded
+MNIST benchmark; no test or notebook needs a network connection.
+
+<CompanyLens
+  topic="backpropagation, autodiff, and neural-network training"
+  tldr={{
+    openai: "Public evidence supports studying autodiff as a foundational implementation skill; internal training graphs and production kernels are not public.",
+    anthropic: "Public research emphasizes reliable model behavior and interpretability; this lesson offers a transparent gradient graph, not a claim about private training code.",
+    deepmind: "Published neural-network work makes the forward objective and optimization protocol inspectable; details of current stacks remain project-specific.",
+    meta: "PyTorch is public infrastructure associated with Meta AI (FAIR), making tensor/autograd literacy a useful practice signal without implying one internal recipe.",
+    xai: "Publicly available information is sparse on xAI's exact autodiff stack; treat a tiny engine as a transferable fundamentals exercise, not an internal reconstruction.",
+    deepseek: "Published technical reports expose selected objectives and training methods, not every implementation detail; gradients should be reasoned about from the stated math.",
+    qwen: "Qwen technical reports and open releases make some model behavior reproducible, while private data and infrastructure choices remain unknown."
+  }}
+  whyDiffer="The shared mathematical substrate is public: compositions, gradients, reductions, and parameter updates. The engineering surface differs because teams choose kernels, accelerators, data pipelines, and reliability checks around that substrate. A tiny NumPy engine makes the contract visible without pretending to reveal any lab's production internals."
+  sources={{
+    openai: { paper: "Public model/system cards and technical reports — consult the specific model release", blog: "openai.com/research — public research index" },
+    anthropic: { paper: "Constitutional AI, Bai et al. 2022 — public training objective context", blog: "anthropic.com/research — public research index" },
+    deepmind: { paper: "Deep Learning, LeCun, Bengio & Hinton 2015 — public neural-network overview", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "PyTorch: An Imperative Style, High-Performance Deep Learning Library, Paszke et al. 2019", blog: "pytorch.org/blog — public framework engineering posts" },
+    xai: { paper: "Public Grok technical documentation — check the release-specific evidence", blog: "x.ai/blog — public announcements; exact training stack is not asserted" },
+    deepseek: { paper: "DeepSeek-V3 technical report, arXiv:2412.19437 — public architecture/training evidence", blog: "deepseek.com/research — public research index" },
+    qwen: { paper: "Qwen technical reports — public release-specific architecture evidence", blog: "qwenlm.github.io/blog — public release posts" }
+  }}
+  caseStudy="The practical case study is reproducibility at the boundary of evidence. The project tests a matmul-ReLU gradient against torch when torch is available, checks reductions, and trains an offline fixture. That can establish confidence in this small implementation. It cannot establish how any company trains a current model, what data it uses, or which private kernels it runs. State the boundary in an interview before making a comparison."
+  interviewAngle={{
+    openai: "Derive the gradient of a two-layer MLP and explain which details you would verify in a public source before making an implementation claim.",
+    anthropic: "How would you make a training objective and its failure modes inspectable without claiming interpretability of every learned feature?",
+    deepmind: "Given a published loss and architecture, derive the vector-Jacobian products and name the experimental details still missing.",
+    meta: "Explain why broadcasting and reduction semantics matter in a tensor library, then describe how public PyTorch abstractions help teams avoid shape bugs.",
+    xai: "When public evidence is limited, separate a transferable autodiff principle from an unsupported claim about a company's stack.",
+    deepseek: "Read a technical report's objective and derive one gradient; distinguish what follows mathematically from what the report does not disclose.",
+    qwen: "Design a reproducible small MLP experiment and list the metadata needed before comparing it with an open model report."
+  }}
+/>
+
+<ReferenceProject path="projects/week-09-mini-torch" name="mini-torch" hours="6-8 hrs">
+An inspectable NumPy tensor/autograd engine, stable cross-entropy with explicit reductions, an MLP and SGD loop, and an offline deterministic MNIST-shaped fixture. Tests include broadcasting, loss semantics, tiny-table overfitting, and optional numeric parity with torch.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** trace a `matmul → bias → ReLU → mean` graph by hand, then verify its shapes and bias gradient with `Tensor.backward()`.
+- **Build (2-3 hrs):** train a one-hidden-layer MLP on the built-in fixture, compare `mean` versus `sum` reduction, and report train/test curves with the synthetic-data caveat.
+- **Challenge (3+ hrs):** add momentum SGD, Adam, a stable softmax helper, or a finite-difference gradient checker. Write the failing test first and document the edge cases your operator does not cover.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“Your MLP reaches 99% training accuracy but only 60% validation accuracy. Explain the forward and backward computations you would inspect before changing the model.”**
+
+Rubric:
+- **Baseline signal:** checks the split, labels, shapes, logits, reduction, and whether gradients are reset between updates.
+- **Senior signal:** distinguishes optimization failure from representation/data mismatch, verifies broadcasting and gradient scale, and compares a finite-difference or torch reference on a small graph.
+- **Staff signal:** proposes reproducible seeds, held-out evaluation, experiment metadata, and a testable debugging sequence rather than random hyperparameter search.
+
+Worked solution: `projects/week-09-mini-torch/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Automatic Differentiation in Machine Learning: a Survey** — Baydin et al., 2018; a taxonomy of forward and reverse modes.
+- **micrograd** — Andrej Karpathy's small scalar engine; compare its graph model with this tensor extension.
+- **Deep Learning, chapters 6-8** — Goodfellow, Bengio, and Courville; feed-forward networks and optimization foundations.
+- **PyTorch Autograd documentation** — use it as public API and behavior evidence, not as a claim about any private lab implementation.
+</FurtherReading>
+
+<KeyTakeaways>
+- A neural network is a composition of affine maps and nonlinearities; backprop is the chain rule applied in reverse topological order.
+- Tensor shapes and broadcasting rules are part of the derivative, not merely forward-pass convenience.
+- Stable cross-entropy subtracts a constant max before exponentiation, and reduction controls gradient scale.
+- Reverse mode is efficient for one scalar loss and many parameters because one upstream sensitivity reaches every leaf.
+- A tiny engine and synthetic fixture can validate implementation plumbing offline; they do not reproduce real MNIST or disclose company internals.
+</KeyTakeaways>
