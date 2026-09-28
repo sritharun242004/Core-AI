@@ -1,0 +1,177 @@
+---
+week: 4
+part: 1
+slug: "week-04-python-info-theory"
+title: "Python for ML + Information Theory — the daily tools"
+hook: "Every ML engineer speaks NumPy. Every one of them also lives in either PyTorch or JAX. Here's a week where the same five problems get solved three ways, so you feel — in your hands — what makes each stack fast."
+hours: 20
+computeTier: "green"
+difficulty: 2
+prereqSlugs: ["week-03-probability"]
+referenceProject: "projects/week-04-numpy-vs-pytorch"
+accentVar: "--accent-p1"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Every serious ML engineer speaks NumPy fluently, thinks in tensors, and can port between NumPy and PyTorch in their sleep. Week 4 makes you that engineer, and along the way fills in the last piece of theory: **information theory**, which is what all the losses actually are.</Hook>
+
+<Intuition>
+NumPy gave us **vectorized array math on CPU**. PyTorch added **GPU support**, **autograd**, and **`nn.Module`**. JAX added **`jit`, `vmap`, `pmap`** and forced you to write in a functional style. The three are close cousins; the muscle memory transfers.
+
+<IntuitionCallout>
+Information theory quantifies *surprise*. Shannon's insight: if an event has probability p, its "information content" is `-log p` bits (or nats). Rare events carry more information; certain events carry none.
+</IntuitionCallout>
+
+The four moves you must own by end of week: **broadcasting** (why `A[:, None, :] - B[None, :, :]` works), **numerically-stable softmax and cross-entropy** (the max-shift trick), **CPU vs MPS vs CUDA memory model** (know when to `.to(device)`), and **information theory: information content, entropy, KL, cross-entropy** (the loss functions of ML).
+
+<MicroRecall
+  questions={[{
+    id: 'week4-recall-broadcasting',
+    prompt: 'For A of shape (M, D) and B of shape (N, D), what shape does `A[:, None, :] - B[None, :, :]` have?',
+    choices: ['(M, D)', '(N, D)', '(M, N, D)', '(D, M, N)'],
+    correct: 2,
+    explain: 'Broadcasting: (M, 1, D) minus (1, N, D) → (M, N, D). This computes the pairwise-difference tensor between every row of A and every row of B.',
+  }]}
+  client:visible
+/>
+</Intuition>
+
+## The math, derived
+
+### 1. Numerically-stable softmax
+
+The naive softmax `exp(xᵢ) / Σⱼ exp(xⱼ)` overflows for large `xᵢ`. Shift by the max:
+
+<MathBlock latex="\text{softmax}(x)_i = \frac{e^{x_i - \max_j x_j}}{\sum_k e^{x_k - \max_j x_j}}" />
+
+The max-shift subtracts the same constant top and bottom (algebraically identical), but keeps every `e^z` argument ≤ 0.
+
+### 2. Cross-entropy without softmax first
+
+Stacking softmax and log naively (`log(softmax(x))`) is wasteful and unstable. Combine them:
+
+<MathBlock latex="\log \text{softmax}(x)_i = x_i - \max_j x_j - \log \sum_k e^{x_k - \max_j x_j}" />
+
+Every framework's `cross_entropy` fuses this — never chain them yourself in production.
+
+### 3. Information content & entropy
+
+For an event of probability `p`, its information content is `-log p` (in bits if log base 2, nats if base e). Entropy is the expected information content:
+
+<MathBlock latex="H(p) = E_{x \sim p}[-\log p(x)] = -\sum_x p(x) \log p(x)" />
+
+Uniform distributions maximize entropy over a given support. Perfect-certainty distributions have H = 0.
+
+### 4. KL divergence & cross-entropy
+
+<MathBlock latex="\text{KL}(p \| q) = \sum_x p(x) \log \frac{p(x)}{q(x)} \ge 0" />
+
+Cross-entropy `H(p, q) = H(p) + KL(p‖q)`. In supervised learning `p` is the (one-hot) label and `q` is the model's output — so `H(p) = 0` and minimizing cross-entropy = minimizing KL to the label = maximizing log-likelihood.
+
+<Gotcha>
+KL is **not symmetric**: `KL(p‖q) ≠ KL(q‖p)`. RLHF's "reverse KL" penalty (KL(policy‖reference)) is a specific choice — it's mode-seeking, which is why it "collapses" to a narrow distribution if you're not careful.
+</Gotcha>
+
+## The code, from scratch
+
+Numerically-stable softmax in three flavors:
+
+```python
+# NumPy
+def softmax_numpy(x):
+    z = x - x.max()
+    e = np.exp(z)
+    return e / e.sum()
+
+# PyTorch
+def softmax_torch(x):
+    return torch.softmax(x, dim=-1)   # already stable
+
+# JAX (for comparison)
+# jax.nn.softmax(x)  # also stable
+```
+
+The framework versions are one-liners because the framework already knows to shift by the max. Writing it in NumPy makes the pattern permanent.
+
+Full parity-tested implementations across all 5 problems: `projects/week-04-numpy-vs-pytorch/`.
+
+<CompanyLens
+  topic="Python tools + information theory"
+  tldr={{
+    openai:    "Tokenizer entropy is a real production metric — every OpenAI model card reports it.",
+    anthropic: "Constitutional AI's KL-to-reference penalty is the RLHF constraint.",
+    deepmind:  "JAX + Flax — DeepMind's canonical stack. Read their JAX docs.",
+    meta:      "PyTorch is Meta's — they built it, they hire with it, they optimize for it.",
+    xai:       "Custom CUDA + JAX-style pmap for Colossus-scale training loops.",
+    deepseek:  "V3's routing loss uses cross-entropy over experts, plus a load-balancing regularizer.",
+    qwen:      "Qwen-VL's cross-modal alignment uses InfoNCE — a contrastive info-theoretic loss.",
+  }}
+  whyDiffer="Every lab uses Python + NumPy for prototyping. Meta / OpenAI / Anthropic use PyTorch as production. DeepMind uses JAX. xAI mixes JAX + custom CUDA. The information-theoretic losses (cross-entropy, KL, InfoNCE) are shared substrate."
+  sources={{
+    openai:    { paper: "OpenAI tokenizer analyses",                          blog: "openai.com/research" },
+    anthropic: { paper: "Constitutional AI arXiv:2212.08073 (KL term)",       blog: "anthropic.com/research" },
+    deepmind:  { paper: "JAX / Flax / Optax docs",                            blog: "deepmind.google/discover/blog" },
+    meta:      { paper: "PyTorch documentation — nn.functional",              blog: "pytorch.org/docs" },
+    xai:       { paper: "Grok 3 tech report",                                 blog: "x.ai/blog" },
+    deepseek:  { paper: "DeepSeek-V3 arXiv:2412.19437 — routing + aux loss",  blog: "deepseek.com/research" },
+    qwen:      { paper: "Qwen-VL InfoNCE description",                        blog: "qwenlm.github.io" },
+  }}
+  caseStudy="The 'log-sum-exp trick' fuses softmax + log for numerical stability. Every deep-learning framework since Theano ships it. Recognizing an over-flow-y softmax in an interview is a signature senior-level moment."
+  interviewAngle={{
+    openai:    "Implement numerically-stable softmax in 3 lines of NumPy. Explain the shift.",
+    anthropic: "Why is KL(policy‖ref), not KL(ref‖policy), used as the RLHF constraint?",
+    deepmind:  "JAX's `pmap` — what does 'axis_name' actually parallelize?",
+    meta:      "Port a NumPy k-means step to PyTorch. When does GPU actually win?",
+    xai:       "Broadcasting shapes: given (B, T, D) and (D, K), what's the einsum for a batched matmul?",
+    deepseek:  "MoE load-balancing loss — derive the auxiliary term.",
+    qwen:      "InfoNCE loss — connect it to mutual information estimation.",
+  }}
+/>
+
+<ReferenceProject path="projects/week-04-numpy-vs-pytorch" name="numpy-vs-pytorch" hours="6-8 hrs">
+Five problems (matmul, softmax, cross-entropy, k-means step, top-k) implemented three ways (pure Python, NumPy, PyTorch), with a parity test that keeps every pair numerically identical to atol=1e-6. Notebook micro-benchmarks the wall-clock difference.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** time all three matmul impls at 200×200; verify the numerical-stability guard in softmax on inputs like `[1000, 1001, 1002]`.
+- **Build (2-3 hrs):** full k-means (10 iterations) in all three flavors; plot cluster-center trajectories; measure `torch.compile` warmup vs steady-state.
+- **Challenge (3+ hrs):** cosine-similarity nearest-neighbor over a 1M-row corpus with corpus-chunking for memory safety. Optional int8 quantization for 2-4× speedup.
+</Assignments>
+
+<InterviewDrill role="applied-ml" time="20 min">
+**"Write a numerically-stable softmax + cross-entropy in NumPy. No framework helpers."**
+
+Rubric:
+- Do they subtract the max before `exp`? (baseline — miss it and they OOM at scale)
+- Do they use `log-sum-exp` for the log-softmax step? (senior signal — recognizes the trick)
+- Can they name two failure modes: (a) huge positive logits → `inf`, (b) huge negative logits → `nan` after `0/0`? (staff signal)
+
+Worked solution: `projects/week-04-numpy-vs-pytorch/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **NumPy user guide — Broadcasting section**. Read it in one sitting; the patterns transfer to PyTorch and JAX unchanged.
+- **PyTorch docs — Tensor.expand vs Tensor.repeat**. Non-obvious distinction that comes up in every interview.
+- **Cover & Thomas — Elements of Information Theory, Chapter 2**. The bible for entropy and KL.
+- **Karpathy — "Yes you should understand backprop"**. Blog post that motivates why `log_softmax` is a *fused* op, not `log ∘ softmax`.
+</FurtherReading>
+
+<KeyTakeaways>
+- Broadcasting: leading `1`s are inserted automatically. Design tensor shapes so pairwise ops read left-to-right.
+- Numerically-stable softmax subtracts the max before `exp` — never `exp` a raw logit at production scale.
+- `log_softmax` and `cross_entropy` are FUSED ops in every framework. Never chain `log` after `softmax` yourself.
+- Entropy is expected information content: H(p) = E[-log p(x)]. Cross-entropy H(p, q) = H(p) + KL(p ‖ q).
+- KL divergence is asymmetric. RLHF's KL-to-reference is a design choice, not a math fact.
+</KeyTakeaways>
