@@ -73,7 +73,7 @@ class LinearRegression:
         else:
             weights = np.zeros(design.shape[1], dtype=float)
             history = [self._loss(design, y, weights)]
-            for step in range(1, self.max_iter + 1):
+            for _step in range(1, self.max_iter + 1):
                 residual = design @ weights - y
                 gradient = design.T @ residual / design.shape[0] + penalty @ weights
                 candidate = weights - self.learning_rate * gradient
@@ -100,7 +100,10 @@ class LinearRegression:
 
     def _loss(self, design: Array, y: Array, weights: Array) -> float:
         residual = design @ weights - y
-        penalty = self.l2 * np.sum(weights[1:] ** 2) / 2 if self.fit_intercept else self.l2 * np.sum(weights**2) / 2
+        if self.fit_intercept:
+            penalty = self.l2 * np.sum(weights[1:] ** 2) / 2
+        else:
+            penalty = self.l2 * np.sum(weights**2) / 2
         return float(np.mean(residual**2) / 2 + penalty)
 
     def predict(self, x: Array) -> Array:

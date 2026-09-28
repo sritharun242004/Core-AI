@@ -45,10 +45,12 @@ def learning_curve_data(
     *,
     cv: int = 5,
     scoring: str = "accuracy",
-    train_sizes: ArrayLike = np.linspace(0.2, 1.0, 5),
+    train_sizes: ArrayLike | None = None,
 ) -> dict[str, Any]:
     """Compute mean and standard deviation for train/validation curves."""
 
+    if train_sizes is None:
+        train_sizes = np.linspace(0.2, 1.0, 5)
     sizes, train_scores, validation_scores = learning_curve(
         estimator,
         x,

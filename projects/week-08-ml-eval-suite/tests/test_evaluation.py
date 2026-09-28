@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-from sklearn.datasets import make_classification
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score
-
 from ml_eval_suite import (
     calibration_curve_data,
     detect_target_leakage,
@@ -15,6 +11,9 @@ from ml_eval_suite import (
     permutation_importance_data,
 )
 from ml_eval_suite.evaluation import cross_validation_metrics
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
 
 
 def dataset() -> tuple[np.ndarray, np.ndarray]:
