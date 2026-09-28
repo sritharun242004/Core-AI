@@ -1,0 +1,196 @@
+---
+week: 7
+part: 2
+slug: "week-07-unsupervised-viz"
+title: "Unsupervised learning — finding structure without labels"
+hook: "If nobody gives you a target column, can your model still discover a useful map of the data without hallucinating certainty?"
+hours: 20
+computeTier: "green"
+difficulty: 3
+prereqSlugs: ["week-06-xgboost-kaggle"]
+referenceProject: "projects/week-07-unsupervised-viz"
+accentVar: "--accent-p2"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Labels are expensive, incomplete, and sometimes wrong. This week builds a visual habit for the other situation: start with only a matrix of observations, then compare **PCA**, **k-means**, **Gaussian mixtures**, **t-SNE**, and optional **UMAP** without confusing a compelling picture for ground truth.</Hook>
+
+<Intuition>
+Imagine a box of 64-dimensional handwritten digits. You know which pixel measurements belong to each row, but you do not show the algorithm the digit names. Unsupervised learning asks three different questions of that same box:
+
+- **PCA:** what straight-line directions explain the most variation?
+- **k-means:** which rows are closest to the same prototype?
+- **GMM:** could each row have partial membership in several Gaussian-shaped groups?
+
+Then two visualization methods make a two-dimensional map: **t-SNE** preserves local-neighborhood probabilities, while **UMAP** builds a graph of nearby points and optimizes a related low-dimensional graph. They are maps, not oracles. A map can be useful for inspection while still being a poor space for distance-based prediction.
+
+<IntuitionCallout>Use one dataset for every panel, keep the random seed and preprocessing visible, and report the representation. “The clusters look nice” is a hypothesis to investigate—not a metric.</IntuitionCallout>
+
+The four moves to own are: center before PCA; distinguish a hard assignment from a soft responsibility; explain why k-means can fail when geometry is not spherical; and keep optional UMAP honest when its package is not installed.
+
+<MicroRecall
+  questions={[{
+    id: 'week7-recall-pca',
+    prompt: 'After centering X, what does PCA choose first?',
+    choices: ['The feature with the largest raw mean', 'The direction with the largest projected variance', 'A random class label', 'The nearest k-means center'],
+    correct: 1,
+    explain: 'PCA chooses the unit direction that maximizes projected variance. SVD of the centered matrix gives these directions as right singular vectors.',
+  }, {
+    id: 'week7-recall-gmm',
+    prompt: 'A GMM responsibility vector for one row is [0.8, 0.2]. What does it mean?',
+    choices: ['The row belongs to both clusters with equal certainty', 'The row is hard-labeled 80% of a row', 'The model assigns posterior membership probabilities to the two components', 'The row was dropped by EM'],
+    correct: 2,
+    explain: 'Responsibilities are soft posterior assignments. They sum to 1; argmax would give a hard display label, but the 0.2 still records uncertainty.',
+  }]}
+  client:visible
+/>
+</Intuition>
+
+## The math, derived
+
+### 1. k-means: prototypes and a hard partition
+
+Let the dataset be a matrix \(X \in \mathbb{R}^{n\times d}\): \(n\) rows, each with \(d\) features. We choose \(K\) centers \(c_1,\ldots,c_K\), where \(c_k\in\mathbb{R}^d\), and a label \(a_i\in\{1,\ldots,K\}\) for each row \(x_i\). Lloyd's algorithm alternates assigning rows to their closest center and replacing each center with its assigned mean.
+
+<MathBlock latex="a_i = \arg\min_{k \in \{1,\ldots,K\}} \lVert x_i-c_k\rVert_2^2, \qquad J = \sum_{i=1}^{n} \lVert x_i-c_{a_i}\rVert_2^2" />
+
+Here \(a_i\) is a **hard** assignment and \(J\) is the within-cluster sum of squared distances (inertia). For a row \(x=(1,1)\) and centers \(c_1=(0,0)\), \(c_2=(4,0)\), the squared distances are \(2\) and \(10\), so \(a=1\). If the assigned rows are \((0,0)\), \((2,0)\), and \((1,1)\), their replacement center is \(c=(1,1/3)\). That update is a mean, not a learned class prototype with semantic meaning.
+
+k-means++ makes the starting centers less arbitrary: after choosing one center, a new row is sampled with probability proportional to its squared distance from its nearest chosen center. It still optimizes a non-convex objective, so different starts can produce different local minima. The reference implementation uses a declared seed and multiple starts, then keeps the lowest-inertia run.
+
+<Gotcha>Empty clusters are not a mathematical impossibility. Duplicate rows or an unlucky assignment can give a center no members. Taking the mean of an empty array creates NaNs; this project's NumPy implementation repairs an empty center with the row currently farthest from its assigned center and tests that the result stays finite.</Gotcha>
+
+### 2. PCA: rotate a centered matrix
+
+For feature \(j\), define its sample mean as \(\mu_j = n^{-1}\sum_{i=1}^{n}X_{ij}\). The centered matrix \(X_c\) has entries \((X_c)_{ij}=X_{ij}-\mu_j\). Its singular value decomposition is:
+
+<MathBlock latex="X_c = U S V^{\mathsf T}" />
+
+The symbols are: \(U\) contains orthonormal row-space directions, \(S\) is diagonal with non-negative singular values \(s_1\ge s_2\ge\cdots\), and the rows of \(V^{\mathsf T}\) are orthonormal feature-space directions. The first \(r\) rows of \(V^{\mathsf T}\) are the PCA components. A centered row becomes \(z_i=x_{c,i}V_r^{\mathsf T}\), and an approximate original row is \(\hat{x}_i=z_iV_r+\mu\).
+
+The variance carried by component \(j\) and its ratio are:
+
+<MathBlock latex="\lambda_j = \frac{s_j^2}{n-1}, \qquad \rho_j = \frac{\lambda_j}{\sum_\ell \lambda_\ell}" />
+
+As a numeric example, if a centered dataset has singular values \(s=(10,4,1)\) and \(n=11\), its component variances are \((10, 1.6, 0.1)\), total variance is \(11.7\), and the first component explains \(10/11.7\approx0.855\), or 85.5%. Keeping two components preserves \((10+1.6)/11.7\approx0.991\) of the variance. It does **not** preserve every row exactly: the remaining direction is discarded.
+
+The project uses SVD directly rather than forming \(X_c^{\mathsf T}X_c\). Both describe the same principal directions, but explicitly squaring a poorly conditioned matrix can worsen numerical precision. `PCA.inverse_transform` makes the reconstruction trade-off testable.
+
+### 3. GMM: a probability distribution over groups
+
+A Gaussian mixture has \(K\) components. Component \(k\) has mixing weight \(\pi_k\), mean vector \(\mu_k\), and covariance matrix \(\Sigma_k\). The latent variable \(z_i\) says which component generated row \(x_i\). The model's density is:
+
+<MathBlock latex="p(x_i)=\sum_{k=1}^{K}\pi_k\,\mathcal{N}(x_i\mid\mu_k,\Sigma_k), \qquad \sum_{k=1}^{K}\pi_k=1" />
+
+Expectation-maximization (EM) alternates two steps. In the E-step, the **responsibility** \(\gamma_{ik}\) is the posterior probability that component \(k\) generated row \(i\):
+
+<MathBlock latex="\gamma_{ik}=p(z_i=k\mid x_i)=\frac{\pi_k\mathcal{N}(x_i\mid\mu_k,\Sigma_k)}{\sum_{\ell=1}^{K}\pi_\ell\mathcal{N}(x_i\mid\mu_\ell,\Sigma_\ell)}" />
+
+In the M-step, the parameters are re-estimated using these fractional memberships. If one row has \(\gamma_i=(0.8,0.2)\), the display can color it by component 1, but the model still records 20% posterior support for component 2. This is the key difference from k-means' one-hot \(a_i\). The workflow delegates stable EM numerics to `sklearn.mixture.GaussianMixture` and exposes the full `predict_proba` matrix.
+
+### 4. t-SNE and UMAP: neighborhood maps
+
+t-SNE converts pairwise similarities in the high-dimensional space into conditional probabilities \(p_{j\mid i}\), then chooses low-dimensional points whose similarities \(q_{j\mid i}\) match them. It minimizes a KL divergence between these probability distributions:
+
+<MathBlock latex="KL(P\|Q)=\sum_{i\ne j}p_{ij}\log\frac{p_{ij}}{q_{ij}}" />
+
+The symbol \(P\) is the high-dimensional neighborhood distribution and \(Q\) is the low-dimensional one. Perplexity controls the effective neighborhood size. A fixed `random_state` makes a run reproducible, but it does not turn the axes into globally meaningful coordinates.
+
+UMAP is an optional fifth panel in the reference project. It constructs a weighted neighbor graph in the input space and optimizes a low-dimensional graph; its neighborhood and minimum-distance settings are not the same as t-SNE's perplexity. Because `umap-learn` is not a default or dev dependency, the workflow catches its absence and renders a panel titled **UMAP (missing)**. Missing software is a result worth reporting, not a reason to fabricate a comparison.
+
+## The code, from scratch
+
+The essential NumPy PCA path is short enough to inspect:
+
+```python
+X_centered = X - X.mean(axis=0)
+U, singular_values, Vt = np.linalg.svd(X_centered, full_matrices=False)
+Z = X_centered @ Vt[:2].T
+X_hat = Z @ Vt[:2] + X.mean(axis=0)
+explained = singular_values**2 / (len(X) - 1)
+ratio = explained[:2] / explained.sum()
+```
+
+The project adds input validation, a reusable `inverse_transform`, k-means++ initialization, deterministic multi-start selection, explicit empty-cluster repair, and the sklearn GMM/t-SNE workflow around that core. Full implementation: `projects/week-07-unsupervised-viz/`.
+
+<CompanyLens
+  topic="representations, clustering, and unsupervised inspection"
+  tldr={{
+    openai: "Public OpenAI materials document embeddings and representation-learning products; they do not establish that every internal retrieval path uses PCA or k-means.",
+    anthropic: "Anthropic's public interpretability work studies sparse features and dictionary-learning-style representations; it is not evidence that every Claude pipeline uses a particular clustering method.",
+    deepmind: "Public DeepMind work includes learned representations and AlphaFold; no approved source here supports the claim that AlphaFold applies PCA to MSAs.",
+    meta: "Meta's public self-supervised representation papers provide useful context for embeddings, while private cold-start recommender choices remain unavailable.",
+    xai: "Public xAI materials do not establish a PCA, k-means, GMM, t-SNE, or UMAP production workflow; treat this as a method interview exercise.",
+    deepseek: "DeepSeek's public model reports discuss model systems and efficiency, not an evidence-backed claim that latent attention is dimensionality reduction.",
+    qwen: "Public Qwen reports establish open-weight model context, not a specific unsupervised visualization or clustering stack."
+  }}
+  whyDiffer="The comparison is not a ranking of laboratories by algorithm. OpenAI's public embedding work, Anthropic's interpretability research, Meta's self-supervised vision work, and the model reports from Google DeepMind, DeepSeek, and Qwen provide different kinds of representation-learning evidence. For xAI and for private production systems generally, the correct answer is often that the evidence is unavailable. The transferable engineering skill is to make preprocessing, seed, metric, and uncertainty explicit rather than infer a pipeline from a colorful plot."
+  sources={{
+    openai: { paper: "CLIP (Radford et al. 2021) — documented representation learning, not a claim about every retrieval stack", blog: "OpenAI embeddings documentation and openai.com/research" },
+    anthropic: { paper: "Scaling Monosemanticity (2023) — sparse feature analysis, not a universal production claim", blog: "transformer-circuits.pub" },
+    deepmind: { paper: "AlphaFold (Jumper et al. 2021) — learned structure prediction; no PCA-on-MSA claim", blog: "deepmind.google/discover/blog" },
+    meta: { paper: "DINOv2 (Oquab et al. 2023) — self-supervised visual representations", blog: "ai.meta.com/blog" },
+    xai: { paper: "No spec-approved xAI paper establishes this workflow; use van der Maaten & Hinton (2008) for the general t-SNE method", blog: "x.ai/blog — public context only" },
+    deepseek: { paper: "DeepSeek-V3 (Liu et al. 2024) — public model-systems report, not unsupervised-viz evidence", blog: "deepseek.com/research" },
+    qwen: { paper: "Qwen2 Technical Report (Yang et al. 2024) — open-weight model context, not a private clustering claim", blog: "qwenlm.github.io" }
+  }}
+  caseStudy="The concrete case study is a reproducible boundary between public evidence and speculation: CLIP documents a learned joint image-text representation, while this lab lets you inspect classical projections and clusters on digits or iris. Neither observation licenses the statement that a private retrieval service simply runs PCA or k-means. Record what the source actually says, then test your own data."
+  interviewAngle={{
+    openai: "Given an embedding retrieval corpus, explain when PCA could reduce storage or latency and what recall experiment would be required before shipping it.",
+    anthropic: "Distinguish sparse-feature discovery from k-means clustering, and say what an interpretability result does not prove about a deployed model.",
+    deepmind: "Explain why you would not infer a PCA-on-MSA preprocessing step from the existence of AlphaFold; separate a source-backed fact from a pedagogical analogy.",
+    meta: "Design an offline cold-start representation experiment with a no-label diagnostic, a retrieval metric, and a held-out product metric.",
+    xai: "When public architecture evidence is unavailable, state that plainly, then implement deterministic k-means and discuss initialization sensitivity.",
+    deepseek: "Read a model-systems paper and identify which representation claim is documented versus which dimensionality-reduction analogy is yours.",
+    qwen: "Compare a public model report with your own embedding visualization without turning open-weight availability into a claim about an undocumented data pipeline."
+  }}
+/>
+
+<ReferenceProject path="projects/week-07-unsupervised-viz" name="unsupervised-viz" hours="6-8 hrs">
+Implement PCA and k-means in NumPy, then compare those results with sklearn's GMM and t-SNE on the same built-in iris or digits data. UMAP is a fifth, optional method: install `umap-learn` to run it, or inspect the labelled missing panel. The tests cover PCA reconstruction and explained variance, deterministic k-means, finite empty-cluster recovery, the documented iris petal view, and comparison output.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** reproduce the numeric PCA example, run the deterministic iris petal-feature k-means test twice, and explain why `UMAP (missing)` is a valid output when the optional package is absent.
+- **Build (2-3 hrs):** extend the notebook to save iris and digits figures, print GMM responsibility margins, and compare runtime/visual changes for three digits sample sizes. Add tests for any metric-table helper before implementing it.
+- **Challenge (3+ hrs):** run a 20-seed stability report, implement a NumPy silhouette score, or compare full SVD PCA with a chunked/randomized alternative. Report which conclusions survive different seeds, scaling choices, and neighborhood settings.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“You receive a 10,000-row embedding matrix with no labels. How do you decide whether PCA, k-means, GMM, t-SNE, or UMAP is useful?”**
+
+Rubric:
+- **Baseline signal:** centers/scales deliberately, states the dimensionality and distance metric, and implements PCA or k-means without relying on a picture alone.
+- **Senior signal:** compares reconstruction/variance for PCA, inertia and stability for k-means, responsibilities for GMM, and treats t-SNE/UMAP as neighborhood visualizations with fixed seeds and logged settings.
+- **Staff signal:** defines a downstream or human-review objective, checks drift and representation leakage, reports sensitivity to seeds and preprocessing, and says what cannot be concluded without labels or a product metric.
+
+Worked solution: `projects/week-07-unsupervised-viz/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Pattern Recognition and Machine Learning — Bishop, Chapters 9–12.** Mixture models, EM, and latent-variable thinking.
+- **The Elements of Statistical Learning — Hastie, Tibshirani, Friedman, Chapters 14–15.** Unsupervised learning and high-dimensional geometry.
+- **Visualizing Data using t-SNE — van der Maaten & Hinton (2008).** Read the objective and the warnings about interpreting maps.
+- **UMAP: Uniform Manifold Approximation and Projection — McInnes, Healy & Melville (2018).** Compare its graph construction and optimization with t-SNE.
+- **CLIP — Radford et al. (2021).** A public representation-learning case study; use it to practice separating a source-backed fact from an analogy.
+</FurtherReading>
+
+<KeyTakeaways>
+- k-means minimizes within-cluster squared distance with hard assignments; initialization, scaling, and geometry matter.
+- PCA centers first, uses SVD directions, and quantifies the reconstruction trade-off with explained variance.
+- GMM responsibilities are probabilities, so a row can remain ambiguous instead of being forced into one cluster.
+- t-SNE and UMAP are neighborhood maps. Their visual separation is not a substitute for a downstream metric or stability study.
+- Reproducibility includes seeds, preprocessing, hyperparameters, dataset view, and optional-dependency status—and honest uncertainty about company-internal systems.
+</KeyTakeaways>
