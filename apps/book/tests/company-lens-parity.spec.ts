@@ -5,6 +5,10 @@ const WEEKS = [
   'week-02-calculus',
   'week-03-probability',
   'week-04-python-info-theory',
+  'week-05-linreg-from-scratch',
+  'week-06-xgboost-kaggle',
+  'week-07-unsupervised-viz',
+  'week-08-ml-eval-suite',
 ]
 const ORDER = ['OpenAI', 'Anthropic', 'Google DeepMind', 'Meta AI (FAIR)', 'xAI', 'DeepSeek', 'Alibaba Qwen']
 
