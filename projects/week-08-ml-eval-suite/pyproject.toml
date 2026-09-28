@@ -1,0 +1,17 @@
+[project]
+name = "ml-eval-suite"
+version = "0.1.0"
+description = "Week 8 — cross-validation, calibration, importance, and leakage checks"
+requires-python = ">=3.13"
+dependencies = ["numpy>=2.1", "scikit-learn>=1.5"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "hypothesis>=6.112", "ruff>=0.7", "pyright>=1.1", "matplotlib>=3.9"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-v --strict-markers"
+testpaths = ["tests"]

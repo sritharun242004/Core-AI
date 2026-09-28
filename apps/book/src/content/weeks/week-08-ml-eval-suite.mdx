@@ -1,0 +1,172 @@
+---
+week: 8
+part: 2
+slug: "week-08-ml-eval-suite"
+title: "Evaluation — know whether your model learned or leaked"
+hook: "A score is not evidence until you can explain the split, the metric, the uncertainty, and what would make the number disappear."
+hours: 20
+computeTier: "green"
+difficulty: 3
+prereqSlugs: ["week-07-unsupervised-viz"]
+referenceProject: "projects/week-08-ml-eval-suite"
+accentVar: "--accent-p2"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>A score is not evidence until you can explain the split, the metric, the uncertainty, and what would make the number disappear.</Hook>
+
+<Intuition>
+Evaluation is an experimental design problem. Your model is one participant; the split, metric, and data-collection timeline are the laboratory. If information crosses the boundary from future or test rows into training, the model can look brilliant without learning a reusable rule.
+
+<IntuitionCallout>
+The safest evaluation pipeline makes the honest path the easiest path: put preprocessing inside the fold, keep a final holdout untouched, and return the whole curve—not just the best number.
+</IntuitionCallout>
+
+The four moves are: choose a split that matches deployment, separate bias from variance with learning curves, check probability calibration, and search for target leakage before celebrating a score.
+
+<MicroRecall questions={[{
+  id: 'week8-recall-stratified',
+  prompt: 'Why stratify a classification split?',
+  choices: ['To duplicate rare rows', 'To preserve class proportions across folds', 'To remove the target', 'To make every fold chronological'],
+  correct: 1,
+  explain: 'Stratification keeps each fold representative of the label proportions; it is not a replacement for a time-aware split when time is the deployment boundary.'
+}, {
+  id: 'week8-recall-calibration',
+  prompt: 'A calibrated 0.8 probability should mean what?',
+  choices: ['The model is 80% accurate on every row', 'About 80% of comparable predictions are positive', 'The feature count is 80', 'The loss is exactly 0.8'],
+  correct: 1,
+  explain: 'Calibration is about frequencies among predictions with similar probabilities, not a guarantee for any individual row.'
+}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. Splits estimate different things
+
+Let `D` be the observed dataset. A training set estimates parameters, a validation set chooses among experiments, and a final test set estimates performance on an untouched sample. In `k`-fold cross-validation, each fold takes a turn as validation:
+
+<MathBlock latex="\\widehat{M}_{CV} = \\frac{1}{k}\\sum_{j=1}^{k} M(f_{-j}, D_j)" />
+
+Here `f_{-j}` is trained without fold `j`, and `D_j` is the held-out fold. The mean estimates performance; the spread communicates how sensitive the result is to the split.
+
+### 2. Bias and variance
+
+Expected test error can be decomposed at an input `x` into irreducible noise, squared bias, and variance:
+
+<MathBlock latex="\\mathbb{E}[(Y-\\hat f(x))^2] = \\sigma^2 + \\big(\\mathbb{E}[\\hat f(x)]-f(x)\\big)^2 + \\mathbb{E}\\big[(\\hat f(x)-\\mathbb{E}[\\hat f(x)])^2\\big]" />
+
+A learning curve makes the trade-off visible. High training and validation error suggests bias. Low training error with a large validation gap suggests variance. More data usually helps variance more than bias.
+
+### 3. Calibration is different from ranking
+
+A classifier can order positive examples above negative examples while its probability values are overconfident. For bins `B_m`, a reliability curve compares:
+
+<MathBlock latex="\\operatorname{confidence}(B_m)=\\frac{1}{|B_m|}\\sum_{i\\in B_m} p_i, \\qquad \\operatorname{accuracy}(B_m)=\\frac{1}{|B_m|}\\sum_{i\\in B_m} y_i" />
+
+A perfectly calibrated model lies near the diagonal. A strong ROC-AUC and poor calibration are not contradictory: ranking and probability quality answer different questions.
+
+### 4. Leakage is a causal shortcut
+
+Leakage is any information available to the training procedure that would not be available at prediction time. A quick target-correlation smoke test can flag a feature `x_j` whose correlation with `y` is suspiciously high:
+
+<MathBlock latex="r_j = \\frac{\\sum_i (x_{ij}-\\bar{x}_j)(y_i-\\bar{y})}{\\sqrt{\\sum_i(x_{ij}-\\bar{x}_j)^2}\\sqrt{\\sum_i(y_i-\\bar{y})^2}}" />
+
+Correlation is not a proof of leakage—real signals can be strong—but a copied target should stop the experiment immediately. Temporal leaks, duplicate rows, and preprocessing fitted before the split need separate checks.
+
+<Gotcha>Never let the test set become a tuning set. If you inspect the test score after every feature change, the test set has become another training signal and its estimate is no longer honest.</Gotcha>
+
+## The code, from scratch
+
+```python
+from sklearn.model_selection import cross_val_score
+from sklearn.pipeline import Pipeline
+
+# Preprocessing must be inside the pipeline so every fold learns it alone.
+report = cross_val_score(
+    Pipeline([('scale', scaler), ('model', classifier)]),
+    X, y, cv=5, scoring='roc_auc'
+)
+print(report.mean(), report.std())
+```
+
+The complete suite adds learning curves, out-of-fold calibration, permutation importance, and a conservative train/test target-leak detector in `projects/week-08-ml-eval-suite/`.
+
+<CompanyLens
+  topic="evaluation, leakage, and validation"
+  tldr={{
+    openai: "Treat a holdout as a product boundary: if you keep looking at it, it is no longer a holdout.",
+    anthropic: "An evaluation suite is an executable contract for what a model must and must not do.",
+    deepmind: "Cross-validation is useful only when the split respects the structure of the scientific question.",
+    meta: "Offline ranking metrics need an online experiment before a product decision is made.",
+    xai: "Benchmark numbers need an explicit measurement protocol, split, and hardware context.",
+    deepseek: "Contamination audits protect the interpretation of benchmark improvements.",
+    qwen: "Leak audits are part of making open benchmark comparisons meaningful."
+  }}
+  whyDiffer="The metric follows the decision. A medical triage model needs useful probabilities; a search ranker needs ordering; a research claim needs a split that respects the data-generating process. The shared discipline is to name what the score estimates and what it cannot estimate."
+  sources={{
+    openai: { paper: "GPT-4 technical report — evaluation limitations", blog: "openai.com/research" },
+    anthropic: { paper: "Responsible Scaling Policy v3.0", blog: "anthropic.com/research" },
+    deepmind: { paper: "Chinchilla, Hoffmann et al. 2022", blog: "deepmind.google/discover/blog" },
+    meta: { paper: "PyTorch documentation — reproducible evaluation tools", blog: "ai.meta.com/research" },
+    xai: { paper: "Grok technical reports", blog: "x.ai/blog" },
+    deepseek: { paper: "DeepSeek-V3 arXiv:2412.19437", blog: "deepseek.com/research" },
+    qwen: { paper: "Qwen technical reports", blog: "qwenlm.github.io" }
+  }}
+  caseStudy="A leakage detector is intentionally boring: it can catch the dramatic failure where a feature is copied from the label, while leaving the investigator to examine time, duplicates, and proxies. That asymmetry is healthy. Automated checks should stop obvious mistakes, not declare a dataset innocent."
+  interviewAngle={{
+    openai: "Design a holdout protocol for a model whose benchmark is updated every month.",
+    anthropic: "What would an evaluation suite catch that a single aggregate accuracy number hides?",
+    deepmind: "Choose between random, stratified, grouped, and time-series cross-validation and defend it.",
+    meta: "Explain why an offline ranking win still needs an online experiment.",
+    xai: "List the metadata required to make two benchmark numbers comparable.",
+    deepseek: "How would you detect training-set contamination in a benchmark?",
+    qwen: "Distinguish calibration, ranking, and accuracy with one concrete example."
+  }}
+/>
+
+<ReferenceProject path="projects/week-08-ml-eval-suite" name="ml-eval-suite" hours="6-8 hrs">
+A callable scikit-learn evaluation harness: five-fold metrics, learning curves, calibration data, permutation importance, and a target-leak smoke detector. Tests compare cross-validation output directly with scikit-learn and flag a hand-crafted leak.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** plot a learning curve and explain whether it indicates bias, variance, or a data shortage.
+- **Build (2-3 hrs):** wrap preprocessing and a classifier in a Pipeline, then produce a reproducible report with mean ± standard deviation and a calibration plot.
+- **Challenge (3+ hrs):** create target, temporal, preprocessing, and duplicate-row leaks; extend the detector and write a short incident report.
+</Assignments>
+
+<InterviewDrill role="applied-ml" time="20 min">
+**“Your validation score is 0.99 and production score is 0.61. Diagnose the evaluation.”**
+
+Rubric:
+- **Baseline signal:** asks for the split, metric, labels, and train/validation preprocessing path.
+- **Senior signal:** checks temporal leakage, duplicate entities, target-derived features, and calibration—not only random seeds.
+- **Staff signal:** proposes a monitoring and holdout policy that prevents the same failure from recurring.
+
+Worked solution: `projects/week-08-ml-eval-suite/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Hands-On Machine Learning, 3E, chapters 2 and 7** — practical validation and ensemble evaluation.
+- **Designing Machine Learning Systems** — why data and deployment boundaries shape evaluation.
+- **The Elements of Statistical Learning, chapter 7** — model assessment and selection in depth.
+</FurtherReading>
+
+<KeyTakeaways>
+- Cross-validation estimates a protocol, not an eternal truth; its split must match deployment.
+- Learning curves separate underfitting from overfitting and data scarcity.
+- Calibration asks whether probabilities mean what they say; ranking metrics ask a different question.
+- Leakage is information from prediction time’s future entering training; a high score can be evidence of a bug.
+- Every reported score needs a split, metric, uncertainty, and explicit failure modes.
+</KeyTakeaways>
