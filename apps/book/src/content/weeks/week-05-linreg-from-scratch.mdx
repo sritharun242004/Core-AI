@@ -57,21 +57,21 @@ The four moves this week are: derive mean-squared error, solve the normal equati
 
 For `n` examples with `d` features, let `X ∈ ℝⁿˣᵈ`, `y ∈ ℝⁿ`, and `θ ∈ ℝᵈ`. With an intercept, prepend a column of ones and call the result `\tilde{X}`. The prediction is:
 
-<MathBlock latex="\\hat{y} = \\tilde{X}\\theta" />
+<MathBlock latex="\hat{y} = \tilde{X}\theta" />
 
 The half-scaled mean-squared error keeps its derivative clean:
 
-<MathBlock latex="L(\\theta) = \\frac{1}{2n} \\lVert \\tilde{X}\\theta - y \\rVert_2^2, \\qquad \\nabla_\\theta L = \\frac{1}{n}\\tilde{X}^{\\top}(\\tilde{X}\\theta-y)" />
+<MathBlock latex="L(\theta) = \frac{1}{2n} \lVert \tilde{X}\theta - y \rVert_2^2, \qquad \nabla_\theta L = \frac{1}{n}\tilde{X}^{\top}(\tilde{X}\theta-y)" />
 
 ### 2. Closed form and gradient descent
 
 At a stationary point, the gradient is zero. Rearranging gives the normal equation:
 
-<MathBlock latex="\\tilde{X}^{\\top}\\tilde{X}\\theta = \\tilde{X}^{\\top}y, \\qquad \\theta = (\\tilde{X}^{\\top}\\tilde{X})^{-1}\\tilde{X}^{\\top}y" />
+<MathBlock latex="\tilde{X}^{\top}\tilde{X}\theta = \tilde{X}^{\top}y, \qquad \theta = (\tilde{X}^{\top}\tilde{X})^{-1}\tilde{X}^{\top}y" />
 
 Never form the inverse in production: solve the linear system. Gradient descent takes the same derivative and makes a smaller move:
 
-<MathBlock latex="\\theta_{t+1} = \\theta_t - \\eta \\nabla_\\theta L(\\theta_t)" />
+<MathBlock latex="\theta_{t+1} = \theta_t - \eta \nabla_\theta L(\theta_t)" />
 
 The closed form is a useful oracle for checking the iterative implementation. It becomes less attractive when the feature matrix is too wide or ill-conditioned.
 
@@ -79,21 +79,21 @@ The closed form is a useful oracle for checking the iterative implementation. It
 
 A logistic model turns a score `z = xᵀθ` into the probability of class one:
 
-<MathBlock latex="\\sigma(z) = \\frac{1}{1+e^{-z}}, \\qquad p(y=1\\mid x)=\\sigma(x^{\\top}\\theta)" />
+<MathBlock latex="\sigma(z) = \frac{1}{1+e^{-z}}, \qquad p(y=1\mid x)=\sigma(x^{\top}\theta)" />
 
 For a binary target `y ∈ {0,1}`, negative log-likelihood is:
 
-<MathBlock latex="L(\\theta) = -\\frac{1}{n}\\sum_{i=1}^{n} [y_i\\log p_i + (1-y_i)\\log(1-p_i)]" />
+<MathBlock latex="L(\theta) = -\frac{1}{n}\sum_{i=1}^{n} [y_i\log p_i + (1-y_i)\log(1-p_i)]" />
 
 The stable equivalent is `log(1 + exp(z)) − yz`, evaluated with a log-sum-exp routine. Its gradient is:
 
-<MathBlock latex="\\nabla_\\theta L = \\frac{1}{n}X^{\\top}(\\sigma(X\\theta)-y)" />
+<MathBlock latex="\nabla_\theta L = \frac{1}{n}X^{\top}(\sigma(X\theta)-y)" />
 
 ### 4. Regularization changes the question
 
 L2 asks for small weights; L1 asks for sparse weights. With a penalty coefficient `λ`:
 
-<MathBlock latex="L_{L2}=L+\\frac{\\lambda}{2}\\lVert\\theta\\rVert_2^2, \\qquad L_{L1}=L+\\lambda\\lVert\\theta\\rVert_1" />
+<MathBlock latex="L_{L2}=L+\frac{\lambda}{2}\lVert\theta\rVert_2^2, \qquad L_{L1}=L+\lambda\lVert\theta\rVert_1" />
 
 L2 shrinks continuously. L1 has a kink at zero, so elastic-net implementations usually use a proximal step rather than pretending the derivative exists there.
 
