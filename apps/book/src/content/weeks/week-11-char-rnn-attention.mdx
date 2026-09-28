@@ -1,0 +1,232 @@
+---
+week: 11
+part: 3
+slug: "week-11-char-rnn-attention"
+title: "RNNs, LSTMs, and attention — give characters a memory"
+hook: "How can a model read one character at a time without forcing every useful detail through one final hidden state?"
+hours: 20
+computeTier: "green"
+difficulty: 5
+prereqSlugs: ["week-10-cifar-resnet"]
+referenceProject: "projects/week-11-char-rnn-attention"
+accentVar: "--accent-p3"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>How can a model read one character at a time without forcing every useful detail through one final hidden state?</Hook>
+
+<Intuition>
+A recurrent neural network reuses the same transition at every position in a sequence. For a character model, an embedding turns the current character into a vector, a recurrent cell combines it with a state carried from the past, and a vocabulary head scores the next character. This gives the model a variable-length computation without changing its parameter count when the text gets longer.
+
+<IntuitionCallout>An LSTM gives the state a controlled memory lane; a GRU combines the same idea into fewer gates. Additive attention then lets each decoder step retrieve a weighted summary of *all* encoder states instead of trusting one compressed final state.</IntuitionCallout>
+
+This week has five moves: unroll a vanilla RNN, make long-term memory explicit with LSTM and GRU gates, separate reading from writing with a character-level seq2seq model, derive additive attention as a learned soft lookup, and train the whole contract with a deterministic in-memory fixture. The reference project uses PyTorch on CPU and never downloads Shakespeare or any other corpus.
+
+<MicroRecall questions={[{
+  id: 'week11-recall-state',
+  prompt: 'What does a recurrent hidden state represent at time t?',
+  choices: ['A new set of parameters created for position t', 'A learned summary of the prefix read so far, updated by the shared transition', 'The one-hot vector for the final vocabulary symbol', 'A probability distribution that must sum to one over batch items'],
+  correct: 1,
+  explain: 'The same transition parameters are reused at every time step, while h_t changes with the current input and the information carried from earlier positions.'
+}, {
+  id: 'week11-recall-attention',
+  prompt: 'Along which axis must additive-attention weights be normalized?',
+  choices: ['Across the batch', 'Across the hidden features', 'Across source positions for each decoder query', 'Across vocabulary logits'],
+  correct: 2,
+  explain: 'For each decoder step t, alpha[t, s] is a distribution over encoder/source positions s, so softmax and the sum-to-one check use source time.'
+}]} client:visible />
+</Intuition>
+
+## The anatomy of a character-level recurrent model
+
+Let a batch contain `B` sequences of length `T`, vocabulary size `V`, embedding width `E`, and hidden width `H`. Integer character ids have shape `(B, T)`. An embedding lookup produces `X` with shape `(B, T, E)`. The recurrent stack emits one state per input position, `(B, T, H)`, and a vocabulary head maps each state to logits `(B, T, V)`.
+
+A next-character fixture uses two aligned windows:
+
+```text
+source x = text[t : t + T]
+target y = text[t + 1 : t + T + 1]
+```
+
+The target is not the source copied unchanged. It is the source shifted by one character, which makes every row a supervised prediction problem. The reference `TinyCharDataset` keeps these windows in memory, sorts its character vocabulary deterministically, and returns `torch.long` ids.
+
+### 1. The vanilla RNN recurrence
+
+For one step, let `x_t` be the embedding and `h_{t-1}` the previous hidden state:
+
+<MathBlock latex="h_t = \tanh(W_x x_t + W_h h_{t-1} + b_h),\qquad z_t = W_o h_t + b_o,\qquad p(y_t\mid x_{\leq t}) = \operatorname{softmax}(z_t)" />
+
+The same `W_x`, `W_h`, and `W_o` are reused for every `t`. Unrolling gives a causal model: position `t` can depend on the prefix through `h_t`, but not on future characters. The hidden state is useful precisely because it carries information forward; it is also a bottleneck because all earlier evidence has to survive repeated nonlinear transitions.
+
+Backpropagation through time applies the chain rule through every transition. If the recurrent Jacobian has a norm below one, gradients can vanish across long spans; if it is above one, they can explode. This is an optimization property of the unrolled computation, not a statement that one RNN architecture is universally bad. Initializing the experiment, checking the target shift, clipping a gradient, and inspecting loss are more useful first steps than immediately increasing model size.
+
+### 2. LSTM anatomy: a controlled cell state
+
+An LSTM keeps a cell state `c_t` in addition to its exposed hidden state `h_t`. With `u_t = [h_{t-1}; x_t]`, its gates are:
+
+<MathBlock latex="i_t = \sigma(W_i u_t+b_i),\quad f_t=\sigma(W_f u_t+b_f),\quad o_t=\sigma(W_o u_t+b_o),\quad g_t=\tanh(W_g u_t+b_g)" />
+
+The candidate `g_t` is written through the input gate, old memory is retained through the forget gate, and the output gate controls what the rest of the network sees:
+
+<MathBlock latex="c_t = f_t \odot c_{t-1} + i_t \odot g_t,\qquad h_t=o_t\odot\tanh(c_t)" />
+
+The addition in `c_t` creates a relatively direct derivative path. The derivative with respect to the old cell state contains the forget gate, `∂c_t/∂c_{t-1} = f_t`, rather than only a fresh matrix multiplication and saturating nonlinearity. Gates can still forget information, and exploding gradients are still possible, so the cell state is an optimization aid rather than a guarantee.
+
+### 3. GRU anatomy: fewer pieces, same recurrent contract
+
+A GRU does not keep a separate cell state. Its update gate `z_t` controls how much old state survives, while its reset gate `r_t` controls how much old state enters a candidate:
+
+<MathBlock latex="z_t=\sigma(W_zx_t+U_zh_{t-1}+b_z),\qquad r_t=\sigma(W_rx_t+U_rh_{t-1}+b_r)" />
+
+One common convention writes the candidate and interpolation as:
+
+<MathBlock latex="\tilde h_t=\tanh(W_hx_t+U_h(r_t\odot h_{t-1})+b_h),\qquad h_t=(1-z_t)\odot h_{t-1}+z_t\odot\tilde h_t" />
+
+Implementations differ in the exact placement of the reset gate, so equations should be matched to the library's documented convention. The important interface is the same: a sequence of embeddings becomes one hidden vector per position. The project exposes both `CharLSTMAttention` and `CharGRUAttention`; either can feed the same additive-attention module and vocabulary head.
+
+<Gotcha>A GRU is not an LSTM with a cell-state tensor renamed. Compare parameter counts, gate conventions, and the returned state when writing a baseline. Test the public shape contract instead of assuming two recurrent modules expose identical internals.</Gotcha>
+
+## Seq2seq: separate the encoder from the decoder
+
+A sequence-to-sequence model makes the source/target distinction explicit. An encoder reads `x_1, ..., x_S` and emits states `h_1, ..., h_S`. A decoder predicts `y_1, ..., y_T` conditional on the encoded source and its own previous outputs:
+
+<MathBlock latex="p(y_{1:T}\mid x_{1:S}) = \prod_{t=1}^{T}p(y_t\mid y_{<t}, x_{1:S})" />
+
+The reference character task uses overlapping next-character windows, so `S` and `T` are often equal, but the model keeps the more general `(B, S)` source and `(B, T)` target contract. A tiny deterministic first source token acts as a BOS input. A production tokenizer would add explicit BOS and EOS symbols and decide how to handle padding.
+
+During teacher-forced training, the decoder input at step `t` is the gold `y_{t-1}`. With a one-token BOS, the decoder input sequence is `[BOS, y_1, ..., y_{T-1}]`, and the logits are compared with `[y_1, ..., y_T]`. Teacher forcing gives a clean parallel training pass, but it means training inputs are more reliable than the model's own predictions.
+
+During free-running generation, the model samples or chooses `\hat y_t` and feeds it back as the next input. A falling teacher-forced loss is therefore not proof of good long-horizon text. The project exposes `teacher_forcing_ratio=0` for free-running decoder steps and intermediate ratios for a controlled mixed experiment; generation records its prompt, seed, temperature, and checkpoint rather than cherry-picking a sample.
+
+## Additive attention: derive the soft lookup
+
+A decoder that sees only the encoder's final state asks that one vector to remember every source detail. Attention keeps the whole sequence of encoder states available. For decoder query `q_t` and encoder state `h_s`, project both into an attention space of width `A`, add them, apply a nonlinearity, and score:
+
+<MathBlock latex="e_{t,s}=v_a^{\mathsf T}\tanh(W_q q_t+W_h h_s+b_a)" />
+
+For every fixed decoder step `t`, normalize scores over source time `s`:
+
+<MathBlock latex="\alpha_{t,s}=\frac{\exp(e_{t,s})}{\sum_{j=1}^{S}\exp(e_{t,j})},\qquad \sum_{s=1}^{S}\alpha_{t,s}=1" />
+
+The context is the weighted sum of encoder values:
+
+<MathBlock latex="c_t=\sum_{s=1}^{S}\alpha_{t,s}h_s,\qquad \text{logits}_t=W_o[q_t;c_t]+b_o" />
+
+With a batch, decoder queries are `(B, T, H)`, encoder values are `(B, S, H)`, energies and weights are `(B, T, S)`, and contexts are `(B, T, H)`. The score is *additive* because projected query and value vectors are added before `tanh`; it is not scaled dot-product attention. A source mask sets padded energies to a large negative value before softmax, so invalid positions receive zero probability while valid positions still sum to one.
+
+The training objective is token cross-entropy. For target id `y_t` and vocabulary logits `z_t`:
+
+<MathBlock latex="\ell_t=-\log\operatorname{softmax}(z_t)_{y_t},\qquad L_{mean}=\frac{1}{BT}\sum_{b=1}^{B}\sum_{t=1}^{T}\ell_{b,t}" />
+
+The project keeps `none`, `sum`, and `mean` reductions visible. That makes it possible to inspect difficult positions, prove the reduction identity, and compare loss values without confusing a larger token count with a better model. Backpropagation sends gradients through the vocabulary head, context sum, softmax weights, attention score network, recurrent states, and embeddings.
+
+## The code, offline and inspectable
+
+```python
+import torch
+from torch.utils.data import DataLoader
+
+from char_rnn_attention import CharLSTMAttention, make_tiny_dataset
+from char_rnn_attention.train import fit
+
+torch.manual_seed(7)
+dataset = make_tiny_dataset(seq_len=24, repeats=2)
+model = CharLSTMAttention(
+    dataset.vocab.size,
+    embedding_size=24,
+    hidden_size=32,
+    attention_size=40,
+)
+history = fit(
+    model,
+    DataLoader(dataset, batch_size=32, shuffle=False),
+    torch.optim.Adam(model.parameters(), lr=3e-3),
+    epochs=3,
+)
+print(history['loss'])
+print(model.generate(dataset.vocab, 're', max_new_tokens=40, temperature=0.0))
+```
+
+The project at `projects/week-11-char-rnn-attention/` contains the deterministic fixture, sorted vocabulary, LSTM and GRU encoder-decoder variants, additive attention with a padding mask, token-wise cross-entropy, gradient clipping, tests, assignments, and an executable percent-format notebook. Tests use only local tensors and the in-memory fixture. No test, notebook, or default API path downloads data.
+
+<CompanyLens
+  topic="character RNNs, LSTMs, seq2seq, and additive attention"
+  tldr={{
+    openai: "Public OpenAI research and product materials support studying sequence modeling and attention as transferable foundations; the exact current recurrent or multimodal production stack is not public.",
+    anthropic: "Public Anthropic materials emphasize model behavior, safety, and evaluation; this LSTM/attention lab is a fundamentals exercise, not evidence of an internal architecture.",
+    deepmind: "Published Google DeepMind work makes selected sequence objectives and architectures inspectable, while current data, hardware, and production choices remain release-specific.",
+    meta: "Meta/FAIR publications and PyTorch make recurrent and attention mechanics easy to reproduce; framework visibility does not reveal every Meta production pipeline.",
+    xai: "Public evidence about xAI's exact sequence-model implementation is limited; use the equations and experiment protocol as transferable skills, not an attribution of private practice.",
+    deepseek: "Public DeepSeek technical reports expose selected language-model architectures and training methods; they do not establish that this toy character model matches an internal stack.",
+    qwen: "Public Qwen releases and reports provide release-specific language and multimodal evidence, while private data mixtures, kernels, and deployment details remain unknown."
+  }}
+  whyDiffer="All seven labs can draw on the same public mathematics—recurrent state updates, gated memory, conditional likelihood, and normalized attention—while making different choices about data, scale, latency, parallelism, and reliability. A tiny CPU fixture can establish a shape, gradient, and reproducibility contract. It cannot identify a company's current model family or imply that a public paper describes an entire private system. Treat every company statement below as bounded by its cited public evidence and release date."
+  sources={{
+    openai: { paper: "Attention Is All You Need, Vaswani et al. 2017 — public attention reference; not an OpenAI system description", blog: "openai.com/research — public research index; verify release-specific evidence" },
+    anthropic: { paper: "Public Anthropic model and safety reports — consult the named release before attributing an architecture", blog: "anthropic.com/research — public research index" },
+    deepmind: { paper: "Neural Machine Translation by Jointly Learning to Align and Translate, Bahdanau et al. 2014 — public additive-attention evidence", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "PyTorch: An Imperative Style, High-Performance Deep Learning Library, Paszke et al. 2019 — public framework evidence", blog: "ai.meta.com/research — public FAIR research index" },
+    xai: { paper: "Public Grok technical documentation — inspect the specific release; exact recurrent stack is not asserted", blog: "x.ai/blog — public announcements, not evidence of undocumented internals" },
+    deepseek: { paper: "DeepSeek-V3 technical report, arXiv:2412.19437 — public release-specific architecture/training evidence", blog: "deepseek.com/research — public research index" },
+    qwen: { paper: "Qwen technical reports — public release-specific language-model evidence; do not generalize across versions", blog: "qwenlm.github.io/blog — public release posts" }
+  }}
+  caseStudy="The concrete case study is an evidence boundary. This project can establish that a seeded in-memory character fixture produces reproducible windows, that LSTM and GRU paths preserve documented tensor shapes, that additive weights are non-negative and sum to one over source positions, that gradients are finite, and that token loss can fall in a short CPU run. It cannot establish Shakespeare quality, long-context memory, translation quality, or any company's private data, architecture, infrastructure, or current benchmark. Report the fixture, split, seed, decoding mode, and public source before making a comparison."
+  interviewAngle={{
+    openai: "Derive the attention shape contract and explain which public release document would be needed before claiming that a current OpenAI model uses a particular recurrent or attention mechanism.",
+    anthropic: "Explain teacher forcing versus free-running error and design a failure analysis that does not turn a transparent toy model into an unsupported claim about an internal safety or training stack.",
+    deepmind: "Derive Bahdanau additive attention, explain why the softmax axis is source time, and identify which data and hardware details a public paper may leave unspecified.",
+    meta: "Compare LSTM and GRU parameter/state contracts, then describe how PyTorch abstractions help test gradients without hiding the recurrence equations.",
+    xai: "Given sparse public evidence, separate a general claim about gated recurrence from an attribution claim about xAI's current language-model implementation.",
+    deepseek: "Read a public technical report, derive one recurrent or attention tensor shape, and list what the report does not disclose about data, kernels, or serving.",
+    qwen: "Design a reproducible character or language-model ablation and document checkpoint provenance, tokenization, teacher-forcing policy, seed, and the limits of comparing it with an open Qwen release."
+  }}
+/>
+
+<ReferenceProject path="projects/week-11-char-rnn-attention" name="char-rnn-attention" hours="6-8 hrs">
+An offline PyTorch character-level seq2seq lab with deterministic in-memory text, LSTM and GRU cells, Bahdanau-style additive attention, padding-aware weights, token-loss reductions, finite-gradient checks, and a CPU training smoke test. Optional local text experiments are opt-in and never downloaded by the reference suite.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30-45 min):** write a shape table for embeddings, hidden/cell states, encoder outputs, decoder queries, attention weights, contexts, and vocabulary logits. Expand the LSTM gates and verify one additive-attention row sums to one.
+- **Build (2-3 hrs):** run the notebook, record seed/device/sequence length/hidden width/optimizer, compare teacher-forced loss with free-running generation, and add an explicit BOS/EOS branch without changing the offline reference fixture.
+- **Challenge (3+ hrs):** add a padding-aware collator or compare LSTM and GRU at matched width. Pre-register the prompt, split, update count, decoding temperature, and loss metric; explain whether a change comes from memory, optimization, or data rather than claiming a production conclusion.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“Your character model's teacher-forced loss falls, but free-running output repeats one character. What do you inspect before making the model larger?”**
+
+Rubric:
+- **Baseline signal:** checks source/target shift, BOS convention, vocabulary ids, logits and target shapes, attention softmax axis, train/eval mode, and whether gradients reach embeddings and recurrent weights.
+- **Senior signal:** compares teacher-forced and autoregressive decoding at a fixed seed, checks attention masks and valid-position normalization, separates optimization from exposure bias, and verifies a tiny batch by hand.
+- **Staff signal:** proposes a pre-registered ablation with seed, fixture/provenance, split, update budget, clipping, checkpoint, decoding policy, and a public-evidence boundary instead of treating one sample as a benchmark.
+
+Worked solution: `projects/week-11-char-rnn-attention/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Learning Long-Term Dependencies with Gradient Descent is Difficult** — Bengio, Simard, and Frasconi, 1994; why long recurrent products can be hard to optimize.
+- **Long Short-Term Memory** — Hochreiter and Schmidhuber, 1997; the gated cell-state update.
+- **Learning Phrase Representations using RNN Encoder–Decoder for Statistical Machine Translation** — Cho et al., 2014; GRU-style gated recurrence.
+- **Neural Machine Translation by Jointly Learning to Align and Translate** — Bahdanau, Cho, and Bengio, 2014; additive alignment and context vectors.
+- **Sequence to Sequence Learning with Neural Networks** — Sutskever, Vinyals, and Le, 2014; encoder-decoder training and generation.
+</FurtherReading>
+
+<KeyTakeaways>
+- A vanilla RNN reuses one transition across time; its hidden state is a causal summary but can create long gradient paths.
+- LSTM gates regulate a separate additive cell state, while GRU update/reset gates provide a smaller recurrent state contract.
+- Seq2seq factorizes conditional sequence likelihood; teacher forcing trains with gold history, while generation feeds back predictions.
+- Additive attention scores every decoder-query/source-state pair, normalizes over source time, and returns a weighted context.
+- Deterministic CPU/offline tests can validate shapes, masks, finite gradients, reductions, and loss movement; they cannot establish Shakespeare quality or any company's private architecture.
+</KeyTakeaways>
