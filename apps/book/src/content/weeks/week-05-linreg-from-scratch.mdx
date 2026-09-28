@@ -1,0 +1,196 @@
+---
+week: 5
+part: 2
+slug: "week-05-linreg-from-scratch"
+title: "Linear and logistic regression — the baselines that teach you everything"
+hook: "Before a model has millions of parameters, it has a line, a loss, and a gradient. Build those three pieces and you can explain the training loop instead of merely calling it."
+hours: 20
+computeTier: "green"
+difficulty: 3
+prereqSlugs: ["week-04-python-info-theory"]
+referenceProject: "projects/week-05-linreg-from-scratch"
+accentVar: "--accent-p2"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Before a model has millions of parameters, it has a line, a loss, and a gradient. Build those three pieces and you can explain the training loop instead of merely calling it.</Hook>
+
+<Intuition>
+A linear model is a ruler laid across data: each feature pushes the prediction by a learned amount, and the intercept moves the ruler up or down. Regression asks the ruler to land on a number. Classification asks a score to become a probability through the sigmoid curve.
+
+<IntuitionCallout>
+The important distinction is not “simple model versus complex model.” It is **score versus decision**: a linear score can be optimized smoothly, then a threshold or probability rule turns it into an action.
+</IntuitionCallout>
+
+The four moves this week are: derive mean-squared error, solve the normal equation, descend a logistic loss with a stable sigmoid, and understand how L1/L2 regularization changes the geometry of the solution.
+
+<MicroRecall questions={[{
+  id: 'week5-recall-normal-equation',
+  prompt: 'What does the normal equation solve directly?',
+  choices: ['The feature scaler', 'The stationary point of squared error', 'The classification threshold', 'The number of clusters'],
+  correct: 1,
+  explain: 'For a linear model, setting the gradient of squared error to zero gives XᵀXθ = Xᵀy; solving it gives the least-squares stationary point.'
+}, {
+  id: 'week5-recall-logistic',
+  prompt: 'Why is logaddexp useful for logistic loss?',
+  choices: ['It sorts features', 'It avoids forming unstable exp and log pairs', 'It removes the intercept', 'It makes labels continuous'],
+  correct: 1,
+  explain: 'logaddexp(0, z) evaluates log(1 + exp(z)) stably, even when z is very large or very negative.'
+}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. A line becomes a matrix
+
+For `n` examples with `d` features, let `X ∈ ℝⁿˣᵈ`, `y ∈ ℝⁿ`, and `θ ∈ ℝᵈ`. With an intercept, prepend a column of ones and call the result `\tilde{X}`. The prediction is:
+
+<MathBlock latex="\\hat{y} = \\tilde{X}\\theta" />
+
+The half-scaled mean-squared error keeps its derivative clean:
+
+<MathBlock latex="L(\\theta) = \\frac{1}{2n} \\lVert \\tilde{X}\\theta - y \\rVert_2^2, \\qquad \\nabla_\\theta L = \\frac{1}{n}\\tilde{X}^{\\top}(\\tilde{X}\\theta-y)" />
+
+### 2. Closed form and gradient descent
+
+At a stationary point, the gradient is zero. Rearranging gives the normal equation:
+
+<MathBlock latex="\\tilde{X}^{\\top}\\tilde{X}\\theta = \\tilde{X}^{\\top}y, \\qquad \\theta = (\\tilde{X}^{\\top}\\tilde{X})^{-1}\\tilde{X}^{\\top}y" />
+
+Never form the inverse in production: solve the linear system. Gradient descent takes the same derivative and makes a smaller move:
+
+<MathBlock latex="\\theta_{t+1} = \\theta_t - \\eta \\nabla_\\theta L(\\theta_t)" />
+
+The closed form is a useful oracle for checking the iterative implementation. It becomes less attractive when the feature matrix is too wide or ill-conditioned.
+
+### 3. Logistic loss is a probability model
+
+A logistic model turns a score `z = xᵀθ` into the probability of class one:
+
+<MathBlock latex="\\sigma(z) = \\frac{1}{1+e^{-z}}, \\qquad p(y=1\\mid x)=\\sigma(x^{\\top}\\theta)" />
+
+For a binary target `y ∈ {0,1}`, negative log-likelihood is:
+
+<MathBlock latex="L(\\theta) = -\\frac{1}{n}\\sum_{i=1}^{n} [y_i\\log p_i + (1-y_i)\\log(1-p_i)]" />
+
+The stable equivalent is `log(1 + exp(z)) − yz`, evaluated with a log-sum-exp routine. Its gradient is:
+
+<MathBlock latex="\\nabla_\\theta L = \\frac{1}{n}X^{\\top}(\\sigma(X\\theta)-y)" />
+
+### 4. Regularization changes the question
+
+L2 asks for small weights; L1 asks for sparse weights. With a penalty coefficient `λ`:
+
+<MathBlock latex="L_{L2}=L+\\frac{\\lambda}{2}\\lVert\\theta\\rVert_2^2, \\qquad L_{L1}=L+\\lambda\\lVert\\theta\\rVert_1" />
+
+L2 shrinks continuously. L1 has a kink at zero, so elastic-net implementations usually use a proximal step rather than pretending the derivative exists there.
+
+<Gotcha>Do not regularize the intercept by accident. A constant feature is not evidence that every prediction should be pulled toward zero; regularization belongs on learned feature effects unless you have a specific reason otherwise.</Gotcha>
+
+## The code, from scratch
+
+```python
+import numpy as np
+
+
+def stable_sigmoid(z):
+    out = np.empty_like(z, dtype=float)
+    positive = z >= 0
+    out[positive] = 1 / (1 + np.exp(-z[positive]))
+    exp_z = np.exp(z[~positive])
+    out[~positive] = exp_z / (1 + exp_z)
+    return out
+
+
+def linear_step(X, y, theta, learning_rate):
+    residual = X @ theta - y
+    gradient = X.T @ residual / len(y)
+    return theta - learning_rate * gradient
+
+
+def logistic_loss(X, y, theta):
+    logits = X @ theta
+    return np.mean(np.logaddexp(0, logits) - y * logits)
+```
+
+The complete estimators, including the normal equation, monotonic optimization history, L2 penalty, and prediction methods, live in `projects/week-05-linreg-from-scratch/`.
+
+<CompanyLens
+  topic="linear models and regularization"
+  tldr={{
+    openai: "Treat a linear or logistic model as the baseline that tells you whether extra representation power earned its complexity.",
+    anthropic: "Regularized scoring is a useful teaching model for separating fit from stability in evaluation work.",
+    deepmind: "A linear probe is a compact way to ask what information a representation makes accessible; it is not the whole model.",
+    meta: "Ranking intuition starts with scores and probabilities before systems add many features and stages.",
+    xai: "Start with a transparent linear baseline for matching signals, then measure what a more complex model buys you.",
+    deepseek: "A learned linear projection makes the geometry of a representation or routing score easy to inspect.",
+    qwen: "Linear projection heads are a useful bridge when comparing representations from different modalities."
+  }}
+  whyDiffer="Classical ML makes the trade-off visible: a stronger model can lower training loss while making debugging and evaluation harder. A baseline is not a straw man; it is the control group for every later experiment."
+  sources={{
+    openai: { paper: "GPT-3 technical report", blog: "openai.com/research" },
+    anthropic: { paper: "Responsible Scaling Policy v3.0", blog: "anthropic.com/research" },
+    deepmind: { paper: "AlphaFold (Nature, 2021)", blog: "deepmind.google/discover/blog" },
+    meta: { paper: "PyTorch documentation", blog: "pytorch.org/docs" },
+    xai: { paper: "Grok technical reports", blog: "x.ai/blog" },
+    deepseek: { paper: "DeepSeek-V3 arXiv:2412.19437", blog: "deepseek.com/research" },
+    qwen: { paper: "Qwen-VL technical report", blog: "qwenlm.github.io" }
+  }}
+  caseStudy="A good baseline changes the debugging conversation. If a carefully split logistic model is already strong, the next question is about data and objective design—not whether to add another opaque layer. If it fails systematically, its residuals tell you what structure the next model must capture."
+  interviewAngle={{
+    openai: "Derive the gradient of MSE and explain why a holdout baseline comes before a larger model.",
+    anthropic: "Explain the difference between L1 and L2 when you need stable, interpretable scores.",
+    deepmind: "When would you use a linear probe, and what does a good probe actually demonstrate?",
+    meta: "Implement a vectorized logistic-regression step and state the shape of every matrix.",
+    xai: "Diagnose overflow in a sigmoid implementation for logits near ±1000.",
+    deepseek: "Explain why excluding the intercept from an L2 penalty changes the optimum.",
+    qwen: "Describe how a linear projection can align two feature spaces before a more complex model is tried."
+  }}
+/>
+
+<ReferenceProject path="projects/week-05-linreg-from-scratch" name="linreg-from-scratch" hours="6-8 hrs">
+Implement `LinearRegression` and `LogisticRegression` with closed-form and gradient-descent paths, stable probabilities, loss histories, and regularization. The tests compare the closed form with synthetic ground truth and pin monotonic logistic loss.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** fit a noisy line, plot the loss curve, and explain how the learning rate changes it.
+- **Build (2-3 hrs):** build a preprocessing + logistic baseline on a small tabular dataset and report ROC-AUC, coefficients, and a confusion matrix.
+- **Challenge (3+ hrs):** add elastic-net proximal gradient and compare its sparsity path with a coordinate-descent reference.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“Implement logistic regression from scratch. How do you keep the loss and sigmoid numerically stable?”**
+
+Rubric:
+- **Baseline signal:** writes the score, sigmoid, and binary cross-entropy with correct shapes.
+- **Senior signal:** uses `logaddexp` or log-sum-exp and does not regularize the intercept accidentally.
+- **Staff signal:** explains conditioning, calibration, holdouts, and when a simple model is the right production choice.
+
+Worked solution: `projects/week-05-linreg-from-scratch/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Hands-On Machine Learning, 3E, chapters 4–5** — a practical bridge from linear models to support-vector machines.
+- **The Elements of Statistical Learning, chapters 2–3** — the geometry and statistical assumptions behind the same objectives.
+- **Pattern Recognition and Machine Learning, chapter 4** — logistic regression as probabilistic inference.
+</FurtherReading>
+
+<KeyTakeaways>
+- The normal equation and gradient descent optimize the same squared-error objective by different routes.
+- Logistic regression is a linear score passed through a sigmoid, not a regression of labels that must be integers.
+- `logaddexp` keeps binary cross-entropy finite for extreme logits.
+- L2 shrinks weights; L1 encourages exact zeros; neither should quietly regularize the intercept.
+- A strong baseline is an experiment control and a debugging instrument, not a disposable first draft.
+</KeyTakeaways>
