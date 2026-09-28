@@ -1,0 +1,226 @@
+---
+week: 6
+part: 2
+slug: "week-06-xgboost-kaggle"
+title: "Trees, ensembles, and XGBoost — the tabular workhorse"
+hook: "When a table contains missing values, mixed types, and interactions you did not think to write down, a well-evaluated boosted-tree pipeline can turn messy rows into a defensible submission."
+hours: 20
+computeTier: "green"
+difficulty: 3
+prereqSlugs: ["week-05-linreg-from-scratch"]
+referenceProject: "projects/week-06-xgboost-kaggle"
+accentVar: "--accent-p2"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Why can a model with almost no feature scaling beat a carefully tuned linear model on a spreadsheet? Because trees discover thresholds and interactions—then boosting turns a sequence of small corrections into one strong predictor. This week turns that idea into an offline, schema-checked Titanic-style submission pipeline.</Hook>
+
+<Intuition>
+A decision tree asks a sequence of yes/no questions: “Is fare below this threshold?” “Is class 1?” “Is the passenger travelling alone?” Each leaf stores a prediction. The first tree is deliberately weak. Boosting adds another tree aimed at the previous model's mistakes, then another, and another. The final prediction is a weighted sum of small corrections.
+
+<IntuitionCallout>
+A useful mental split: **bagging** trains many independent, high-variance trees and averages them; **boosting** trains trees sequentially, with every stage responding to the current residual or loss gradient. Random forests reduce variance. XGBoost is a regularized, second-order boosting system.
+</IntuitionCallout>
+
+The four moves to own by the end of the week are: read Gini impurity and entropy as measures of mixed labels; distinguish bagging from boosting; explain XGBoost's first- and second-order loss approximation; and keep every learned preprocessing statistic inside the cross-validation fold.
+
+<MicroRecall
+  questions={[{
+    id: 'week6-recall-gini',
+    prompt: 'A node contains 3 examples of class 0 and 1 example of class 1. What is its Gini impurity?',
+    choices: ['0', '0.25', '0.375', '0.75'],
+    correct: 2,
+    explain: 'Gini = 1 - (3/4)^2 - (1/4)^2 = 1 - 9/16 - 1/16 = 6/16 = 0.375.',
+  }, {
+    id: 'week6-recall-leakage',
+    prompt: 'Where must a median imputer be fitted during cross-validation?',
+    choices: ['Once on all rows before CV', 'On each fold’s training rows only', 'On the test CSV', 'On the labels after prediction'],
+    correct: 1,
+    explain: 'The validation fold must remain unseen. A Pipeline makes the imputer fit separately inside each training fold.',
+  }]}
+  client:visible
+/>
+</Intuition>
+
+## The math, derived
+
+### 1. Node impurity: Gini and entropy
+
+Suppose a node has class proportions \(p_1, \ldots, p_K\). If we randomly label a row according to the node's empirical distribution, the probability of being wrong is:
+
+<MathBlock latex="Gini(S) = 1 - \sum_{k=1}^{K} p_k^2" />
+
+For four rows with three zeros and one one, \(Gini = 1 - (3/4)^2 - (1/4)^2 = 0.375\). A pure node has zero impurity. A binary node with half of each class has the maximum, \(0.5\).
+
+Entropy measures the same disorder in bits:
+
+<MathBlock latex="H(S) = -\sum_{k=1}^{K} p_k \log_2 p_k" />
+
+A candidate split divides \(S\) into left and right children. The weighted impurity after the split is:
+
+<MathBlock latex="I_{split} = \frac{|S_L|}{|S|}I(S_L) + \frac{|S_R|}{|S|}I(S_R)" />
+
+Choose a split that reduces impurity. This is a local greedy choice, not a guarantee of a globally optimal tree.
+
+<Gotcha>
+A deeper tree can always keep splitting until it memorizes the training rows. “The split improved training impurity” is not evidence that it will improve held-out ROC-AUC. Depth, minimum leaf size, shrinkage, subsampling, and early stopping are regularization knobs.
+</Gotcha>
+
+### 2. Bagging: variance reduction by resampling
+
+If \(T_b(x)\) is the prediction from tree \(b\), a random forest averages \(B\) trees trained on bootstrap samples:
+
+<MathBlock latex="\hat{f}_{bag}(x) = \frac{1}{B}\sum_{b=1}^{B} T_b(x)" />
+
+For approximately independent errors with variance \(\sigma^2\), the average has variance near \(\sigma^2/B\). Trees are not independent in reality, so random feature subsets are used to decorrelate them. Bagging fits trees in parallel; it does not use one tree's error to train the next.
+
+### 3. Boosting: additive corrections
+
+Boosting builds an additive model:
+
+<MathBlock latex="F_M(x) = F_0(x) + \eta\sum_{m=1}^{M} f_m(x)" />
+
+Here \(\eta\) is the learning rate and each small tree \(f_m\) is chosen after seeing the current model. For squared error, a stage can fit the residual \(r_i = y_i - F_{m-1}(x_i)\). For classification, we instead use derivatives of a differentiable loss.
+
+### 4. XGBoost's second-order step
+
+For one row, let \(\hat{y}_i^{(t-1)}\) be the current prediction and \(f_t(x_i)\) the new tree's contribution. A second-order Taylor expansion of the loss gives:
+
+<MathBlock latex="L^{(t)} \approx \sum_i \left[g_i f_t(x_i) + \frac{1}{2}h_i f_t(x_i)^2\right] + \Omega(f_t)" />
+
+where \(g_i = \partial_{\hat{y}} l(y_i, \hat{y})\) and \(h_i = \partial^2_{\hat{y}} l(y_i, \hat{y})\). For a leaf containing row set \(I_j\), with leaf weight \(w_j\), the regularized objective is:
+
+<MathBlock latex="\tilde{L} = \sum_j \left[G_j w_j + \frac{1}{2}(H_j + \lambda)w_j^2\right] + \gamma T" />
+
+with \(G_j = \sum_{i\in I_j}g_i\), \(H_j = \sum_{i\in I_j}h_i\), \(T\) leaves, L2 penalty \(\lambda\), and per-leaf complexity penalty \(\gamma\). Holding a tree structure fixed, differentiate with respect to \(w_j\):
+
+<MathBlock latex="w_j^* = -\frac{G_j}{H_j + \lambda}" />
+
+Substituting that optimum gives the leaf's gain contribution:
+
+<MathBlock latex="Gain_j = \frac{1}{2}\frac{G_j^2}{H_j + \lambda}" />
+
+A split is worthwhile only when its children improve the regularized score enough to pay the complexity cost. That is the Newton-step intuition: use slope and curvature, not only a residual.
+
+### 5. SVMs: another boundary, another bias
+
+A linear SVM chooses a large-margin separator. For labels \(y_i\in\{-1,+1\}\), the hinge loss is:
+
+<MathBlock latex="L_{hinge}(w,b) = \sum_i \max(0, 1 - y_i(w^T x_i + b)) + \lambda\lVert w\rVert_2^2" />
+
+Only points inside the margin contribute hinge loss. The kernel trick replaces explicit feature expansion with a similarity function such as the RBF kernel:
+
+<MathBlock latex="K(x,z) = \exp(-\gamma\lVert x-z\rVert_2^2)" />
+
+SVMs can be excellent on smaller, carefully scaled datasets. Boosted trees are often a more forgiving first choice for mixed tabular columns, but no method wins by slogan: use an identical split protocol and measure.
+
+## The code, from scratch
+
+The impurity calculation is small enough to write by hand:
+
+```python
+import numpy as np
+
+def gini(y):
+    _, counts = np.unique(y, return_counts=True)
+    probabilities = counts / counts.sum()
+    return 1.0 - np.square(probabilities).sum()
+
+def weighted_split_impurity(left, right, impurity=gini):
+    total = len(left) + len(right)
+    return (len(left) * impurity(left) + len(right) * impurity(right)) / total
+```
+
+The project then uses library implementations where reliability matters, but keeps the important boundary visible:
+
+```python
+pipeline = build_pipeline('xgboost', seed=42)
+fold_auc = cross_val_score(
+    pipeline, train.drop(columns='Survived'), train['Survived'],
+    cv=StratifiedKFold(5, shuffle=True, random_state=42),
+    scoring='roc_auc',
+)
+```
+
+The `Pipeline` owns both feature engineering and imputation. It is not acceptable to call `fit_transform` on the full dataset and only then split. Full implementation: `projects/week-06-xgboost-kaggle/`.
+
+<CompanyLens
+  topic="trees, ensembles, and tabular evaluation"
+  tldr={{
+    openai: "Public materials do not establish an undocumented internal tree pipeline. Use XGBoost as a general tabular method and practice explaining why a linear baseline can miss interactions.",
+    anthropic: "No public source in this lesson proves a specific tree-based RSP classifier. The honest practice angle is robust evaluation of mixed-type safety or evaluation tables.",
+    deepmind: "AlphaFold and other public work are broader neural/structured-model context, not evidence that internal tabular experiments use a particular tree library.",
+    meta: "Public recommender literature shows large-scale ranking as a real applied-ML context; it does not justify claiming a specific current GBDT stack. Compare additive and interaction-rich baselines.",
+    xai: "Public information is insufficient to describe an internal tabular algorithm. Treat XGBoost here as an interview and practice tool, not an xAI architecture claim.",
+    deepseek: "Public model papers focus on language-model systems, not an undocumented tabular pipeline. The useful analogy is reasoning about objectives, regularization, and honest ablations.",
+    qwen: "Qwen technical reports are broader model context, not evidence for a private tabular stack. Practice making a schema-safe benchmark that another engineer can reproduce."
+  }}
+  whyDiffer="Tree methods are attractive in this lesson because they expose thresholds and interactions with little feature scaling. But a public model paper, a hiring signal, and an internal production choice are different kinds of evidence. CompanyLens therefore separates documented context from a practice prompt: none of the seven entries above claims knowledge of an undocumented internal tree deployment. The transferable skill is to state what the data supports, choose a leakage-safe protocol, and report uncertainty."
+  sources={{
+    openai: { paper: "InstructGPT (Ouyang et al. 2022) — broader ML context, not evidence of trees", blog: "openai.com/research" },
+    anthropic: { paper: "Constitutional AI (Bai et al. 2022) — broader evaluation context, not evidence of trees", blog: "anthropic.com/research" },
+    deepmind: { paper: "AlphaFold (Jumper et al. 2021) — broader structured prediction context, not evidence of trees", blog: "deepmind.google/discover/blog" },
+    meta: { paper: "DLRM (Naumov et al. 2019) — public ranking context, not a claim about every Meta system", blog: "pytorch.org/blog" },
+    xai: { paper: "XGBoost (Chen & Guestrin 2016) — general method reference, not an xAI source", blog: "x.ai/blog" },
+    deepseek: { paper: "DeepSeek-V3 (Liu et al. 2024) — broader model-systems context, not evidence of trees", blog: "deepseek.com/research" },
+    qwen: { paper: "Qwen2 Technical Report (Yang et al. 2024) — broader model context, not evidence of trees", blog: "qwenlm.github.io" }
+  }}
+  caseStudy="This project's concrete case study is the boundary between a metric and a submission: a deterministic nonlinear fixture demonstrates a ≥0.05 absolute ROC-AUC XGBoost advantage over logistic regression, while the README explicitly refuses to generalize that result to real Titanic data. That is a reproducibility practice, not a company-internal claim."
+  interviewAngle={{
+    openai: "Practice prompt: explain how you would distinguish a real interaction gain from a lucky fold, then implement a fold-local pipeline.",
+    anthropic: "Practice prompt: audit a safety-classifier benchmark for label leakage, missing-value policy, and false-confidence from one split.",
+    deepmind: "Practice prompt: compare a tree baseline with a structured model and state exactly what the public evidence does—and does not—support.",
+    meta: "Practice prompt: design an offline ranking experiment with a simple baseline, an interaction-rich model, and a pre-registered metric.",
+    xai: "Practice prompt: when public architecture details are unknown, say so; then derive the XGBoost leaf weight and its regularization effect.",
+    deepseek: "Practice prompt: connect second-order optimization and ablation discipline without attributing an undocumented tabular implementation.",
+    qwen: "Practice prompt: review a mixed-type CSV contract and prevent an unseen category or reordered ID from corrupting a submission."
+  }}
+/>
+
+<ReferenceProject path="projects/week-06-xgboost-kaggle" name="xgboost-kaggle" hours="6-8 hrs">
+Build an offline Titanic-style submission pipeline. It validates user-provided train/test CSVs, creates row-local features, fits preprocessing inside stratified CV, compares logistic regression with XGBoost on a deterministic nonlinear fixture, and writes an exact `PassengerId,Survived` submission schema. No network or auth is required.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** run the fixture notebook; calculate Gini impurity for three label mixes; inspect the fitted fold imputer and explain why its median cannot be computed from the validation rows.
+- **Build (2-3 hrs):** add a random-forest comparator, a fold-by-fold metric table, and a threshold report. Keep the output schema exact and add a test for an unseen categorical value in test data.
+- **Challenge (3+ hrs):** design a safe ticket-group feature or nested CV tuner. Write the information boundary first, then three failing tests, then the implementation. A negative result is acceptable; a leaked improvement is not.
+</Assignments>
+
+<InterviewDrill role="applied-ml" time="20 min">
+**“You have a mixed-type Titanic CSV with missing values. Design a model comparison that you would trust.”**
+
+Rubric:
+- **Baseline signal:** asks for a train/validation protocol, a simple logistic baseline, an appropriate metric, and a schema check.
+- **Senior signal:** puts feature engineering, imputation, and category fitting inside a Pipeline and uses stratified folds with a fixed seed.
+- **Staff signal:** discusses leakage boundaries, temporal or grouped data if relevant, threshold selection, calibration, uncertainty across folds, and what cannot be inferred from a benchmark.
+
+Worked solution: `projects/week-06-xgboost-kaggle/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Hands-On Machine Learning, 3E, Chapters 6–7 — Aurélien Géron.** A practical bridge from decision trees and ensembles to boosted models.
+- **XGBoost: A Scalable Tree Boosting System — Chen & Guestrin (2016).** Read the regularized objective and the second-order leaf-weight derivation.
+- **The Elements of Statistical Learning, Chapters 9–10 — Hastie, Tibshirani, Friedman.** Margin methods, boosting, and the bias/variance view.
+- **scikit-learn Pipeline and ColumnTransformer documentation.** Focus on why fitting transforms inside CV changes the validity of your estimate.
+</FurtherReading>
+
+<KeyTakeaways>
+- Gini and entropy measure label mixture; a split is useful only relative to a held-out evaluation protocol.
+- Bagging reduces variance through parallel resampled trees; boosting adds sequential corrections.
+- XGBoost uses gradient and curvature information, with regularization on leaf weights and tree complexity.
+- A preprocessing statistic is learned state. Fit imputers and encoders inside each CV training fold.
+- A score improvement on a deterministic fixture is a reproducible teaching result—not a guarantee on real Titanic data or evidence about an undocumented company's internal stack.
+</KeyTakeaways>
