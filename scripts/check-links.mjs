@@ -11,6 +11,7 @@ const IGNORE_URLS = new Set([
   // docs/superpowers/plans/2026-09-22-core-ai-foundation.md — local dev server
   // and placeholder domains used in code samples, never reachable from any host.
   'http://localhost:4321',
+  'http://localhost:4321/$s', // shell-loop artifact in a historical plan
   'http://127.0.0.1:4321',
   'https://core-ai.book',
   'https://core-ai-<hash', // regex artifact of `https://core-ai-<hash>.vercel.app`
