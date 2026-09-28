@@ -1,7 +1,7 @@
 # Core AI — Development Handoff
 
 **For:** any AI operator (Claude, GPT, or similar) resuming development on this repo.
-**From:** the operator that shipped Plan 4 after Plans 1-3 (foundation + platform + Month 2 classical ML content).
+**From:** the operator that shipped Plan 5 after Plans 1-4 (foundation + platform + Months 2-3 content).
 **Date:** 2026-09-28.
 **Repo:** https://github.com/sritharun242004/Core-AI (private) · main working branch: `plan-1-foundation`.
 
@@ -22,38 +22,38 @@ The deliverable is a static site (`apps/book/`) that renders 25 weekly articles 
 - Plan 2 (`docs/superpowers/plans/2026-09-27-core-ai-platform-features.md`) — companies subsystem, interview dashboard, Motion, viz package, Pagefind, companion routes. Shipped, tagged `v0.2.0-platform`.
 - Plan 3 (`docs/superpowers/plans/2026-09-28-core-ai-weeks-2-4.md`) — Weeks 2-4 (calculus, probability, python+info-theory) + 3 Python reference projects. Shipped, tagged `v0.3.0-week04`.
 - Plan 4 (§5 below) — Weeks 5-8 (classical ML) + 4 Python reference projects. Shipped, tagged `v0.4.0-week08`.
+- Plan 5 (§6 below) — Weeks 9-12 (deep learning foundations) + 4 Python reference projects. Shipped, tagged `v0.5.0-week12`.
 
 **Plans remaining:**
-- Plan 5 — Weeks 9-12 (deep learning foundations) — see §6.
 - Plan 6 — Weeks 13-17 (transformers, LLMs, post-training) — see §7. Introduces the first cloud-GPU 🔴 weeks.
 - Plan 7 — Weeks 18-21 (systems + safety) — see §8.
 - Plan 8 — Weeks 22-25 (specialization + capstone + interview prep) — see §9.
 
 ---
 
-## 2. Current state (as of Plan 4 completion, tag `v0.4.0-week08`)
+## 2. Current state (as of Plan 5 completion, tag `v0.5.0-week12`)
 
 ### 2.1 Test snapshot
 - Viz vitest: **3/3**
 - Book vitest: **6/6**
-- Playwright: **42/42 + 2 fixme'd** (motion-reduce SSR/hydration edge, deferred — see §12.1)
-- Python pytest (per-project): **11 + 6 + 11 + 9 + 10 + 23 + 4 + 11 = 85/85**
+- Playwright: **54/54 + 2 fixme'd** (motion-reduce SSR/hydration edge, deferred — see §12.1)
+- Python pytest (per-project): **11 + 6 + 11 + 9 + 10 + 23 + 4 + 11 + 11 + 14 + 11 + 23 = 144/144**
 
-**Total: 136/136 automated tests green** (plus the 2 deferred Playwright fixmes).
+**Total: 207/207 automated tests green** (plus the 2 deferred Playwright fixmes).
 
 ### 2.2 What ships in the built book
-- 25 prerendered static pages (`dist/client/`) + 1 SSR route (`/companies/compare`)
+- 29 prerendered static pages (`dist/client/`) + 1 SSR route (`/companies/compare`)
 - Pagefind client-side search (⌘K), index freshness pinned by test
-- 8 weekly articles (W1-W8), each with the full 8-part anatomy and 7-company CompanyLens
+- 12 weekly articles (W1-W12), each with the full 8-part anatomy and 7-company CompanyLens
 - 7 company profiles (`/companies/[slug]`), all attribution-clean per spec §5.3
-- 7×25 CompanyLens matrix at `/companies` — 8/25 columns populated
+- 7×25 CompanyLens matrix at `/companies` — 12/25 columns populated
 - `/interview` dashboard + `/interview/coding-set` (20 problems) + weak-spot heatmap
 - 5 companion routes: `/how-to-study`, `/glossary`, `/math-primer`, `/paper-reading-protocol`, `/tech-writing`
 - Interactive islands: MicroRecall, WeeklyQuiz, InterviewDashboard, WeakSpotHeatmap, ThemeToggle, SearchDialog — all Preact + Signals
 
 ### 2.3 What's local-only (not yet deployed)
 - Not deployed to Vercel. The user will handle this under their own Vercel account. Do not run `vercel --prod` unless explicitly asked.
-- GitHub remote exists (`origin` → https://github.com/sritharun242004/Core-AI); `plan-1-foundation` and 4 milestone tags are pushed after each completed plan.
+- GitHub remote exists (`origin` → https://github.com/sritharun242004/Core-AI); `plan-1-foundation` and 5 milestone tags are pushed after each completed plan.
 
 ---
 
@@ -97,7 +97,7 @@ Core-AI/
 │   ├── src/
 │   │   ├── content.config.ts    (Zod schemas for weeks/companies/extras)
 │   │   ├── content/
-│   │   │   ├── weeks/*.mdx      (25 target, 8 done)
+│   │   │   ├── weeks/*.mdx      (25 target, 12 done)
 │   │   │   ├── companies/*.mdx  (7 profiles, all done)
 │   │   │   └── extras/*.mdx     (5 companion pages, all done)
 │   │   ├── lib/
@@ -122,7 +122,7 @@ Core-AI/
 ├── packages/viz/                (@core-ai/viz workspace pkg — Preact SVG primitives)
 │   ├── src/{index,shared,VectorPlayground,MatrixMul}.tsx
 │   └── tests/viz.spec.tsx
-├── projects/                    (25 target Python packages; 8 done)
+├── projects/                    (25 target Python packages; 12 done)
 │   ├── week-01-linalg-lab/
 │   ├── week-02-micrograd/
 │   ├── week-03-prob-lab/
@@ -196,13 +196,15 @@ Core-AI/
 
 ## 6. Plan 5 — Weeks 9-12 (deep learning foundations)
 
+**Status:** Shipped and validated in `v0.5.0-week12`.
+
 **Compute tier:** 🟢 W9, W11, W12; 🟡 W10 (CIFAR ResNet — 90% locally, 93%+ needs cloud/MLX).
 
 | Week | Topic | Project | Notes |
 |---|---|---|---|
-| W9 | Neural nets from scratch + backprop derivation | `week-09-mini-torch/` | Extend micrograd → MLP on MNIST |
+| W9 | Neural nets from scratch + backprop derivation | `week-09-mini-torch/` | NumPy micro-torch → MLP on an offline MNIST-shaped fixture |
 | W10 | CNNs, ResNets, augmentation, transfer learning | `week-10-cifar-resnet/` | 🟡 ResNet-18 from scratch → 90% on MPS in ~1 hr; 93%+ needs cloud/MLX overnight |
-| W11 | RNNs, LSTMs, seq2seq, attention mechanism | `week-11-char-rnn-attention/` | Char-level LSTM + attention on Shakespeare |
+| W11 | RNNs, LSTMs, seq2seq, attention mechanism | `week-11-char-rnn-attention/` | Char-level LSTM/GRU + additive attention on a deterministic tiny text fixture |
 | W12 | Optimizers (SGD/Adam/AdamW), regularization, RL primer (MDPs, Q-learning, policy gradient, PPO) | `week-12-rl-gridworld/` | Q-learning + policy gradient on gridworld. VAE/GAN/diffusion is moved to W17, DO NOT put it here. |
 
 **Key spec note (§5.1 note on W10):** honesty about compute. Set the expectation that 90% CIFAR is realistic locally; higher accuracy needs cloud. Add a COMPUTE.md line.
@@ -211,7 +213,7 @@ Core-AI/
 
 **Attention (W11):** Karpathy-style additive attention on a char-level LSTM. This is the bridge to W13's transformer — the whole point of W11's attention section is to make W13 feel inevitable.
 
-**Estimated size:** 4 MDX × 200 lines + 4 projects × ~700 lines (W11 is bigger because RNN+attention is real code). Tag `v0.5.0-week12`.
+**Validation actually run:** Astro build + Pagefind (29 indexed HTML pages), viz vitest 3/3, book vitest 6/6, Playwright 54/54 + 2 fixmes, per-project pytest 144/144, Weeks 9-12 Ruff clean, all four notebooks executed offline, and `pnpm run check-links` clean. Tag `v0.5.0-week12`.
 
 ---
 
@@ -575,6 +577,10 @@ Ledgered rulings from Plans 2 + 3 that future operators should understand rather
 | W5 closed form uses augmented `lstsq` and scales the L2 penalty by `n` | Mean-loss gradient descent and an unscaled normal-equation penalty optimize different objectives; `lstsq` also handles rank deficiency | A few extra lines, with safer educational numerics |
 | W8 permutation importance uses a validation holdout and mixed-type leakage can be `unavailable` | Measuring importance on fit rows is optimistic, and correlation cannot inspect categorical/object data | More honest report shape; domain audits remain necessary |
 | Added `http://localhost:4321/$s` to link-check ignores | Historical plan contains a shell-loop URL artifact, not a clickable link | One explicit ignore entry in the checker |
+| Week 9 uses a deterministic seven-segment MNIST-shaped fixture instead of downloading MNIST | CI and offline notebooks must not depend on a network or a large dataset while still exercising 28×28 tensor shapes | Learners must replace the fixture with real MNIST in the build assignment |
+| Week 10 keeps CIFAR training optional and tests use fake data | M-series local accuracy depends on hardware and runtime; correctness tests should be fast and offline | Accuracy claims stay honest; the notebook is a starting point, not a benchmark guarantee |
+| Week 11 uses a tiny in-memory corpus and exposes LSTM/GRU attention | A reproducible attention bridge is more useful than a network-dependent Shakespeare download | Less literary data, but deterministic shape/gradient/attention tests |
+| Week 12 includes Q-learning, REINFORCE, and a tested PPO-Clip objective without generative models | The spec places the RL primer in W12 and moves VAE/GAN/diffusion to W17 | PPO is explicitly conceptual here; a complete PPO trainer remains future scope |
 
 ---
 
