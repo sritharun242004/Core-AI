@@ -3,7 +3,7 @@ name = "linreg-from-scratch"
 version = "0.1.0"
 description = "Week 5 — linear and logistic regression from scratch"
 requires-python = ">=3.13"
-dependencies = ["numpy>=2.1"]
+dependencies = ["numpy>=2.1", "matplotlib>=3.9"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3", "hypothesis>=6.112", "ruff>=0.7", "pyright>=1.1"]

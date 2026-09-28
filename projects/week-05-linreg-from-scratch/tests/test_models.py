@@ -52,6 +52,43 @@ def test_l2_regularization_shrinks_coefficients() -> None:
     assert np.linalg.norm(regularized.coef_) < np.linalg.norm(unregularized.coef_)
 
 
+def test_regularized_solvers_minimize_the_same_mean_loss() -> None:
+    rng = np.random.default_rng(31)
+    x = rng.normal(size=(100, 3))
+    y = 4.0 + x @ np.array([2.0, -1.0, 0.5])
+    closed = LinearRegression(l2=0.3).fit(x, y)
+    gd = LinearRegression(solver="gd", l2=0.3, tol=1e-14, max_iter=2000).fit(x, y)
+    np.testing.assert_allclose(closed.coef_, gd.coef_, atol=1e-5)
+    assert closed.intercept_ == pytest.approx(gd.intercept_, abs=1e-5)
+    assert closed.loss_history_[-1] == pytest.approx(gd.loss_history_[-1], abs=1e-10)
+
+
+def test_rank_deficient_design_has_a_least_squares_solution() -> None:
+    x = np.array([[1.0, 2.0], [2.0, 4.0], [3.0, 6.0]])
+    y = np.array([3.0, 5.0, 7.0])
+    np.testing.assert_allclose(LinearRegression().fit(x, y).predict(x), y, atol=1e-10)
+
+
+@pytest.mark.parametrize("estimator", [LinearRegression, LogisticRegression])
+def test_rejects_nonfinite_data_and_multitarget_arrays(estimator) -> None:
+    with pytest.raises(ValueError, match="finite"):
+        estimator().fit([[np.nan], [1.0]], [0, 1])
+    with pytest.raises(ValueError, match="one-dimensional"):
+        estimator().fit([[0.0], [1.0]], [[0, 1]])
+    fitted = estimator().fit([[0.0], [1.0]], [0, 1])
+    with pytest.raises(ValueError, match="finite"):
+        fitted.predict([[np.inf]])
+
+
+def test_logistic_regularization_shrinks_and_extreme_logits_are_finite() -> None:
+    x = np.linspace(-3, 3, 50)[:, None]
+    y = (x[:, 0] > 0).astype(float)
+    base = LogisticRegression().fit(x, y)
+    regularized = LogisticRegression(l2=1).fit(x, y)
+    assert np.linalg.norm(regularized.coef_) < np.linalg.norm(base.coef_)
+    assert np.isfinite(base.predict_proba([[-1000.0], [1000.0]])).all()
+
+
 def test_invalid_shapes_fail_early() -> None:
     with pytest.raises(ValueError, match="two-dimensional"):
         LinearRegression().fit(np.ones(4), np.ones(4))

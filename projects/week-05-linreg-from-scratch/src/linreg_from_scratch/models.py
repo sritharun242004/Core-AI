@@ -19,15 +19,21 @@ Array = NDArray[np.float64]
 def _design_matrix(x: Array, fit_intercept: bool) -> Array:
     if x.ndim != 2:
         raise ValueError("X must be two-dimensional")
+    if not np.isfinite(x).all():
+        raise ValueError("X must contain only finite values")
     return np.column_stack((np.ones(x.shape[0]), x)) if fit_intercept else x.copy()
 
 
 def _validate_xy(x: Array, y: Array) -> tuple[Array, Array]:
     x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float).reshape(-1)
+    y = np.asarray(y, dtype=float)
     if x.ndim != 2:
         raise ValueError("X must be two-dimensional")
-    if y.ndim != 1 or x.shape[0] != y.shape[0]:
+    if y.ndim != 1:
+        raise ValueError("y must be one-dimensional")
+    if not np.isfinite(x).all() or not np.isfinite(y).all():
+        raise ValueError("X and y must contain only finite values")
+    if x.shape[0] != y.shape[0]:
         raise ValueError("X and y must contain the same number of rows")
     if x.shape[0] == 0 or x.shape[1] == 0:
         raise ValueError("X must contain at least one row and one feature")
@@ -66,9 +72,13 @@ class LinearRegression:
             penalty[0, 0] = 0.0
 
         if self.solver == "closed_form":
-            self._weights = np.linalg.solve(design.T @ design + penalty, design.T @ y)
-            residual = design @ self._weights - y
-            self.loss_history_ = [float(np.mean(residual**2) / 2)]
+            # Minimize mean half-MSE + l2/2 * ||w||². Augmented least
+            # squares avoids squaring the condition number and handles rank
+            # deficiency. Its normal equation has n*l2 on the diagonal.
+            augmented = np.vstack((design, np.sqrt(design.shape[0] * penalty)))
+            targets = np.concatenate((y, np.zeros(design.shape[1])))
+            self._weights = np.linalg.lstsq(augmented, targets, rcond=None)[0]
+            self.loss_history_ = [self._loss(design, y, self._weights)]
             self.n_iter_ = 1
         else:
             weights = np.zeros(design.shape[1], dtype=float)
