@@ -13,8 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.datasets import load_iris
 from sklearn.metrics import adjusted_rand_score
-
-from unsupervised_viz import KMeans, PCA, run_comparison
+from unsupervised_viz import PCA, KMeans, run_comparison
 
 OUTPUT = Path("outputs")
 OUTPUT.mkdir(exist_ok=True)

@@ -5,9 +5,10 @@
 # estimator with a Pipeline when your real data contains preprocessing.
 
 # %%
+import matplotlib.pyplot as plt
+from ml_eval_suite import evaluate_estimator
 from sklearn.datasets import load_breast_cancer
 from sklearn.linear_model import LogisticRegression
-from ml_eval_suite import evaluate_estimator
 
 # %%
 data = load_breast_cancer()
@@ -18,7 +19,6 @@ print(report["cv"]["scores"])
 print("mean ROC-AUC:", report["cv"]["mean"])
 
 # %%
-import matplotlib.pyplot as plt
 curve = report["learning_curve"]
 plt.plot(curve["train_sizes"], curve["train_mean"], label="train")
 plt.plot(curve["train_sizes"], curve["validation_mean"], label="validation")

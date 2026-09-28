@@ -58,17 +58,17 @@ The four moves to own by the end of the week are: read Gini impurity and entropy
 
 ### 1. Node impurity: Gini and entropy
 
-Suppose a node has class proportions \(p_1, \ldots, p_K\). If we randomly label a row according to the node's empirical distribution, the probability of being wrong is:
+Suppose a node has class proportions $p_1, \ldots, p_K$. If we randomly label a row according to the node's empirical distribution, the probability of being wrong is:
 
 <MathBlock latex="Gini(S) = 1 - \sum_{k=1}^{K} p_k^2" />
 
-For four rows with three zeros and one one, \(Gini = 1 - (3/4)^2 - (1/4)^2 = 0.375\). A pure node has zero impurity. A binary node with half of each class has the maximum, \(0.5\).
+For four rows with three zeros and one one, $Gini = 1 - (3/4)^2 - (1/4)^2 = 0.375$. A pure node has zero impurity. A binary node with half of each class has the maximum, $0.5$.
 
 Entropy measures the same disorder in bits:
 
 <MathBlock latex="H(S) = -\sum_{k=1}^{K} p_k \log_2 p_k" />
 
-A candidate split divides \(S\) into left and right children. The weighted impurity after the split is:
+A candidate split divides $S$ into left and right children. The weighted impurity after the split is:
 
 <MathBlock latex="I_{split} = \frac{|S_L|}{|S|}I(S_L) + \frac{|S_R|}{|S|}I(S_R)" />
 
@@ -80,11 +80,11 @@ A deeper tree can always keep splitting until it memorizes the training rows. â€
 
 ### 2. Bagging: variance reduction by resampling
 
-If \(T_b(x)\) is the prediction from tree \(b\), a random forest averages \(B\) trees trained on bootstrap samples:
+If $T_b(x)$ is the prediction from tree $b$, a random forest averages $B$ trees trained on bootstrap samples:
 
 <MathBlock latex="\hat{f}_{bag}(x) = \frac{1}{B}\sum_{b=1}^{B} T_b(x)" />
 
-For approximately independent errors with variance \(\sigma^2\), the average has variance near \(\sigma^2/B\). Trees are not independent in reality, so random feature subsets are used to decorrelate them. Bagging fits trees in parallel; it does not use one tree's error to train the next.
+For approximately independent errors with variance $\sigma^2$, the average has variance near $\sigma^2/B$. Trees are not independent in reality, so random feature subsets are used to decorrelate them. Bagging fits trees in parallel; it does not use one tree's error to train the next.
 
 ### 3. Boosting: additive corrections
 
@@ -92,19 +92,19 @@ Boosting builds an additive model:
 
 <MathBlock latex="F_M(x) = F_0(x) + \eta\sum_{m=1}^{M} f_m(x)" />
 
-Here \(\eta\) is the learning rate and each small tree \(f_m\) is chosen after seeing the current model. For squared error, a stage can fit the residual \(r_i = y_i - F_{m-1}(x_i)\). For classification, we instead use derivatives of a differentiable loss.
+Here $\eta$ is the learning rate and each small tree $f_m$ is chosen after seeing the current model. For squared error, a stage can fit the residual $r_i = y_i - F_{m-1}(x_i)$. For classification, we instead use derivatives of a differentiable loss.
 
 ### 4. XGBoost's second-order step
 
-For one row, let \(\hat{y}_i^{(t-1)}\) be the current prediction and \(f_t(x_i)\) the new tree's contribution. A second-order Taylor expansion of the loss gives:
+For one row, let $\hat{y}_i^{(t-1)}$ be the current prediction and $f_t(x_i)$ the new tree's contribution. A second-order Taylor expansion of the loss gives:
 
 <MathBlock latex="L^{(t)} \approx \sum_i \left[g_i f_t(x_i) + \frac{1}{2}h_i f_t(x_i)^2\right] + \Omega(f_t)" />
 
-where \(g_i = \partial_{\hat{y}} l(y_i, \hat{y})\) and \(h_i = \partial^2_{\hat{y}} l(y_i, \hat{y})\). For a leaf containing row set \(I_j\), with leaf weight \(w_j\), the regularized objective is:
+where $g_i = \partial_{\hat{y}} l(y_i, \hat{y})$ and $h_i = \partial^2_{\hat{y}} l(y_i, \hat{y})$. For a leaf containing row set $I_j$, with leaf weight $w_j$, the regularized objective is:
 
 <MathBlock latex="\tilde{L} = \sum_j \left[G_j w_j + \frac{1}{2}(H_j + \lambda)w_j^2\right] + \gamma T" />
 
-with \(G_j = \sum_{i\in I_j}g_i\), \(H_j = \sum_{i\in I_j}h_i\), \(T\) leaves, L2 penalty \(\lambda\), and per-leaf complexity penalty \(\gamma\). Holding a tree structure fixed, differentiate with respect to \(w_j\):
+with $G_j = \sum_{i\in I_j}g_i$, $H_j = \sum_{i\in I_j}h_i$, $T$ leaves, L2 penalty $\lambda$, and per-leaf complexity penalty $\gamma$. Holding a tree structure fixed, differentiate with respect to $w_j$:
 
 <MathBlock latex="w_j^* = -\frac{G_j}{H_j + \lambda}" />
 
@@ -116,7 +116,7 @@ A split is worthwhile only when its children improve the regularized score enoug
 
 ### 5. SVMs: another boundary, another bias
 
-A linear SVM chooses a large-margin separator. For labels \(y_i\in\{-1,+1\}\), the hinge loss is:
+A linear SVM chooses a large-margin separator. For labels $y_i\in\{-1,+1\}$, the hinge loss is:
 
 <MathBlock latex="L_{hinge}(w,b) = \sum_i \max(0, 1 - y_i(w^T x_i + b)) + \lambda\lVert w\rVert_2^2" />
 

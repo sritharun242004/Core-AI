@@ -62,11 +62,11 @@ The four moves to own are: center before PCA; distinguish a hard assignment from
 
 ### 1. k-means: prototypes and a hard partition
 
-Let the dataset be a matrix \(X \in \mathbb{R}^{n\times d}\): \(n\) rows, each with \(d\) features. We choose \(K\) centers \(c_1,\ldots,c_K\), where \(c_k\in\mathbb{R}^d\), and a label \(a_i\in\{1,\ldots,K\}\) for each row \(x_i\). Lloyd's algorithm alternates assigning rows to their closest center and replacing each center with its assigned mean.
+Let the dataset be a matrix $X \in \mathbb{R}^{n\times d}$: $n$ rows, each with $d$ features. We choose $K$ centers $c_1,\ldots,c_K$, where $c_k\in\mathbb{R}^d$, and a label $a_i\in\{1,\ldots,K\}$ for each row $x_i$. Lloyd's algorithm alternates assigning rows to their closest center and replacing each center with its assigned mean.
 
 <MathBlock latex="a_i = \arg\min_{k \in \{1,\ldots,K\}} \lVert x_i-c_k\rVert_2^2, \qquad J = \sum_{i=1}^{n} \lVert x_i-c_{a_i}\rVert_2^2" />
 
-Here \(a_i\) is a **hard** assignment and \(J\) is the within-cluster sum of squared distances (inertia). For a row \(x=(1,1)\) and centers \(c_1=(0,0)\), \(c_2=(4,0)\), the squared distances are \(2\) and \(10\), so \(a=1\). If the assigned rows are \((0,0)\), \((2,0)\), and \((1,1)\), their replacement center is \(c=(1,1/3)\). That update is a mean, not a learned class prototype with semantic meaning.
+Here $a_i$ is a **hard** assignment and $J$ is the within-cluster sum of squared distances (inertia). For a row $x=(1,1)$ and centers $c_1=(0,0)$, $c_2=(4,0)$, the squared distances are $2$ and $10$, so $a=1$. If the assigned rows are $(0,0)$, $(2,0)$, and $(1,1)$, their replacement center is $c=(1,1/3)$. That update is a mean, not a learned class prototype with semantic meaning.
 
 k-means++ makes the starting centers less arbitrary: after choosing one center, a new row is sampled with probability proportional to its squared distance from its nearest chosen center. It still optimizes a non-convex objective, so different starts can produce different local minima. The reference implementation uses a declared seed and multiple starts, then keeps the lowest-inertia run.
 
@@ -74,39 +74,39 @@ k-means++ makes the starting centers less arbitrary: after choosing one center, 
 
 ### 2. PCA: rotate a centered matrix
 
-For feature \(j\), define its sample mean as \(\mu_j = n^{-1}\sum_{i=1}^{n}X_{ij}\). The centered matrix \(X_c\) has entries \((X_c)_{ij}=X_{ij}-\mu_j\). Its singular value decomposition is:
+For feature $j$, define its sample mean as $\mu_j = n^{-1}\sum_{i=1}^{n}X_{ij}$. The centered matrix $X_c$ has entries $(X_c)_{ij}=X_{ij}-\mu_j$. Its singular value decomposition is:
 
 <MathBlock latex="X_c = U S V^{\mathsf T}" />
 
-The symbols are: \(U\) contains orthonormal row-space directions, \(S\) is diagonal with non-negative singular values \(s_1\ge s_2\ge\cdots\), and the rows of \(V^{\mathsf T}\) are orthonormal feature-space directions. The first \(r\) rows of \(V^{\mathsf T}\) are the PCA components. A centered row becomes \(z_i=x_{c,i}V_r^{\mathsf T}\), and an approximate original row is \(\hat{x}_i=z_iV_r+\mu\).
+The symbols are: $U$ contains orthonormal row-space directions, $S$ is diagonal with non-negative singular values $s_1\ge s_2\ge\cdots$, and the rows of $V^{\mathsf T}$ are orthonormal feature-space directions. The first $r$ rows of $V^{\mathsf T}$ are the PCA components. A centered row becomes $z_i=x_{c,i}V_r^{\mathsf T}$, and an approximate original row is $\hat{x}_i=z_iV_r+\mu$.
 
-The variance carried by component \(j\) and its ratio are:
+The variance carried by component $j$ and its ratio are:
 
 <MathBlock latex="\lambda_j = \frac{s_j^2}{n-1}, \qquad \rho_j = \frac{\lambda_j}{\sum_\ell \lambda_\ell}" />
 
-As a numeric example, if a centered dataset has singular values \(s=(10,4,1)\) and \(n=11\), its component variances are \((10, 1.6, 0.1)\), total variance is \(11.7\), and the first component explains \(10/11.7\approx0.855\), or 85.5%. Keeping two components preserves \((10+1.6)/11.7\approx0.991\) of the variance. It does **not** preserve every row exactly: the remaining direction is discarded.
+As a numeric example, if a centered dataset has singular values $s=(10,4,1)$ and $n=11$, its component variances are $(10, 1.6, 0.1)$, total variance is $11.7$, and the first component explains $10/11.7\approx0.855$, or 85.5%. Keeping two components preserves $(10+1.6)/11.7\approx0.991$ of the variance. It does **not** preserve every row exactly: the remaining direction is discarded.
 
-The project uses SVD directly rather than forming \(X_c^{\mathsf T}X_c\). Both describe the same principal directions, but explicitly squaring a poorly conditioned matrix can worsen numerical precision. `PCA.inverse_transform` makes the reconstruction trade-off testable.
+The project uses SVD directly rather than forming $X_c^{\mathsf T}X_c$. Both describe the same principal directions, but explicitly squaring a poorly conditioned matrix can worsen numerical precision. `PCA.inverse_transform` makes the reconstruction trade-off testable.
 
 ### 3. GMM: a probability distribution over groups
 
-A Gaussian mixture has \(K\) components. Component \(k\) has mixing weight \(\pi_k\), mean vector \(\mu_k\), and covariance matrix \(\Sigma_k\). The latent variable \(z_i\) says which component generated row \(x_i\). The model's density is:
+A Gaussian mixture has $K$ components. Component $k$ has mixing weight $\pi_k$, mean vector $\mu_k$, and covariance matrix $\Sigma_k$. The latent variable $z_i$ says which component generated row $x_i$. The model's density is:
 
 <MathBlock latex="p(x_i)=\sum_{k=1}^{K}\pi_k\,\mathcal{N}(x_i\mid\mu_k,\Sigma_k), \qquad \sum_{k=1}^{K}\pi_k=1" />
 
-Expectation-maximization (EM) alternates two steps. In the E-step, the **responsibility** \(\gamma_{ik}\) is the posterior probability that component \(k\) generated row \(i\):
+Expectation-maximization (EM) alternates two steps. In the E-step, the **responsibility** $\gamma_{ik}$ is the posterior probability that component $k$ generated row $i$:
 
 <MathBlock latex="\gamma_{ik}=p(z_i=k\mid x_i)=\frac{\pi_k\mathcal{N}(x_i\mid\mu_k,\Sigma_k)}{\sum_{\ell=1}^{K}\pi_\ell\mathcal{N}(x_i\mid\mu_\ell,\Sigma_\ell)}" />
 
-In the M-step, the parameters are re-estimated using these fractional memberships. If one row has \(\gamma_i=(0.8,0.2)\), the display can color it by component 1, but the model still records 20% posterior support for component 2. This is the key difference from k-means' one-hot \(a_i\). The workflow delegates stable EM numerics to `sklearn.mixture.GaussianMixture` and exposes the full `predict_proba` matrix.
+In the M-step, the parameters are re-estimated using these fractional memberships. If one row has $\gamma_i=(0.8,0.2)$, the display can color it by component 1, but the model still records 20% posterior support for component 2. This is the key difference from k-means' one-hot $a_i$. The workflow delegates stable EM numerics to `sklearn.mixture.GaussianMixture` and exposes the full `predict_proba` matrix.
 
 ### 4. t-SNE and UMAP: neighborhood maps
 
-t-SNE converts pairwise similarities in the high-dimensional space into conditional probabilities \(p_{j\mid i}\), then chooses low-dimensional points whose similarities \(q_{j\mid i}\) match them. It minimizes a KL divergence between these probability distributions:
+t-SNE converts pairwise similarities in the high-dimensional space into conditional probabilities $p_{j\mid i}$, then chooses low-dimensional points whose similarities $q_{j\mid i}$ match them. It minimizes a KL divergence between these probability distributions:
 
 <MathBlock latex="KL(P\|Q)=\sum_{i\ne j}p_{ij}\log\frac{p_{ij}}{q_{ij}}" />
 
-The symbol \(P\) is the high-dimensional neighborhood distribution and \(Q\) is the low-dimensional one. Perplexity controls the effective neighborhood size. A fixed `random_state` makes a run reproducible, but it does not turn the axes into globally meaningful coordinates.
+The symbol $P$ is the high-dimensional neighborhood distribution and $Q$ is the low-dimensional one. Perplexity controls the effective neighborhood size. A fixed `random_state` makes a run reproducible, but it does not turn the axes into globally meaningful coordinates.
 
 UMAP is an optional fifth panel in the reference project. It constructs a weighted neighbor graph in the input space and optimizes a low-dimensional graph; its neighborhood and minimum-distance settings are not the same as t-SNE's perplexity. Because `umap-learn` is not a default or dev dependency, the workflow catches its absence and renders a panel titled **UMAP (missing)**. Missing software is a result worth reporting, not a reason to fabricate a comparison.
 

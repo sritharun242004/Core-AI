@@ -5,8 +5,8 @@
 # problem, then follows logistic loss while the classifier learns a boundary.
 
 # %%
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from linreg_from_scratch import LinearRegression, LogisticRegression
 
 # %%
