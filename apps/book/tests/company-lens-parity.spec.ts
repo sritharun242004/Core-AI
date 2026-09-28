@@ -9,6 +9,10 @@ const WEEKS = [
   'week-06-xgboost-kaggle',
   'week-07-unsupervised-viz',
   'week-08-ml-eval-suite',
+  'week-09-mini-torch',
+  'week-10-cifar-resnet',
+  'week-11-char-rnn-attention',
+  'week-12-rl-gridworld',
 ]
 const ORDER = ['OpenAI', 'Anthropic', 'Google DeepMind', 'Meta AI (FAIR)', 'xAI', 'DeepSeek', 'Alibaba Qwen']
 
