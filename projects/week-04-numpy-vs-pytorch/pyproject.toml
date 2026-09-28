@@ -1,0 +1,17 @@
+[project]
+name = "np-vs-pt"
+version = "0.1.0"
+description = "Week 4 — five problems three ways: pure Python vs NumPy vs PyTorch"
+requires-python = ">=3.13"
+dependencies = ["numpy>=2.1", "matplotlib>=3.9"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "hypothesis>=6.112", "torch>=2.5", "ruff>=0.7", "pyright>=1.1"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-v --strict-markers"
+testpaths = ["tests"]
