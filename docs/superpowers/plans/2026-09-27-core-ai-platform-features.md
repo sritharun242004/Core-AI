@@ -1317,13 +1317,13 @@ loop:
   - { round: "Applications closed for non-Chinese-speaking candidates in 2025; loop details are second-hand", note: "Include as awareness only." }
 seededAngles:
   - { week: 15, note: "MoE routing — V3's expert allocation is the reference implementation." }
-  - { week: 15, note: "GRPO — R1 introduced it (arXiv:2501.12948); read the paper before speaking about it." }
+  - { week: 15, note: "GRPO — introduced in DeepSeekMath (arXiv:2402.03300) and later used by R1 (arXiv:2501.12948); read both papers before speaking about it." }
   - { week: 18, note: "DualPipe — DeepSeek's pipeline-parallel innovation." }
 ---
 
 ## Philosophy
 
-Efficiency at frontier scale. MoE + reasoning + infrastructure — invented GRPO, published DualPipe, released weights.
+Efficiency at frontier scale. MoE + reasoning + infrastructure — introduced GRPO in DeepSeekMath, later used it in R1, published DualPipe, and released weights.
 
 ## Model timeline
 
@@ -2850,7 +2850,7 @@ tagline: "Every term used in the book, cross-linked to its home week."
 
 ## G
 
-- **GRPO** (Group Relative Policy Optimization) — DeepSeek-R1, arXiv:2501.12948. W15b.
+- **GRPO** (Group Relative Policy Optimization) — introduced in DeepSeekMath (arXiv:2402.03300), later used in DeepSeek-R1 (arXiv:2501.12948). W15b.
 
 ## L
 

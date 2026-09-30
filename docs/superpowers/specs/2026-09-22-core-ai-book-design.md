@@ -323,7 +323,7 @@ projects/week-XX-<name>/
 - Reading: Isaacson *Elon Musk* (2023, chapters on xAI); Sutton *The Bitter Lesson* (2019)
 
 **🟡 DeepSeek + Chinese open frontier**
-- Papers: DeepSeek-V2/V3/V3.5 · DeepSeek-Coder · DeepSeek-R1 (GRPO invention, arXiv:2501.12948) · Qwen 2.5/3 · Kimi K2 · GLM-4.5 · MiniMax-M1
+- Papers: DeepSeek-V2/V3/V3.5 · DeepSeek-Coder · DeepSeekMath (GRPO introduction, arXiv:2402.03300) · DeepSeek-R1 (later GRPO use, arXiv:2501.12948) · Qwen 2.5/3 · Kimi K2 · GLM-4.5 · MiniMax-M1
 - Blogs: deepseek.com/research · Qwen blog
 
 ---
