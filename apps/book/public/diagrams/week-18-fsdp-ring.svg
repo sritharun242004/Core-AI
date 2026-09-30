@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="650" viewBox="0 0 960 650" role="img" aria-labelledby="title desc">
+  <title id="title">Two different kinds of sharding: model state and sequence context</title>
+  <desc id="desc">Top: FSDP keeps parameter and optimizer shards, all-gathers one unit's weights for forward and backward, then reduce-scatters gradients to update owned shards. Bottom: with seven tokens and three ranks, queries stay on their owner: rank zero has positions zero to two, rank one three to five, and rank two position six plus two padding slots. Key and value blocks circulate zero to one to two to zero. Every query merges blocks using online softmax and absolute-position causal masks. This is a conceptual hand-authored fallback for the D2 source, not a measured distributed run.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#326458"/></marker>
+  </defs>
+  <rect width="960" height="650" rx="8" fill="#f8faf8"/>
+  <g font-family="system-ui, sans-serif" fill="#192d27">
+    <text x="36" y="42" font-size="14" letter-spacing="1.5">WEEK 18 / TWO AXES OF DISTRIBUTION</text>
+    <text x="36" y="81" font-size="26" font-weight="700">Move the state. Or move the context.</text>
+    <line x1="36" y1="104" x2="924" y2="104" stroke="#b8ccc1"/>
+    <text x="36" y="139" font-size="19" font-weight="650">01 / FSDP — parameters are sharded at rest</text>
+    <g fill="#edf4ef" stroke="#628775" stroke-width="1.5">
+      <rect x="36" y="164" width="188" height="94" rx="4"/>
+      <rect x="270" y="164" width="188" height="94" rx="4"/>
+      <rect x="504" y="164" width="188" height="94" rx="4"/>
+      <rect x="738" y="164" width="186" height="94" rx="4"/>
+    </g>
+    <g text-anchor="middle" font-size="17">
+      <text x="130" y="194" font-weight="650">Owned shards</text><text x="130" y="220">weights + Adam</text><text x="130" y="243" font-size="14">persistent state</text>
+      <text x="364" y="194" font-weight="650">All-gather</text><text x="364" y="220">one unit's weights</text><text x="364" y="243" font-size="14">temporary materialization</text>
+      <text x="598" y="194" font-weight="650">Compute</text><text x="598" y="220">forward / backward</text><text x="598" y="243" font-size="14">local training examples</text>
+      <text x="831" y="194" font-weight="650">Reduce-scatter</text><text x="831" y="220">sum gradients</text><text x="831" y="243" font-size="14">update owned shard</text>
+    </g>
+    <g fill="none" stroke="#326458" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M 224 210 H 260"/><path d="M 458 210 H 494"/><path d="M 692 210 H 728"/>
+      <path d="M 831 258 V 286 H 130 V 268"/>
+    </g>
+    <text x="480" y="310" text-anchor="middle" font-size="14">Reshard-after-forward may require another weight all-gather before backward.</text>
+    <line x1="36" y1="334" x2="924" y2="334" stroke="#b8ccc1"/>
+    <text x="36" y="371" font-size="19" font-weight="650">02 / Context parallel — queries stay, K/V blocks circulate</text>
+    <g fill="#fff" stroke="#628775" stroke-width="1.5">
+      <rect x="36" y="398" width="248" height="106" rx="4"/>
+      <rect x="356" y="398" width="248" height="106" rx="4"/>
+      <rect x="676" y="398" width="248" height="106" rx="4"/>
+    </g>
+    <g text-anchor="middle" font-size="17">
+      <text x="160" y="427" font-weight="650">Rank 0</text><text x="160" y="454">Q positions 0–2</text><text x="160" y="480" font-size="15">starts with K/V owner 0</text>
+      <text x="480" y="427" font-weight="650">Rank 1</text><text x="480" y="454">Q positions 3–5</text><text x="480" y="480" font-size="15">starts with K/V owner 1</text>
+      <text x="800" y="427" font-weight="650">Rank 2</text><text x="800" y="454">Q position 6 + 2 pads</text><text x="800" y="480" font-size="15">starts with K/V owner 2</text>
+    </g>
+    <g fill="none" stroke="#326458" stroke-width="2" marker-end="url(#arrow)">
+      <path d="M 284 456 H 346"/><path d="M 604 456 H 666"/>
+      <path d="M 800 504 V 543 H 160 V 514"/>
+    </g>
+    <text x="320" y="443" text-anchor="middle" font-size="13">K/V</text><text x="640" y="443" text-anchor="middle" font-size="13">K/V</text>
+    <text x="480" y="566" text-anchor="middle" font-size="15">Merge every block with one running maximum, denominator, and numerator.</text>
+    <text x="480" y="590" text-anchor="middle" font-size="15">Causal mask: key position ≤ query position. Padding contributes zero.</text>
+    <text x="36" y="627" font-size="13" fill="#4a6257">Conceptual, not to scale · D2 source + hand-authored SVG fallback · No performance measurements</text>
+  </g>
+</svg>

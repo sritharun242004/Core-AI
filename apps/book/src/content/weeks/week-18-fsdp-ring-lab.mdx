@@ -1,0 +1,164 @@
+---
+week: 18
+part: 5
+slug: "week-18-fsdp-ring-lab"
+title: "Distributed training — move bytes before buying GPUs"
+hook: "If one GPU cannot hold your model, which bytes should move, which should stay, and how do you prove the answer stayed the same?"
+hours: 22
+computeTier: "red"
+difficulty: 5
+prereqSlugs: ["week-17-mini-rag-multimodal", "week-13-nano-gpt-ssm"]
+referenceProject: "projects/week-18-fsdp-ring-lab"
+accentVar: "--accent-p5"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>If one GPU cannot hold your model, which bytes should move, which should stay, and how do you prove the answer stayed the same?</Hook>
+
+<Intuition>
+A distributed model is not merely a model running on more computers. It is a schedule for owning tensors, transmitting them, and releasing them without changing the training objective. Think of a library: replication puts the whole collection in every branch, sharding assigns shelves to branches, and materialization temporarily borrows the shelves needed for one lesson.
+
+Data parallelism replicates parameters and splits examples. Tensor parallelism splits matrix operations. Pipeline parallelism assigns layers to stages and trades idle bubbles against microbatching. Context parallelism splits sequence positions; queries need keys and values from other owners. They can coexist, but every combination adds a communication schedule that must be accounted for.
+
+<img src="/diagrams/week-18-fsdp-ring.svg" alt="FSDP ranks own shards, gather weights for a layer and reduce-scatter gradients; ring attention rotates key/value blocks while each query shard accumulates an online softmax." loading="lazy" />
+
+The downloadable D2 source is `/diagrams/week-18-fsdp-ring.d2`. The checked-in accessible SVG is a hand-authored fallback, not claimed to be D2-generated: the D2 compiler was unavailable during authoring.
+
+<MicroRecall questions={[{id:'w18-own',prompt:'What changes first under data parallelism?',choices:['Each rank gets different examples','Each rank changes the objective','Every rank owns one layer'],correct:0,explain:'Replicas share weights while examples are partitioned; gradients must represent the same global objective.'},{id:'w18-ring',prompt:'What travels in the ring-attention teaching loop?',choices:['Query labels','Key/value blocks','Optimizer hyperparameters'],correct:1,explain:'Queries stay with their owner while K/V blocks visit it and update the softmax accumulator.'}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. Uneven batches require weighted reduction
+
+Let rank r own n_r examples and let N be their total. A global mean loss is the sum of every local **sum**, divided by N. Averaging local means is only correct when local counts are equal. For multi-output mean-squared error, the denominator is the global number of target elements, not just examples.
+
+<MathBlock latex="L=\frac{1}{N}\sum_r\sum_{i\in B_r}\ell_i,\qquad \nabla L=\sum_r\frac{n_r}{N}\nabla\bar L_r" />
+
+Worked example: rank 0 has one example with gradient 4; rank 1 has three with mean gradient 0. The correct gradient is 1, not 2. An empty rank contributes zero. A simulator that averages rank means can pass equal-size tests and still teach the wrong algorithm.
+
+### 2. ZeRO stages are ownership choices
+
+For P parameters and W ranks, the illustrative mixed-precision Adam ledger uses 2 bytes for weights, 2 for gradients, 4 for master weights and 8 for two moments. Stage 0 replicates everything; stage 1 shards optimizer/master state; stage 2 also shards gradients; stage 3 also shards model weights.
+
+<MathBlock latex="M_0=16P,\quad M_1=4P+12P/W,\quad M_2=2P+14P/W,\quad M_3=16P/W" />
+
+These ideal expressions ignore padding. For P=1 billion and W=4, they give 16, 7, 5.5 and 4 **decimal GB per rank**, before activations and temporary buffers. The implementation reserves ceil(P/W) entries for sharded fields. Real bucket boundaries create additional padding. FSDP's allocations depend on the actual precision and optimizer implementation; the illustrative ledger is not a universal PyTorch memory formula.
+
+A stage-3 forward all-gathers a layer, computes, and can reshard it. Backward may gather it again, then reduce-scatter gradients. A largest-layer full buffer can coexist with the persistent shard. Peak memory includes activations, communication workspaces, fragmentation, prefetch and backward intermediates: dividing parameter count by GPUs does not prove the model fits.
+
+### 3. Count communication in one direction
+
+An ideal ring all-reduce on a full S-byte buffer sends and receives the following **per rank**. Do not add sent and received bytes and then call that the link's one-direction payload.
+
+<MathBlock latex="B_{\mathrm{allreduce,sent}}=2\frac{W-1}{W}S,\qquad B_{\mathrm{allgather,sent}}=B_{\mathrm{reduce\ scatter,sent}}=\frac{W-1}{W}S" />
+
+Latency also depends on startup cost, topology, message size and overlap. Megatron-style tensor parallelism communicates activations within layers; pipeline stages transfer boundary activations and gradients; FSDP communicates parameter/gradient state. DeepSpeed ZeRO is a family of partitioning/offload mechanisms, not another name for tensor parallelism.
+
+### 4. Online softmax makes blockwise attention exact
+
+For one query, retain a running maximum m, normalization sum l and unnormalized weighted-value sum u. A new score block s and values V update these sufficient statistics:
+
+<MathBlock latex="m'=\max(m,\max_j s_j),\quad l'=e^{m-m'}l+\sum_j e^{s_j-m'},\quad u'=e^{m-m'}u+\sum_j e^{s_j-m'}V_j,\quad o=u'/l'" />
+
+Subtracting the joint maximum avoids overflow and rescales old contributions into the new coordinate system. With equal scores and values 2 and 6, the accumulator returns 4 independent of block order. Causal masking uses **global positions**, not local block indices. Fully masked/padded rows must return zero with zero gradients instead of computing infinity minus infinity.
+
+The CPU loop visits K/V blocks in ring order and matches dense attention outputs and Q/K/V gradients. It does not communicate across machines. Ordinary autograd retains intermediates; a production memory-efficient ring kernel needs a custom recomputing backward and real collectives.
+
+<Gotcha>Mathematical equivalence is not a speed benchmark. A sequential CPU loop can prove attention invariants while being slower and using more backward memory than optimized dense attention.</Gotcha>
+
+## The code, from scratch
+
+```python
+import torch
+from fsdp_ring_lab import dense_attention, ring_attention
+
+q = torch.randn(2, 2, 7, 4, dtype=torch.float64, requires_grad=True)
+k = torch.randn_like(q, requires_grad=True)
+v = torch.randn(2, 2, 7, 3, dtype=torch.float64, requires_grad=True)
+dense = dense_attention(q, k, v)
+blocked = ring_attention(q, k, v, world_size=3, query_block_size=2)
+torch.testing.assert_close(blocked, dense)
+for actual, expected in zip(
+    torch.autograd.grad(blocked.sum(), (q, k, v)),
+    torch.autograd.grad(dense.sum(), (q, k, v)), strict=True
+):
+    torch.testing.assert_close(actual, expected)
+```
+
+The reference modules separate partitioning, memory/wire accounting, DP gradient accumulation, attention and optional accelerator integration. Start with `tests/test_attention.py`: compare outputs **and backward gradients**, uneven sequence partitions, all-padded rows and more ranks than tokens. The percent-format notebook runs the full offline workflow.
+
+### Hardware and kernels: learn the bottleneck
+
+GPU warps execute many threads; coalesced global loads, shared-memory reuse and occupancy affect throughput. Matrix tensor cores accelerate selected matrix operations and dtypes, not arbitrary Python. CUDA exposes thread/block indexing and synchronization; Triton expresses tiled programs at a higher level. NVIDIA Triton Inference Server is a different product from the Triton kernel language.
+
+TPUs use a different compiler/runtime and matrix-oriented architecture, commonly accessed through JAX/XLA. A kernel optimized for one memory hierarchy is not automatically optimal on another. Start a kernel exercise with vector addition, compare against a framework reference, then profile bandwidth and synchronization. Avoid claiming a kernel is faster from unsynchronized wall-clock timings.
+
+Arithmetic intensity is operations per byte transferred. The roofline estimate bounds achievable FLOP/s by the smaller of peak compute and memory bandwidth times intensity. It is a diagnostic bound, not a prediction that includes communication or Python overhead.
+
+### Optional real FSDP and ZeRO
+
+`python -m fsdp_ring_lab.integration --help` is safe locally. The documented `torchrun` entrypoint requires two CUDA/NCCL GPUs, validates rank/environment, constructs the optimizer after wrapping, and tears down the process group in `finally`. DeepSpeed is imported only when explicitly selected. Stage-2 and stage-3 configs are checked in. Both engines compare tiny full-batch correctness; the replicated oracle means this smoke is **not a memory benchmark**.
+
+Read `COMPUTE.md` before provisioning: current provider quote, capped duration, cost ceiling, checkpoint export and volume deletion. These accelerator paths were not executed during offline validation.
+
+<CompanyLens
+  topic="distributed state, communication, and hardware"
+  tldr={{openai:'Public GPT reports motivate scale; no private parallelism topology is inferred.',anthropic:'Public model and safety reports motivate reproducible evaluations, not claims about a private cluster layout.',deepmind:'TPU and Chinchilla publications support hardware/scaling study; a particular model schedule still needs evidence.',meta:'PyTorch FSDP and Llama reports provide public distributed-training interfaces and examples.',xai:'Colossus is documented through NVIDIA/Spectrum-X and industry reporting; distinguish reporting from peer-reviewed evidence.',deepseek:'DeepSeek-V3 and DualPipe discuss public MoE/pipeline engineering; this CPU lab does not reproduce that system.',qwen:'Qwen technical reports provide model-specific training context; avoid extrapolating undocumented cluster details.'}}
+  whyDiffer="Parallelism follows memory, communication and utilization constraints, while available hardware and workload alter the trade-off. Study each named release rather than treating one public report as every lab's permanent infrastructure. The interview prompts below are practice exercises, not assertions about private hiring questions."
+  sources={{openai:{paper:'GPT-3 technical report, arXiv:2005.14165',blog:'openai.com/research'},anthropic:{paper:'Claude model cards',blog:'anthropic.com/research'},deepmind:{paper:'Jouppi et al., In-Datacenter Performance Analysis of a TPU',blog:'cloud.google.com/tpu/docs'},meta:{paper:'PyTorch FSDP documentation; Llama 3 report',blog:'pytorch.org/blog'},xai:{paper:'No peer-reviewed Colossus publication claimed',blog:'NVIDIA Spectrum-X Colossus reporting'},deepseek:{paper:'DeepSeek-V3, arXiv:2412.19437',blog:'github.com/deepseek-ai/DualPipe'},qwen:{paper:'Qwen2 Technical Report, arXiv:2407.10671',blog:'qwenlm.github.io'}}}
+  caseStudy="An uneven-batch reduction passes all equal-size tests but changes the gradient on the final batch. The lab makes rank counts uneven and checks against a single-process oracle before any accelerator spend. This is a local engineering case, not a reported company incident."
+  interviewAngle={{openai:'Derive the global gradient for uneven replicas.',anthropic:'Specify a reproducibility and checkpoint recovery contract.',deepmind:'Distinguish compute-bound and bandwidth-bound kernels.',meta:'Explain FSDP materialization and optimizer construction order.',xai:'Build a communication ledger without inventing cluster internals.',deepseek:'Compare pipeline bubbles, expert communication and tensor parallel traffic.',qwen:'Design forward/backward parity tests for context-parallel attention.'}}
+/>
+
+<ReferenceProject path="projects/week-18-fsdp-ring-lab" name="fsdp-ring-lab" hours="6-8 hrs">Partition tensors, account for state and collectives, prove DP and ring-order attention equivalence, then inspect explicitly optional real FSDP/ZeRO smoke entrypoints.</ReferenceProject>
+<Assignments>
+- **Warmup (30 min):** derive the four memory ledgers for a chosen P/W and list excluded buffers.
+- **Build (2–3 hrs):** prove uneven-DP and causal block-attention forward/backward equivalence, including empty ranks.
+- **Challenge (3+ hrs):** write a preregistered two-GPU experiment with topology, peak memory, synchronization, seeds and teardown; execute only after approving its budget.
+</Assignments>
+<InterviewDrill role="research-eng" time="25 min">
+**“A model fits with ZeRO-2 but goes out of memory during ZeRO-3 prefetch. Is that impossible?”**
+
+Baseline: distinguish persistent and peak state. Senior: account for largest wrapping unit, activations, gather buffers and padding. Staff: propose a reproducible profiler trace, overlap/resharding ablations and correctness gates before tuning. Worked solution: `projects/week-18-fsdp-ring-lab/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<WeeklyQuiz weekId={18} questions={[
+{id:'w18-q0',prompt:'For uneven replicas, reduce what?',choices:['Local sums with global denominator','Unweighted local means'],correct:0,explain:'Local means require count weights.'},
+{id:'w18-q1',prompt:'ZeRO-1 partitions which state?',choices:['Optimizer/master state','Sequence positions'],correct:0,explain:'Later stages add gradients and parameters.'},
+{id:'w18-q2',prompt:'Is persistent memory equal to peak?',choices:['No','Yes'],correct:0,explain:'Temporary gather buffers and activations contribute to peak.'},
+{id:'w18-q3',prompt:'Tensor parallelism divides what?',choices:['Within-layer operations','Only examples'],correct:0,explain:'Data parallelism divides examples.'},
+{id:'w18-q4',prompt:'Pipeline bubbles arise from?',choices:['Idle stage dependencies','Tokenizer corruption'],correct:0,explain:'Stages wait for work or backward dependencies.'},
+{id:'w18-q5',prompt:'Causal masking needs which positions?',choices:['Global query/key positions','Only local offsets'],correct:0,explain:'Blocks can represent distant sequence positions.'},
+{id:'w18-q6',prompt:'Online softmax rescales old sums because?',choices:['The running maximum changes','Labels change'],correct:0,explain:'Contributions must share one exponent origin.'},
+{id:'w18-q7',prompt:'CPU parity proves distributed speedup?',choices:['No','Yes'],correct:0,explain:'Numerical correctness and hardware performance are separate experiments.'},
+{id:'w18-q8',prompt:'Arithmetic intensity measures?',choices:['Operations per transferred byte','GPUs per process'],correct:0,explain:'It connects bandwidth to a roofline bound.'},
+{id:'w18-q9',prompt:'After a cloud smoke test?',choices:['Stop compute and audit retained volumes/billing','Leave workers idle indefinitely'],correct:0,explain:'Teardown and cost verification are part of the run.'}
+]} client:visible />
+
+<FurtherReading>
+- **ZeRO — Rajbhandari et al., arXiv:1910.02054.** Partition optimizer, gradient and parameter state.
+- **PyTorch FSDP documentation.** Check the exact FSDP1/FSDP2 API used by your installed release.
+- **Ring Attention with Blockwise Transformers — Liu et al., arXiv:2310.01889.** Distributed context and blockwise computation.
+- **FlashAttention — Dao et al., arXiv:2205.14135.** IO-aware exact attention and online softmax.
+- **Megatron-LM — Shoeybi et al., arXiv:1909.08053.** Tensor-model parallelism.
+</FurtherReading>
+<KeyTakeaways>
+- Prove the global objective before optimizing collectives.
+- Sharding reduces persistent state, not every peak allocation.
+- Track sent, received and aggregate bytes separately.
+- Stable online softmax permits exact block accumulation with global masks.
+- Cloud correctness and performance are opt-in experiments, not inferred from CPU tests.
+</KeyTakeaways>

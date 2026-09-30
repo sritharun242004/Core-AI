@@ -1,0 +1,33 @@
+# Canonical architecture source. The checked-in SVG is a hand-authored accessible
+# fallback because the D2 CLI was unavailable, not a claimed generated render.
+direction: down
+fsdp: FSDP / ZeRO-3 — shard state, materialize one unit {
+  direction: right
+  shards: Per-rank parameter + optimizer shards
+  gather: All-gather unit weights
+  compute: Forward / backward on local examples
+  reduce: Reduce-scatter summed gradients
+  update: Update owned parameter shard
+  shards -> gather
+  gather -> compute
+  compute -> reduce
+  reduce -> update
+  update -> shards: next step
+}
+ring: Context parallel — keep queries local, rotate keys and values {
+  direction: right
+  r0: Rank 0\nQ positions 0–2\nK/V owner 0
+  r1: Rank 1\nQ positions 3–5\nK/V owner 1
+  r2: Rank 2\nQ position 6 + 2 pads\nK/V owner 2
+  r0 -> r1: K/V block
+  r1 -> r2: K/V block
+  r2 -> r0: K/V block
+}
+contract: |md
+  **Different groups, different traffic.** FSDP moves model state; context parallelism moves sequence blocks.
+  Each query consumes all three K/V owners with one online-softmax state.
+  Mask by absolute position and valid length, never by local rank order.
+  CPU reference simulates this order: no measured GPU speed or real ring network.
+|
+fsdp -> ring: complementary techniques; no shared group implied
+ring -> contract
