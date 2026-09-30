@@ -1,7 +1,7 @@
 # Core AI — Development Handoff
 
 **For:** any AI operator (Claude, GPT, or similar) resuming development on this repo.
-**From:** the operator that shipped Plan 5 after Plans 1-4 (foundation + platform + Months 2-3 content).
+**From:** the operator that shipped Plan 6 after Plans 1-5 (foundation + platform + Months 2-4 content).
 **Date:** 2026-09-28.
 **Repo:** https://github.com/sritharun242004/Core-AI (private) · main working branch: `plan-1-foundation`.
 
@@ -23,37 +23,37 @@ The deliverable is a static site (`apps/book/`) that renders 25 weekly articles 
 - Plan 3 (`docs/superpowers/plans/2026-09-28-core-ai-weeks-2-4.md`) — Weeks 2-4 (calculus, probability, python+info-theory) + 3 Python reference projects. Shipped, tagged `v0.3.0-week04`.
 - Plan 4 (§5 below) — Weeks 5-8 (classical ML) + 4 Python reference projects. Shipped, tagged `v0.4.0-week08`.
 - Plan 5 (§6 below) — Weeks 9-12 (deep learning foundations) + 4 Python reference projects. Shipped, tagged `v0.5.0-week12`.
+- Plan 6 (§7 below) — Weeks 13-17 (transformers, LLMs, post-training) + 5 Python reference projects. Shipped, tagged `v0.6.0-week17`.
 
-**Plans remaining:**
-- Plan 6 — Weeks 13-17 (transformers, LLMs, post-training) — see §7. Introduces the first cloud-GPU 🔴 weeks.
+**Plans remaining:** Introduces the first cloud-GPU 🔴 weeks.
 - Plan 7 — Weeks 18-21 (systems + safety) — see §8.
 - Plan 8 — Weeks 22-25 (specialization + capstone + interview prep) — see §9.
 
 ---
 
-## 2. Current state (as of Plan 5 completion, tag `v0.5.0-week12`)
+## 2. Current state (as of Plan 6 completion, tag `v0.6.0-week17`)
 
 ### 2.1 Test snapshot
 - Viz vitest: **3/3**
 - Book vitest: **6/6**
-- Playwright: **54/54 + 2 fixme'd** (motion-reduce SSR/hydration edge, deferred — see §12.1)
-- Python pytest (per-project): **11 + 6 + 11 + 9 + 10 + 23 + 4 + 11 + 11 + 14 + 11 + 23 = 144/144**
+- Playwright: **69/69 + 2 fixme'd** (motion-reduce SSR/hydration edge, deferred — see §12.1)
+- Python pytest (per-project): **11 + 6 + 11 + 9 + 10 + 23 + 4 + 11 + 11 + 14 + 11 + 23 + 48 + 11 + 54 + 61 + 37 = 355/355**
 
-**Total: 207/207 automated tests green** (plus the 2 deferred Playwright fixmes).
+**Total: 435/435 automated tests green** (plus the 2 deferred Playwright fixmes).
 
 ### 2.2 What ships in the built book
-- 29 prerendered static pages (`dist/client/`) + 1 SSR route (`/companies/compare`)
+- 34 prerendered static pages (`dist/client/`) + 1 SSR route (`/companies/compare`)
 - Pagefind client-side search (⌘K), index freshness pinned by test
-- 12 weekly articles (W1-W12), each with the full 8-part anatomy and 7-company CompanyLens
+- 17 weekly articles (W1-W15a, W15b, W17; no W16), each with the full 8-part anatomy and 7-company CompanyLens
 - 7 company profiles (`/companies/[slug]`), all attribution-clean per spec §5.3
-- 7×25 CompanyLens matrix at `/companies` — 12/25 columns populated
+- 7×25 CompanyLens matrix at `/companies` — 16/25 distinct week columns populated
 - `/interview` dashboard + `/interview/coding-set` (20 problems) + weak-spot heatmap
 - 5 companion routes: `/how-to-study`, `/glossary`, `/math-primer`, `/paper-reading-protocol`, `/tech-writing`
 - Interactive islands: MicroRecall, WeeklyQuiz, InterviewDashboard, WeakSpotHeatmap, ThemeToggle, SearchDialog — all Preact + Signals
 
 ### 2.3 What's local-only (not yet deployed)
 - Not deployed to Vercel. The user will handle this under their own Vercel account. Do not run `vercel --prod` unless explicitly asked.
-- GitHub remote exists (`origin` → https://github.com/sritharun242004/Core-AI); `plan-1-foundation` and 5 milestone tags are pushed after each completed plan.
+- GitHub remote exists (`origin` → https://github.com/sritharun242004/Core-AI); `plan-1-foundation` and 6 milestone tags are pushed after each completed plan.
 
 ---
 
@@ -97,7 +97,7 @@ Core-AI/
 │   ├── src/
 │   │   ├── content.config.ts    (Zod schemas for weeks/companies/extras)
 │   │   ├── content/
-│   │   │   ├── weeks/*.mdx      (25 target, 12 done)
+│   │   │   ├── weeks/*.mdx      (25 target, 17 done; W16 intentionally absent)
 │   │   │   ├── companies/*.mdx  (7 profiles, all done)
 │   │   │   └── extras/*.mdx     (5 companion pages, all done)
 │   │   ├── lib/
@@ -122,7 +122,7 @@ Core-AI/
 ├── packages/viz/                (@core-ai/viz workspace pkg — Preact SVG primitives)
 │   ├── src/{index,shared,VectorPlayground,MatrixMul}.tsx
 │   └── tests/viz.spec.tsx
-├── projects/                    (25 target Python packages; 12 done)
+├── projects/                    (25 target Python packages; 17 done; W16 intentionally absent)
 │   ├── week-01-linalg-lab/
 │   ├── week-02-micrograd/
 │   ├── week-03-prob-lab/
@@ -219,6 +219,8 @@ Core-AI/
 
 ## 7. Plan 6 — Weeks 13-17 (transformers, LLMs, post-training)
 
+**Status:** Shipped and validated in `v0.6.0-week17`.
+
 **This is 5 weeks, not 4** — spec §1 explicitly split W15 into W15a + W15b to be honest about scope. Cloud-GPU weeks start here.
 
 | Week | Topic | Project | Tier | Cost |
@@ -233,7 +235,7 @@ Core-AI/
 - W13 must cover BOTH transformers AND post-transformer alternatives (Mamba, Griffin) — the spec calls this out explicitly.
 - W14 must go deep on positional encodings (RoPE, ALiBi, YaRN) — this is where the interview questions live.
 - W15a's DPO must be attributed to **Stanford** (Rafailov et al. 2023). Not Meta. See §11.
-- W15b covers GRPO — invented by DeepSeek in R1 (arXiv:2501.12948). Cite the paper directly.
+- W15b covers GRPO — introduced in DeepSeekMath (arXiv:2402.03300) and later used in DeepSeek-R1 (arXiv:2501.12948). Cite both papers directly.
 - No W16. The spec renumbered W16 → W17 when the split happened. Don't create a phantom week 16.
 
 **Cloud runbooks:** each 🔴 project needs a `COMPUTE.md` that says:
@@ -242,7 +244,7 @@ Core-AI/
 - Estimated hours + cost
 - How to teardown (this is what saves users money)
 
-**Estimated size:** 5 MDX × 250 lines (these are longer — more math + more code samples) + 5 projects (W15a/b + W17 are complex). Tag `v0.6.0-week17`.
+**Validation actually run:** Astro build + Pagefind (34 indexed HTML pages), viz vitest 3/3, book vitest 8/8, Playwright 69/69 + 2 fixmes, per-project pytest 355/355, Plan 6 Ruff clean, all five notebooks executed offline, and `pnpm run check-links` clean. Tests use no network, model downloads, cloud GPU, or API credentials. Tag `v0.6.0-week17`.
 
 ---
 
@@ -581,6 +583,12 @@ Ledgered rulings from Plans 2 + 3 that future operators should understand rather
 | Week 10 keeps CIFAR training optional and tests use fake data | M-series local accuracy depends on hardware and runtime; correctness tests should be fast and offline | Accuracy claims stay honest; the notebook is a starting point, not a benchmark guarantee |
 | Week 11 uses a tiny in-memory corpus and exposes LSTM/GRU attention | A reproducible attention bridge is more useful than a network-dependent Shakespeare download | Less literary data, but deterministic shape/gradient/attention tests |
 | Week 12 includes Q-learning, REINFORCE, and a tested PPO-Clip objective without generative models | The spec places the RL primer in W12 and moves VAE/GAN/diffusion to W17 | PPO is explicitly conceptual here; a complete PPO trainer remains future scope |
+| Plan 6 uses offline toy fixtures and optional integrations for LLM/post-training/multimodal work | CI must be deterministic and cloud credentials/model downloads are unavailable; toy tests still expose tensor, objective, retrieval, and checkpoint contracts | Toy metrics cannot support production quality, scaling, or company-internal architecture claims |
+| W13/W14/W17 difficulty values are capped at schema maximum 5 | The content scope is advanced, but `content.config.ts` intentionally restricts the display scale to 1–5 | The lessons communicate advanced scope through topic/compute labels without breaking the schema |
+| W15a and W15b titles carry explicit track labels | Both lessons are week 15 while the matrix intentionally has one W15 column; navigation needs to distinguish the two routes | One week number remains in the roadmap while the route titles remove ambiguity |
+| W14 checkpoint stores model configuration and tokenizer metadata; W15a DPO and W15b GRPO-like updates remain toy objectives | Tokenizer/model compatibility and attribution boundaries are correctness contracts, not optional prose | More metadata and caveats, but safer continuation by future operators |
+| W15b received the standard `ReferenceProject` component after the first build | The initial MDX had the project prose but omitted the rendered project card, caught by the new route smoke test | One small content fix; full lesson anatomy is now present |
+| Correctness review expanded W13/W15a/W15b tests and fixed objective/state/router bugs | Initial worker tests proved the happy path but missed causal target shifts, reference-policy mutation, grouped precision, and top-1 router gradients | More local tests and clearer toy boundaries; no production-scale claim |
 
 ---
 
