@@ -1,10 +1,16 @@
 ---
-import { COMPANIES } from '../../lib/companies'
 import { getCollection } from 'astro:content'
-const weeks = (await getCollection('weeks')).sort((a, b) => a.data.week - b.data.week)
+import { COMPANIES } from '../../lib/companies'
+import { WEEK_COLUMNS } from '../../lib/weeks'
+const weeks = await getCollection('weeks')
+const weekByNumber = Object.fromEntries(weeks.map((w) => [w.data.week, w]))
+const weekBySlug = Object.fromEntries(weeks.map((w) => [w.data.slug, w]))
 const companies = await getCollection('companies')
 const angles: Record<string, Record<number, string>> = Object.fromEntries(
-  companies.map((c) => [c.data.slug, Object.fromEntries(c.data.seededAngles.map((a) => [a.week, a.note]))]),
+  companies.map((c) => [
+    c.data.slug,
+    Object.fromEntries(c.data.seededAngles.map((a) => [a.week, a.note])),
+  ]),
 )
 ---
 <div class="overflow-x-auto border border-border-soft rounded-md">
@@ -12,16 +18,16 @@ const angles: Record<string, Record<number, string>> = Object.fromEntries(
     <thead>
       <tr>
         <th class="sticky left-0 top-0 z-30 bg-canvas p-2 text-left">Company \ Week</th>
-        {Array.from({ length: 25 }, (_, i) => i + 1).map((wn) => {
-          const w = weeks.find((x) => x.data.week === wn)
+        {WEEK_COLUMNS.map((column) => {
+          const w = weekBySlug[column.slug] ?? weekByNumber[column.week]
           return (
             <th class="sticky top-0 z-20 bg-canvas p-2 whitespace-nowrap">
               {w ? (
                 <a href={`/weeks/${w.data.slug}`} class="hover:text-accent-p1 text-xs">
-                  W{String(wn).padStart(2, '0')}
+                  W{column.label}
                 </a>
               ) : (
-                <span class="text-xs text-fg-muted/40">W{String(wn).padStart(2, '0')}</span>
+                <span class="text-xs text-fg-muted/40">W{column.label}</span>
               )}
             </th>
           )
@@ -36,10 +42,10 @@ const angles: Record<string, Record<number, string>> = Object.fromEntries(
               <span aria-hidden="true">{c.emoji}</span> {c.name}
             </a>
           </th>
-          {Array.from({ length: 25 }, (_, i) => i + 1).map((wn) => (
+          {WEEK_COLUMNS.map((column) => (
             <td class="p-2 border-t border-border-soft/50 align-top max-w-[240px]">
-              {angles[c.slug]?.[wn] ? (
-                <span class="text-xs">{angles[c.slug][wn]}</span>
+              {angles[c.slug]?.[column.week] ? (
+                <span class="text-xs">{angles[c.slug][column.week]}</span>
               ) : (
                 <span class="text-xs text-fg-muted/40">·</span>
               )}

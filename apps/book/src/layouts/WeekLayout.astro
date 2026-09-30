@@ -1,9 +1,11 @@
 ---
 import ComputeBadge from '../components/content/ComputeBadge.astro'
 import BookShell from '../components/layout/BookShell.astro'
+import { weekLabel } from '../lib/weeks'
 interface Props {
   frontmatter: {
     week: number
+    slug: string
     part: number
     title: string
     hook: string
@@ -17,7 +19,7 @@ const { frontmatter } = Astro.props
 ---
 <BookShell title={frontmatter.title} accent={`var(${frontmatter.accentVar})`}>
   <header class="mb-8">
-    <p class="text-fg-muted text-sm">Week {frontmatter.week} · Month {frontmatter.part} · {frontmatter.hours} hrs · Difficulty {'▮'.repeat(frontmatter.difficulty) + '▯'.repeat(5 - frontmatter.difficulty)}</p>
+    <p class="text-fg-muted text-sm">Week {weekLabel(frontmatter)} · Month {frontmatter.part} · {frontmatter.hours} hrs · Difficulty {'▮'.repeat(frontmatter.difficulty) + '▯'.repeat(5 - frontmatter.difficulty)}</p>
     <h1 class="font-display text-5xl mt-2">{frontmatter.title}</h1>
     <div class="mt-3"><ComputeBadge tier={frontmatter.computeTier} /></div>
   </header>

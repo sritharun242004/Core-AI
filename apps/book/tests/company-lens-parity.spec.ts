@@ -13,6 +13,11 @@ const WEEKS = [
   'week-10-cifar-resnet',
   'week-11-char-rnn-attention',
   'week-12-rl-gridworld',
+  'week-13-nano-gpt-ssm',
+  'week-14-mini-bpe-pretrain',
+  'week-15a-sft-lora-dpo-lab',
+  'week-15b-moe-and-reasoning',
+  'week-17-mini-rag-multimodal',
 ]
 const ORDER = ['OpenAI', 'Anthropic', 'Google DeepMind', 'Meta AI (FAIR)', 'xAI', 'DeepSeek', 'Alibaba Qwen']
 

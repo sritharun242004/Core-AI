@@ -1,8 +1,9 @@
 ---
 import { getCollection } from 'astro:content'
 import BookShell from '../components/layout/BookShell.astro'
+import { compareWeeks, weekLabel } from '../lib/weeks'
 
-const weeks = (await getCollection('weeks')).sort((a, b) => a.data.week - b.data.week)
+const weeks = (await getCollection('weeks')).sort((a, b) => compareWeeks(a.data, b.data))
 const parts = [1, 2, 3, 4, 5, 6].map((p) => ({
   part: p,
   title: [
@@ -34,7 +35,7 @@ const parts = [1, 2, 3, 4, 5, 6].map((p) => ({
         {weeks.map((w) => (
           <li class="flex justify-between border-b border-border-soft py-2">
             <a href={`/weeks/${w.data.slug}`} class="hover:text-accent-p1">
-              <span class="text-fg-muted mr-3">W{String(w.data.week).padStart(2, '0')}</span>
+              <span class="text-fg-muted mr-3">W{weekLabel(w.data)}</span>
               {w.data.title}
             </a>
             <span class="text-sm text-fg-muted">{w.data.hours}h</span>
