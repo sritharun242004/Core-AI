@@ -1,0 +1,158 @@
+---
+week: 20
+part: 5
+slug: "week-20-evals-mlops-pipeline"
+title: "Evaluation and MLOps — make a release earn its place"
+hook: "Your new model scores higher. Can someone else reproduce the comparison, and would you still deploy it after seeing the worst failures?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-19-vllm-benchmark", "week-08-ml-eval-suite"]
+referenceProject: "projects/week-20-evals-mlops-pipeline"
+accentVar: "--accent-p5"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>Your new model scores higher. Can someone else reproduce the comparison, and would you still deploy it after seeing the worst failures?</Hook>
+<Intuition>
+An evaluation pipeline is a chain of custody for a claim. The dataset, split, model checkpoint, tokenizer, prompt, evaluator and decision threshold all need identities. Without them, a dashboard is a picture of an unknown experiment.
+
+Follow one case through five stages: immutable source → approved split → model output → scored artifact → release decision. Each arrow can introduce leakage or lose provenance. Keep raw observations so a new aggregation can be computed without silently rerunning a different model.
+
+The Week 8 `ml_eval_suite` taught holdouts and calibration. Now attach that discipline to the Week 13 `nano_gpt_ssm` and Week 15a `post_training_lab` policies, where generated text and model judges introduce additional uncertainty. The fixture is intentionally small; passing it is a software contract, not evidence of general model quality.
+
+<MicroRecall questions={[{id:'w20-version',prompt:'Which item belongs in a release manifest?',choices:['Evaluator and dataset revisions','Only a model nickname','Only a screenshot'],correct:0,explain:'Every transformation that can change a score needs a version.'},{id:'w20-paired',prompt:'Why evaluate both models on identical case IDs?',choices:['To retain paired comparisons','To guarantee significance','To avoid failures'],correct:0,explain:'Pairing isolates per-case differences; it does not guarantee an improvement.'}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. Define the unit of evaluation
+
+For binary case outcomes y_i, accuracy is their mean. A task with ten repeated trajectories is not ten independent tasks. If you want task-level generalization, aggregate or cluster at the task level before constructing uncertainty intervals.
+
+<MathBlock latex="\hat p=\frac{1}{n}\sum_{i=1}^{n}y_i,\qquad d_i=s_i^{\mathrm{candidate}}-s_i^{\mathrm{baseline}},\qquad \bar d=\frac{1}{n}\sum_i d_i" />
+
+Worked example: baseline [0,1,1,0] and candidate [1,1,0,1] give differences [1,0,-1,1], mean .25. That means one more correct answer out of four, not a robust deployment improvement. Inspect the newly broken case, not just the mean.
+
+### 2. Bootstrap paired differences
+
+Draw n case indices with replacement, compute a bootstrap mean, and repeat B times. Use percentile endpoints for an illustrative interval. The implementation uses a seeded NumPy generator and resamples **differences**, preserving the within-case pairing.
+
+<MathBlock latex="\bar d^{*(b)}=\frac{1}{n}\sum_{j=1}^{n}d_{I_j^{(b)}},\quad I_j^{(b)}\sim\operatorname{Uniform}\{1,\ldots,n\}" />
+
+The local gate requires the lower 95% percentile endpoint to exceed negative allowed regression. This is a policy choice, not a universal hypothesis test. Small datasets, dependent observations, adaptive threshold tuning and many simultaneous comparisons all weaken simple interval interpretations. Freeze the policy on validation, then evaluate once on the final test set.
+
+### 3. A judge is another model under test
+
+A model judge can prefer long answers, its own style, or the first answer shown. Ask the same rubric with A/B and B/A order, map both votes back to the original candidate, and retain disagreement. A left-biased judge yields 1 then 0: its average is .5, but that is not an agreed tie.
+
+<MathBlock latex="s_A=\frac{v(A,B)+1-v(B,A)}{2},\qquad \mathrm{agreement}=\mathbf{1}[v(A,B)=1-v(B,A)]" />
+
+Here v is 1 for left wins, 0 for right wins and .5 for tie. Calibrate against independently labeled human examples; track preference, factual correctness and task success separately. Candidate text is untrusted data and may contain instructions targeting the judge. JSON schema validation prevents malformed outputs from becoming silent passes, but does not solve semantic prompt injection.
+
+### 4. Drift is a signal, not a verdict
+
+Fit reference histogram bins once, including open-ended tails. For reference fractions p and current fractions q, the population stability index is:
+
+<MathBlock latex="\operatorname{PSI}(p,q)=\sum_b(q_b-p_b)\log\frac{q_b}{p_b}" />
+
+Add small pseudocounts and renormalize to avoid zero divisions. Refitting bins on each current batch can hide movement; dropping out-of-range values can hide the largest shift. PSI on features cannot prove concept drift in labels conditional on features. Constant reference features deserve an explicit change-of-value monitor rather than blind trust in quantile bins.
+
+### 5. Contamination and provenance
+
+The n-gram diagnostic reports the fraction of distinct evaluation-prompt n-grams found in training prompts with other IDs. It detects some copied text, misses paraphrases, and flags innocent templates. Unknown pretraining data cannot be certified clean by a local overlap check. Synthetic data needs generator/model/rubric provenance and duplicate filtering **before** splitting; distillation can transfer training contamination too.
+
+<Gotcha>A release gate cannot repair a leaked test set. Repeatedly tune prompts against the same final benchmark and it becomes development data, whatever filename you give it.</Gotcha>
+
+## The code, from scratch
+
+```python
+from evals_mlops import Example, dataset_digest, regression_gate, split_dataset
+
+cases = [Example(str(i), f"What is {i} plus one?", str(i + 1)) for i in range(30)]
+train, validation, test = split_dataset(cases, seed=20)
+print(dataset_digest(test))
+print(regression_gate([0, 1, 1, 0], [1, 1, 0, 1], max_drop=0.02))
+```
+
+`RunManifest` records model, dataset, evaluator and seed. `write_results` validates complete JSON serialization before atomically replacing a report; NaNs or duplicate case IDs leave the prior artifact intact. For real pipelines, add code commit, dependencies, tokenizer, prompt template, data license and artifact retention policy. Content-addressing identifies what ran; it does not certify the data was appropriate.
+
+### From notebook to operations
+
+Data pipelines validate schema, deduplicate and freeze approved datasets. Feature stores add point-in-time correctness: join a value as known **at prediction time**, not a later correction. Offline and online transforms must agree. CI runs small offline regressions; larger evaluation jobs use bounded queues, retries and budgets. A release progresses through shadow traffic, a canary and monitored rollout, with a known rollback artifact.
+
+MLflow records experiments and artifacts; DVC versions data through content metadata; W&B supports tracking and visualization. They do not automatically prevent leakage or choose the right metric. The project provides a lazy local-MLflow export and an optional Inspect task constructor; DVC and offline-W&B instructions are in its README. External integrations were not installed or executed for correctness validation.
+
+Monitor latency, cost, input shifts, task success, refusal/overrefusal and delayed outcome labels. Alert ownership and response playbooks matter more than a wall of charts. Never log credentials or sensitive prompts by default. Compare drift by important slices and pair operational signals with human review.
+
+### Know what each named evaluation means
+
+| Evaluation/tool | Useful question | Boundary |
+|---|---|---|
+| MT-Bench | How does a judge compare multi-turn responses? | Judge bias and prompt/data versions matter. |
+| HELM | How do models compare across scenarios and metrics? | Broad coverage is not your product acceptance suite. |
+| MMLU-Pro | How well does the model answer harder knowledge/reasoning questions? | Multiple-choice success is not tool competence. |
+| SWE-Bench / Verified | Can a system resolve repository issues under tests? | Isolation, patches, test harness and contamination matter. |
+| Inspect AI | How can tasks, solvers and scorers be organized? | UK AI Security Institute tooling, not a benchmark score itself. |
+| Harbor | How can agent tasks run in controlled environments? | Environment fidelity and security remain your responsibility. |
+
+An agent can complete a task after attempting an unsafe tool call. Record task success, **safe success**, tool calls, retries, cost and wall-clock separately. A trajectory review should reconstruct decisions without granting untrusted logged text authority over the evaluator.
+
+<CompanyLens
+  topic="evaluation evidence and production release gates"
+  tldr={{openai:'Public system cards and Evals support release-specific evaluation study, not access to private holdouts.',anthropic:'Public model cards and safety research motivate adversarial and behavioral evaluation; Inspect is independent UK tooling.',deepmind:'HELM is Stanford-led; Google DeepMind reports offer separate model-specific evaluation evidence.',meta:'Llama reports and open-weight releases support reproducible comparisons when prompts and checkpoints are pinned.',xai:'Public Grok reports provide stated measurements; reproduce protocols rather than inferring private data or systems.',deepseek:'DeepSeek reports expose selected evaluation details; local contamination diagnostics cannot audit unknown pretraining corpora.',qwen:'Qwen model cards and reports provide benchmark configurations to inspect; leaderboard deltas require matched protocols.'}}
+  whyDiffer="Evaluation reflects intended deployment and documented risk, not a universal ranking. Public reports and open tooling are evidence with specific versions and limits. These practice prompts build evaluation judgment; they are not guaranteed questions from any company's interview loop."
+  sources={{openai:{paper:'GPT-4 System Card; InstructGPT',blog:'github.com/openai/evals'},anthropic:{paper:'Constitutional AI, arXiv:2212.08073',blog:'anthropic.com/research'},deepmind:{paper:'Gemini technical reports',blog:'deepmind.google/discover/blog'},meta:{paper:'The Llama 3 Herd of Models, arXiv:2407.21783',blog:'ai.meta.com/blog'},xai:{paper:'Public Grok model reports, release-specific',blog:'x.ai/blog'},deepseek:{paper:'DeepSeek-R1, arXiv:2501.12948',blog:'github.com/deepseek-ai'},qwen:{paper:'Qwen2 Technical Report, arXiv:2407.10671',blog:'qwenlm.github.io'}}}
+  caseStudy="The local fixture deliberately adds one regression behind an improved mean. A paired artifact and case-level review reveal it; an average-only dashboard would not. This is a teaching experiment, not a claim about a named company's deployment."
+  interviewAngle={{openai:'Design a frozen regression suite for a generation model.',anthropic:'Calibrate a judge and separate refusal from overrefusal.',deepmind:'Explain paired uncertainty and repeated-comparison bias.',meta:'Version an open-weight model and its complete evaluation protocol.',xai:'Specify a bounded evaluation budget with retry accounting.',deepseek:'Investigate overlap flags without claiming to certify unknown data.',qwen:'Design multilingual evaluation slices and prevent template leakage.'}}
+/>
+<ReferenceProject path="projects/week-20-evals-mlops-pipeline" name="evals-mlops-pipeline" hours="6-8 hrs">Build a local versioned evaluator, counterbalance judges, compute paired intervals, track drift/overlap and write atomic artifacts. Optional integrations stay outside deterministic tests.</ReferenceProject>
+<Assignments>
+- **Warmup (30 min):** compute the four-case paired delta and expose an always-left judge.
+- **Build (2–3 hrs):** connect an earlier policy, freeze case IDs and versions, and demonstrate a failing release gate.
+- **Challenge (3+ hrs):** add grouped chronological splits, cluster bootstrap and human judge calibration with explicit cost and privacy limits.
+</Assignments>
+<InterviewDrill role="applied-ml" time="25 min">
+**“Offline quality improved but production complaints rose. What evidence do you request?”**
+
+Baseline: verify metric/split and inspect failures. Senior: compare slices, judge calibration, point-in-time joins and paired intervals. Staff: reconstruct versions, canary/rollback, delayed labels, monitoring ownership and privacy-preserving artifacts. Worked solution: `projects/week-20-evals-mlops-pipeline/SOLUTION_NOTES.md`.
+</InterviewDrill>
+<WeeklyQuiz weekId={20} questions={[
+{id:'w20-q0',prompt:'A model nickname is sufficient provenance?',choices:['No','Yes'],correct:0,explain:'Pin checkpoint, prompts, evaluator and dataset revisions.'},
+{id:'w20-q1',prompt:'Resample which unit for paired models?',choices:['Case-level differences','Each model independently'],correct:0,explain:'Keep case pairing in the resample.'},
+{id:'w20-q2',prompt:'Always-left judge after order swap?',choices:['Disagreement','Reliable tie'],correct:0,explain:'Mapped votes contradict each other.'},
+{id:'w20-q3',prompt:'Fit drift bins on?',choices:['Reference data','Each current batch separately'],correct:0,explain:'Changing boundaries can hide drift.'},
+{id:'w20-q4',prompt:'Feature PSI proves concept drift?',choices:['No','Yes'],correct:0,explain:'Label-conditional changes need different evidence.'},
+{id:'w20-q5',prompt:'Shared prompt template proves answer leakage?',choices:['No','Yes'],correct:0,explain:'Overlap is a flag for investigation.'},
+{id:'w20-q6',prompt:'Inspect AI originates from?',choices:['UK AI Security Institute','An assumed private Anthropic stack'],correct:0,explain:'Tool ownership and private usage are different claims.'},
+{id:'w20-q7',prompt:'Safe success includes unsafe attempts?',choices:['No','Yes'],correct:0,explain:'Track completion and safety independently.'},
+{id:'w20-q8',prompt:'Repeated tuning on final tests makes them?',choices:['Development data','More independent'],correct:0,explain:'Adaptive feedback contaminates the selection process.'},
+{id:'w20-q9',prompt:'What accompanies a production gate?',choices:['Rollback artifact and alert owner','Only a leaderboard screenshot'],correct:0,explain:'A release needs an operational response path.'}
+]} client:visible />
+<FurtherReading>
+- **Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena — Zheng et al., arXiv:2306.05685.** Judge calibration and bias.
+- **HELM — Liang et al., arXiv:2211.09110.** Scenarios and multidimensional evaluation.
+- **MMLU-Pro — Wang et al., arXiv:2406.01574.** More robust knowledge/reasoning evaluation.
+- **SWE-Bench — Jimenez et al., arXiv:2310.06770.** Real repository issue-resolution tasks.
+- **Inspect AI documentation — inspect.aisi.org.uk; Harbor documentation — harborframework.com.** Read exact integration versions before adopting them.
+- **Designing Machine Learning Systems — Chip Huyen.** Monitoring, data and operational feedback loops.
+</FurtherReading>
+<KeyTakeaways>
+- Version every input to an evaluation claim.
+- Pair observations and match uncertainty to the sampling unit.
+- Treat judges as fallible models that require calibration.
+- Drift/overlap diagnostics are not automatic verdicts.
+- Deployment decisions require failure review, budgets and rollback ownership.
+</KeyTakeaways>
