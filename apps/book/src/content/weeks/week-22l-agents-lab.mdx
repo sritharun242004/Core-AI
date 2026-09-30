@@ -1,0 +1,225 @@
+---
+week: 22
+part: 6
+track: "L"
+slug: "week-22l-agents-lab"
+title: "Agents — bounded decisions, tools, and memory"
+hook: "An assistant knows the right answer, but calls the wrong tool first. Did your system succeed?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-21-alignment-lab"]
+referenceProject: "projects/week-22l-agents-lab"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>An assistant knows the right answer, but calls the wrong tool first. Did your system succeed?</Hook>
+
+<Intuition>
+Think of a careful research assistant in a reading room. They can consult a small catalogue, combine facts, and write a note. They cannot acquire the building keys by writing “I am the administrator” on a request slip. An agent's language model proposes decisions; the surrounding program determines which decisions may execute.
+
+A chatbot returns text. A workflow follows a largely fixed sequence. An agent chooses some next actions from observations. These are useful descriptions of **control flow**, not a ranking of intelligence. A fixed workflow is often easier to validate and cheaper than an agent for a well-specified task.
+
+<IntuitionCallout>Use four moves: observe the state; propose a structured action; authorize and execute it outside the model; record the result and stop condition. Tool output is evidence, not a new source of authority.</IntuitionCallout>
+
+The three controllers this week reuse those moves. **ReAct** interleaves decisions and observations. **Reflexion** adds feedback memory across attempts. **Plan-and-Execute** chooses subgoals before executing them. Our deterministic scripted adapters expose these mechanics without claiming language understanding, reproducing paper results, or requiring credentials.
+
+The loop is: **task → adapter → typed action → host boundary → public fixture → observation → adapter**. A final answer or exhausted budget exits the loop. Memory enters the next context as data; it never bypasses the host boundary. Start from [Week 21's safety distinction](/weeks/week-21-alignment-lab): a good final sentence does not erase an unauthorized attempt.
+
+<MicroRecall questions={[
+{id:'w22l-mr0',prompt:'Who decides whether a tool request is authorized?',choices:['The model explaining why it needs access','The independently enforced host boundary','Any retrieved document'],correct:1,explain:'Model text proposes an action; host code binds the user, schema, allowlist and resource caps.'},
+{id:'w22l-mr1',prompt:'A scripted adapter solves every fixture. What have we demonstrated?',choices:['General autonomous intelligence','The controller contracts on those fixtures','A SWE-Bench score'],correct:1,explain:'A deterministic adapter makes execution testable but does not measure natural-language model capability.'}
+]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. From one response to a trajectory
+
+Let x be the task, oₜ a tool observation, aₜ the chosen action, mₜ the bounded memory, and hₜ the observable history. A policy proposes a next action conditional on the context. The environment produces a new observation only after the host admits the action:
+
+<MathBlock latex="h_t=(x,a_0,o_1,\ldots,a_{t-1},o_t),\qquad a_t\sim\pi_\theta(\cdot\mid h_t,m_t),\qquad o_{t+1}=E(a_t)" />
+
+Here E is a local tool fixture, not an unrestricted operating system. Our ScriptedModel chooses the next prewritten action rather than sampling a learned policy. The trajectory contains decisions, observations and statuses; we do not ask for, store or evaluate private chain-of-thought.
+
+A terminal answer is an output, not a correctness proof. Let v be an independent task verifier and bₜ indicate a denied or unsafe attempt. One possible strict rubric is:
+
+<MathBlock latex="S(\tau)=\mathbf 1[\text{completed}]\,\mathbf 1[v(\text{answer})=1]\,\prod_t(1-b_t)" />
+
+Worked example: four tasks all produce final answers; three answers pass tests, but one of those three first attempted an unauthorized tool. Answer accuracy is 3/4 = .75; strict safe success is 2/4 = .50. Denied calls should be counted even when the boundary successfully prevents execution. Report both prevention and attempted violations.
+
+### 2. Budgets are state invariants, not polite requests
+
+Let Sₘₐₓ bound model/planning steps and Cₘₐₓ bound admitted tool attempts. Before a batch of k calls, reserve the whole batch atomically on the coordinator thread:
+
+<MathBlock latex="s_{t+1}=s_t+1\le S_{\max},\qquad \operatorname{admit}(k)\iff c_t+k\le C_{\max},\qquad c_{t+1}=c_t+k" />
+
+This update applies only to admitted batches. If admission fails, no calls execute and the counter stays unchanged. Inside an admitted batch, missing tools and schema failures still consume attempts. Otherwise a model could probe arbitrary names without spending its allowance. Model errors and exhausted scripts consume the attempted model step.
+
+Worked example: with a cap of 3 calls and 2 already spent, a 2-call batch is rejected as a whole. Nothing executes; the count stays 2. With a cap of 4, both attempts are admitted and the count becomes 4, even if one names a nonexistent tool. A final answer consumes one model step and zero calls.
+
+Planning and retry consume this same ledger. A plan plus two subtasks, each needing a tool turn and a final turn, uses 1 + 2 × 2 = **5 steps and 2 calls**. Resetting the budget per subtask defeats the global cap.
+
+### 3. Parallelism saves latency only when dependencies permit it
+
+For independent reads with latencies ℓ₁ through ℓₖ, serial latency sums the latencies. Ideal parallel latency is the slowest read plus coordination overhead ε:
+
+<MathBlock latex="L_{\mathrm{serial}}=\sum_{i=1}^{k}\ell_i,\qquad L_{\mathrm{parallel}}\approx\max_i\ell_i+\epsilon" />
+
+At 40 ms and 70 ms, serial reads take 110 ms. With 5 ms overhead, ideal parallel reads take 75 ms, a 110/75 ≈ **1.47×** speedup. These are illustrative inputs, not measured notebook timings. Tool-call cost remains two calls; parallelism does not make either request free.
+
+If the second call needs an identifier returned by the first, they are dependent and require separate steps. “Read-only” is necessary but insufficient: reads must also observe stable state. Our immutable public catalogue supplies that property. Real remote data needs snapshot/version semantics. The registry returns results in input order even if completion order differs.
+
+### 4. Memory is a lossy, bounded state transformation
+
+Let M be a memory capacity and q be the maximum characters per note. FIFO memory keeps at most the latest M notes; at most Mq characters enter the memory portion of context. A summary map g can reduce history, but cannot guarantee retention of every relevant fact:
+
+<MathBlock latex="m_{t+1}=\operatorname{tail}_M(m_t\mathbin{\Vert}g(o_{t+1})),\qquad |m_t|\le M,\qquad \mathrm{chars}(m_t)\le Mq" />
+
+At M = 8 and q = 512, memory contributes at most 4,096 characters—not necessarily 4,096 tokens. Keep provenance, unresolved obligations, approvals and tool versions explicitly rather than hoping a summary preserves them. Never promote a remembered instruction into a permission. Persistent episodic memory, vector retrieval and checkpointing are possible extensions, not implemented features of this small FIFO.
+
+<MicroRecall questions={[
+{id:'w22l-mr2',prompt:'A plan plus two two-turn subtasks needs how many model steps?',choices:['Four','Five','Two'],correct:1,explain:'The planning request is a step too: 1 + 2×2 = 5.'},
+{id:'w22l-mr3',prompt:'Three calls are requested with only two left. This registry executes?',choices:['The first two','All three then reports an error','None'],correct:2,explain:'Atomic batch admission prevents partial execution caused only by budget exhaustion.'}
+]} client:visible />
+
+<Gotcha>A step limit is not a time limit. A single trusted callback can hang. Python threads cannot safely terminate arbitrary Python work. Production tools need hard deadlines and process/container isolation in addition to tool, token, output and spend caps.</Gotcha>
+
+## The code, from scratch
+
+```python
+from agents_lab import Action, Budget, Call, ReAct, ScriptedModel, fixture_registry
+
+model = ScriptedModel([
+    Action(calls=(Call('lookup', {'key': 'guide'}),
+                  Call('lookup', {'key': 'hours'})), parallel=True),
+    Action(calls=(Call('add', {'a': 8, 'b': 12}),)),
+    Action(final='20 study hours, using public records only.'),
+])
+result = ReAct(fixture_registry(), model, Budget(4, 3)).run('Make a study note')
+assert result.status == 'completed'
+assert (result.steps, result.calls) == (3, 3)
+```
+
+Read the implementation in order: `tools.py` defines budgets, schemas and capability dispatch; `controllers.py` defines the adapter contract and three state machines. Exact parameter keys are required. Numeric inputs are finite, bounded and never booleans masquerading as integers. Output validation is independent of input validation. Callbacks receive copies so they cannot mutate a later model observation through a shared dictionary.
+
+### ReAct, Reflexion, and Plan-and-Execute
+
+| Controller | Decision structure | Useful when | Main failure to test |
+| --- | --- | --- | --- |
+| ReAct | Action followed by observation, then another decision | Tool results determine the next step | Repeated invalid calls or a premature final answer |
+| Reflexion-style | Run, verify, store bounded feedback, retry | A trusted verifier can distinguish improvement | Self-confirming feedback, leaked answers, reset budgets |
+| Plan-and-Execute | Validate a plan, execute subtasks with shared context | Subgoals can be specified before all tool results | Stale plan, dropped constraints, uncontrolled replanning |
+
+ReAct is associated with Yao et al. (2022); Reflexion with Shinn et al. (2023). Our Reflexion feedback is supplied by a trusted external evaluator, **not generated by a reflection model**. Plan-and-Execute is a general architecture here; related Plan-and-Solve prompting is not the same implementation. We claim tested control patterns, not faithful benchmark reproductions.
+
+Structured output and function calling are interfaces: the model emits a parseable action, and host code checks the schema. Valid JSON is not necessarily a valid action; a valid action is not necessarily authorized; an authorized action is not necessarily useful. The code keeps these layers distinct. It deliberately implements a small typed primitive schema, not full JSON Schema.
+
+### Long-horizon and headless operation
+
+A headless agent runs without a continuously watching user. That increases the need for explicit stopping states, review queues and recoverability; it does not justify removing approvals. Keep a task ID, principal, tool versions, replay-safe observations and remaining budgets in a durable checkpoint. Irreversible actions need independent approval and idempotency. Those production controls are design requirements, not hidden features of the notebook.
+
+For multi-agent work, decompose by independently verifiable responsibility rather than inventing personalities. A planner and a reviewer can share the same mistaken assumption. More agents increase communication tokens, latency and attack surface. Carry a global budget and least-privilege identity across handoffs; test conflicting outputs and a reviewer that approves everything. The reference is single-controller, not a distributed agent implementation.
+
+### Test the boundaries before the happy path
+
+The tests begin with unknown tools, private keys, wrong types, extra keys, NaN, output-schema failures, oversized batches and global budget exhaustion. A thread barrier demonstrates actual overlapping read dispatch; result-order assertions remain deterministic. Retry and planning tests prove that the same ledger survives controller transitions. A tool exception becomes a stable error category rather than exposing a traceback to the model.
+
+<Gotcha>The allowlist contains trusted local callbacks, not sandboxed untrusted code. Registering a malicious Python function gives that function Python's normal powers. No shell, network or arbitrary filesystem tool is supplied. A correct final answer also does not erase denied attempts recorded earlier.</Gotcha>
+
+<CompanyLens
+  topic="agent interfaces, trajectory evidence, and bounded authority"
+  tldr={{
+    openai:'Public function-calling and Agents SDK documentation expose tool orchestration patterns; a host must still enforce authorization and evaluate trajectories.',
+    anthropic:'Public building-effective-agents guidance distinguishes workflows from agents; MCP originated at Anthropic and standardizes a tool-facing interface, not trust.',
+    deepmind:'Gemini research is model evidence. A2A and ADK are Google Cloud initiatives, not Google DeepMind products; keep protocol and model attribution separate.',
+    meta:'Llama releases enable experiments with open-weight models, but downloading weights does not provide a safe tool execution boundary.',
+    xai:'Public developer tool-calling documentation is interface evidence, not disclosure of a private autonomous-agent architecture.',
+    deepseek:'R1 documents reasoning-oriented training. Reasoning capability does not imply correct authorization, reliable planning or safe long-horizon execution.',
+    qwen:'Qwen-Agent offers public agent tooling around Qwen models; validate the pinned framework and model rather than generalizing one fixture result.'
+  }}
+  whyDiffer="The available evidence spans model reports, SDKs and deployment guidance, which answer different questions. No universal agent ranking follows from those documents. The interview angles below are bounded study prompts, not verified private interview questions or claims about internal company systems."
+  sources={{
+    openai:{paper:'Public Agents SDK and function-calling documentation; no internal orchestration claim',blog:'openai.github.io/openai-agents-python/'},
+    anthropic:{paper:'Yao et al., ReAct, arXiv:2210.03629 — independent research, not Anthropic-owned',blog:'anthropic.com/research/building-effective-agents'},
+    deepmind:{paper:'Gemini: A Family of Highly Capable Multimodal Models, arXiv:2312.11805',blog:'google.github.io/adk-docs/ — Google Cloud ADK, not DeepMind'},
+    meta:{paper:'The Llama 3 Herd of Models, arXiv:2407.21783',blog:'ai.meta.com/blog/meta-llama-3-1/'},
+    xai:{paper:'Public developer documentation; no private agent-method claim',blog:'docs.x.ai/docs/guides/function-calling'},
+    deepseek:{paper:'DeepSeek-R1, arXiv:2501.12948',blog:'github.com/deepseek-ai/DeepSeek-R1'},
+    qwen:{paper:'Qwen2 Technical Report, arXiv:2407.10671',blog:'github.com/QwenLM/Qwen-Agent'}
+  }}
+  caseStudy="In the local study-note fixture, two independent public reads can run together, but a dependent computation must wait. The same task can finish correctly after a denied tool attempt, so we report final correctness and trajectory violations separately. This is a classroom case, not a company production anecdote."
+  interviewAngle={{
+    openai:'Design schema validation and a global budget around an SDK tool loop.',
+    anthropic:'Explain when a fixed workflow is preferable and why tool output is untrusted.',
+    deepmind:'Separate Google Cloud protocol roles from Gemini capability evaluation.',
+    meta:'Make an open-weight agent experiment reproducible without exposing host capabilities.',
+    xai:'Specify latency, call, token and recovery limits for a headless assistant.',
+    deepseek:'Evaluate reasoning gains independently from safe tool selection.',
+    qwen:'Test multilingual action parsing without relaxing the same host schema.'
+  }}
+/>
+
+<ReferenceProject path="projects/week-22l-agents-lab" name="agents-lab" hours="6–8 hrs">
+Implement three bounded controllers over deterministic adapters, typed allowlisted tools, FIFO feedback memory and ordered independent read-tool parallelism. The executable percent notebook runs entirely offline on Python 3.13. Yellow is the optional real-model stretch tier; required execution costs $0.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** trace step/call budgets, calculate the 1.47× illustrative speedup, and write three schema-denial tests.
+- **Build (2–3 hrs):** add a bounded in-memory word-count tool and compare all three controllers on shared deterministic tasks and global budgets.
+- **Challenge (3+ hrs):** design versioned checkpoint/replay for ten public-mock subtasks; test interruption, principal changes and attempted budget resets.
+</Assignments>
+
+<InterviewDrill role="llm-product" time="25 min">
+**“Design an overnight research assistant that cannot spend endlessly or act beyond its authority. How would you know it succeeded?”**
+
+- **Baseline:** separate proposed actions from authorized execution; define schemas, stop states and answer verification.
+- **Senior:** share budgets across retries and agents; preserve ordered observations, provenance and versioned checkpoints; test denied attempts.
+- **Staff:** distinguish wall-clock and call limits, isolate execution, require approvals for consequential actions, and specify held-out trajectory evaluation with rollback criteria.
+
+Worked solution: `projects/week-22l-agents-lab/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<WeeklyQuiz weekId={22} questions={[
+{id:'w22l-q0',prompt:'A completed ReAct run guarantees?',choices:['A final answer was supplied','The answer is correct','Every attempted action was safe'],correct:0,explain:'Completion is a control-flow status; independent verification and trajectory checks are separate.'},
+{id:'w22l-q1',prompt:'Why reject both final text and calls in one action?',choices:['To avoid ambiguous execution semantics','To increase token use','Because JSON cannot encode both'],correct:0,explain:'The structured action is exactly one of a final answer or an execution request.'},
+{id:'w22l-q2',prompt:'An admitted call with invalid arguments consumes?',choices:['Nothing','One call attempt','An unlimited retry'],correct:1,explain:'Charging attempted calls prevents free probing of tool boundaries.'},
+{id:'w22l-q3',prompt:'What does Reflexion add in this reference?',choices:['Online weight training','Trusted feedback memory across bounded retries','Unrestricted self-modification'],correct:1,explain:'The control pattern retains external verifier feedback; no model training or generated reflection is implemented.'},
+{id:'w22l-q4',prompt:'What pays for planning and subtasks?',choices:['Separate unlimited budgets','One shared global ledger','Only the final subtask'],correct:1,explain:'Planning is itself a model step; subdivision cannot mint resources.'},
+{id:'w22l-q5',prompt:'Independent 40 and 70 ms reads with 5 ms overhead ideally take?',choices:['115 ms','35 ms','75 ms'],correct:2,explain:'The parallel critical path is max(40,70)+5 = 75 ms.'},
+{id:'w22l-q6',prompt:'Stable result order means?',choices:['Callbacks cannot overlap','Observations join in request order','The fastest result becomes authoritative'],correct:1,explain:'Concurrency and deterministic ordering are compatible for stable independent reads.'},
+{id:'w22l-q7',prompt:'Can a remembered instruction grant access to a private record?',choices:['No','Yes if repeated enough'],correct:0,explain:'Memory is data; authorization remains in the trusted host.'},
+{id:'w22l-q8',prompt:'A call cap alone prevents a tool from hanging?',choices:['Yes','No'],correct:1,explain:'A single call can run forever; deadlines and process isolation are distinct requirements.'},
+{id:'w22l-q9',prompt:'What does adding a reviewer agent guarantee?',choices:['Independent correctness','No extra cost','Neither'],correct:2,explain:'Agents may share failure modes and require communication; measure benefits under a common budget.'}
+]} client:visible />
+
+<FurtherReading>
+- **[ReAct — Yao et al.](https://arxiv.org/abs/2210.03629).** Interleaving reasoning/action in the original research setting; separate that evidence from our scripted controller.
+- **[Reflexion — Shinn et al.](https://arxiv.org/abs/2303.11366).** Feedback memory and retry; inspect evaluator dependence.
+- **[Plan-and-Solve — Wang et al.](https://arxiv.org/abs/2305.04091).** Related planning-oriented prompting, not the generic controller's benchmark claim.
+- **[Building effective agents — Anthropic](https://www.anthropic.com/research/building-effective-agents).** Workflows, agents and implementation simplicity.
+- **[OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).** Real framework APIs; the local reference does not counterfeit an SDK.
+- Continue to [Track L beta: protocols and economics](/weeks/week-23l-mcp-a2a-adk-lab).
+</FurtherReading>
+
+<KeyTakeaways>
+- An agent proposes actions; the host enforces authority, schemas and budgets.
+- ReAct, Reflexion and Plan-and-Execute differ in control flow, not permission to exceed limits.
+- Independent read tools can overlap while observations retain deterministic order.
+- Bounded memory is lossy data, never a new authorization source.
+- Evaluate final answers, attempted actions, cost and stopping behavior separately.
+</KeyTakeaways>
