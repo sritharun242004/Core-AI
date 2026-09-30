@@ -22,6 +22,14 @@ const WEEKS = [
   'week-19-vllm-benchmark',
   'week-20-evals-mlops-pipeline',
   'week-21-alignment-lab',
+  'week-22l-agents-lab',
+  'week-23l-mcp-a2a-adk-lab',
+  'week-22p-two-tower-recsys',
+  'week-23p-learning-to-rank-timeseries',
+  'week-22r-transformer-repro',
+  'week-23r-scaling-dpo-repro',
+  'week-24-capstone',
+  'week-25-interview-prep',
 ]
 const ORDER = [
   'OpenAI',

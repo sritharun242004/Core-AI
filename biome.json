@@ -6,6 +6,13 @@
       ".astro",
       ".vercel",
       "node_modules",
+      ".venv",
+      ".turbo",
+      ".superpowers",
+      ".omnirush",
+      "__agent__",
+      "test-results",
+      "playwright-report",
       "projects/**/notebooks",
       "biome.json",
       "turbo.json"

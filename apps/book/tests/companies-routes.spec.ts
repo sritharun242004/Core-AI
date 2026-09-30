@@ -16,7 +16,9 @@ for (const slug of SLUGS) {
     await page.goto(`/companies/${slug}`)
     // Scope to <main> — astro dev's toolbar injects h1s for audit panels.
     await expect(page.locator('main h1')).toContainText(NAMES[slug])
-    await expect(page.locator('main').getByRole('heading', { name: 'Reading list' }).first()).toBeVisible()
+    await expect(
+      page.locator('main').getByRole('heading', { name: 'Reading list' }).first(),
+    ).toBeVisible()
   })
 }
 
@@ -32,7 +34,9 @@ test('/companies renders 7 rows and 25 week columns', async ({ page }) => {
 test('/companies has zero horizontal overflow on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 })
   await page.goto('/companies')
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
   expect(overflow).toBeLessThanOrEqual(0)
 })
 

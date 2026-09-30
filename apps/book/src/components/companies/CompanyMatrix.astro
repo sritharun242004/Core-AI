@@ -1,10 +1,8 @@
 ---
 import { getCollection } from 'astro:content'
 import { COMPANIES } from '../../lib/companies'
-import { WEEK_COLUMNS } from '../../lib/weeks'
-const weeks = await getCollection('weeks')
-const weekByNumber = Object.fromEntries(weeks.map((w) => [w.data.week, w]))
-const weekBySlug = Object.fromEntries(weeks.map((w) => [w.data.slug, w]))
+import { WEEK_COLUMNS, lessonsForColumn, weekLabel } from '../../lib/weeks'
+const weeks = (await getCollection('weeks')).map((entry) => entry.data)
 const companies = await getCollection('companies')
 const angles: Record<string, Record<number, string>> = Object.fromEntries(
   companies.map((c) => [
@@ -19,14 +17,14 @@ const angles: Record<string, Record<number, string>> = Object.fromEntries(
       <tr>
         <th class="sticky left-0 top-0 z-30 bg-canvas p-2 text-left">Company \ Week</th>
         {WEEK_COLUMNS.map((column) => {
-          const w = weekBySlug[column.slug] ?? weekByNumber[column.week]
+          const lessons = lessonsForColumn(column, weeks)
           return (
             <th class="sticky top-0 z-20 bg-canvas p-2 whitespace-nowrap">
-              {w ? (
-                <a href={`/weeks/${w.data.slug}`} class="hover:text-accent-p1 text-xs">
-                  W{column.label}
+              {lessons.length ? lessons.map((lesson) => (
+                <a href={`/weeks/${lesson.slug}`} class="block hover:text-accent-p1 text-xs py-1">
+                  W{weekLabel(lesson)}
                 </a>
-              ) : (
+              )) : (
                 <span class="text-xs text-fg-muted/40">W{column.label}</span>
               )}
             </th>

@@ -1,9 +1,13 @@
-import { getProgress, getMastery } from '../../lib/progress'
+import { getMastery, getProgress } from '../../lib/progress'
 
 export function WeakSpotHeatmap() {
   const ids = Object.keys(getProgress().answers).sort()
   if (ids.length === 0) {
-    return <p class="text-fg-muted text-sm italic">Answer some quiz questions first to see weak spots.</p>
+    return (
+      <p class="text-fg-muted text-sm italic">
+        Answer some quiz questions first to see weak spots.
+      </p>
+    )
   }
   return (
     <section class="my-6">

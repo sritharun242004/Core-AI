@@ -1,4 +1,4 @@
-import { svgColors, clamp } from './shared'
+import { clamp, svgColors } from './shared'
 
 export interface Vector {
   x: number
@@ -26,7 +26,13 @@ export function VectorPlayground({
   const maxCoord = Math.max(1, ...vectors.flatMap((v) => [Math.abs(v.x), Math.abs(v.y)]))
   const s = clamp(scale, 10, Math.min(width, height) / (maxCoord * 2 + 1))
   return (
-    <svg role="img" aria-label="Vector playground" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+    <svg
+      role="img"
+      aria-label="Vector playground"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+    >
       <line x1={0} y1={cy} x2={width} y2={cy} stroke={c.muted} strokeWidth={1} />
       <line x1={cx} y1={0} x2={cx} y2={height} stroke={c.muted} strokeWidth={1} />
       {vectors.map((v, i) => {
@@ -34,8 +40,17 @@ export function VectorPlayground({
         const y = cy - v.y * s
         const color = v.color ?? c.accent
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: these stateless fixed drawing slots have no item-reordering state.
           <g key={i}>
-            <line x1={cx} y1={cy} x2={x} y2={y} stroke={color} strokeWidth={2} markerEnd="url(#arrow)" />
+            <line
+              x1={cx}
+              y1={cy}
+              x2={x}
+              y2={y}
+              stroke={color}
+              strokeWidth={2}
+              markerEnd="url(#arrow)"
+            />
             {v.label && (
               <text x={x + 6} y={y - 6} fill={c.fg} fontSize={12} fontFamily="var(--font-mono)">
                 {v.label}

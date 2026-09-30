@@ -5,6 +5,7 @@ const weeks = defineCollection({
   loader: glob({ pattern: '**/*.mdx', base: './src/content/weeks' }),
   schema: z.object({
     week: z.number().int().min(1).max(25),
+    track: z.enum(['L', 'P', 'R']).optional(),
     part: z.number().int().min(1).max(6),
     slug: z.string(),
     title: z.string(),
@@ -30,25 +31,25 @@ const companies = defineCollection({
     hq: z.string(),
     philosophyLead: z.string(),
     leaders: z.array(z.string()).default([]),
-    modelTimeline: z
-      .array(z.object({ year: z.number().int(), note: z.string() }))
-      .default([]),
-    loop: z
-      .array(z.object({ round: z.string(), note: z.string() }))
-      .default([]),
+    modelTimeline: z.array(z.object({ year: z.number().int(), note: z.string() })).default([]),
+    loop: z.array(z.object({ round: z.string(), note: z.string() })).default([]),
     papers: z.array(z.string()).default([]),
     blogs: z.array(z.string()).default([]),
     books: z.array(z.string()).default([]),
-    seededAngles: z
-      .array(z.object({ week: z.number().int(), note: z.string() }))
-      .default([]),
+    seededAngles: z.array(z.object({ week: z.number().int(), note: z.string() })).default([]),
   }),
 })
 
 const extras = defineCollection({
   loader: glob({ pattern: '**/*.mdx', base: './src/content/extras' }),
   schema: z.object({
-    slug: z.enum(['how-to-study', 'glossary', 'math-primer', 'paper-reading-protocol', 'tech-writing']),
+    slug: z.enum([
+      'how-to-study',
+      'glossary',
+      'math-primer',
+      'paper-reading-protocol',
+      'tech-writing',
+    ]),
     title: z.string(),
     tagline: z.string(),
   }),

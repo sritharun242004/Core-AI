@@ -1,8 +1,8 @@
 ---
-import BookShell from '../components/layout/BookShell.astro'
 import CompanyProfileHeader from '../components/companies/CompanyProfileHeader.astro'
-import LoopGuide from '../components/companies/LoopGuide.astro'
 import CompanyReadingList from '../components/companies/CompanyReadingList.astro'
+import LoopGuide from '../components/companies/LoopGuide.astro'
+import BookShell from '../components/layout/BookShell.astro'
 
 interface Props {
   frontmatter: {
@@ -40,6 +40,10 @@ const { frontmatter: f } = Astro.props
     </section>
   )}
 
+  <p class="my-6">
+    <a href="/companies/compare" class="underline text-accent-p1">Compare this company with the other six labs</a>.
+    Public interview accounts vary by role and date; confirm current expectations with your recruiter.
+  </p>
   <LoopGuide rounds={f.loop} />
   <CompanyReadingList papers={f.papers} blogs={f.blogs} books={f.books} />
 
@@ -47,7 +51,7 @@ const { frontmatter: f } = Astro.props
     <section class="my-10">
       <h2 class="font-display text-2xl">Seeded interview angles</h2>
       <ul class="mt-2 space-y-1">
-        {f.seededAngles.map((a) => (
+        {[...f.seededAngles].sort((a, b) => a.week - b.week).map((a) => (
           <li><strong>W{String(a.week).padStart(2, '0')}</strong> — {a.note}</li>
         ))}
       </ul>

@@ -10,13 +10,16 @@ test('/interview renders the dashboard with zero progress', async ({ page }) => 
 test('/interview reflects a seeded localStorage progress record', async ({ page }) => {
   await page.goto('/interview')
   await page.evaluate(() => {
-    localStorage.setItem('core-ai:progress', JSON.stringify({
-      answers: {
-        'week1-q0': { attempts: 2, correct: 2 },
-        'coding:lru': { attempts: 1, correct: 1 },
-        'sysdes:recsys': { attempts: 1, correct: 1 },
-      },
-    }))
+    localStorage.setItem(
+      'core-ai:progress',
+      JSON.stringify({
+        answers: {
+          'week1-q0': { attempts: 2, correct: 2 },
+          'coding:lru': { attempts: 1, correct: 1 },
+          'sysdes:recsys': { attempts: 1, correct: 1 },
+        },
+      }),
+    )
   })
   await page.reload()
   await expect(page.locator('p.font-display.text-4xl')).toContainText('3')

@@ -2,28 +2,51 @@
 import BookShell from '../../components/layout/BookShell.astro'
 
 const set = [
-  { tag: 'arrays',   items: [
-    { title: 'Sliding-window max', diff: 'M' }, { title: 'Product of array except self', diff: 'M' },
-    { title: 'Longest consecutive sequence', diff: 'M' }, { title: 'Trapping rain water', diff: 'H' },
-  ]},
-  { tag: 'strings',  items: [
-    { title: 'Longest palindromic substring', diff: 'M' }, { title: 'Group anagrams', diff: 'M' },
-    { title: 'Edit distance', diff: 'H' },
-  ]},
-  { tag: 'graphs',   items: [
-    { title: 'Course schedule (topological sort)', diff: 'M' }, { title: 'Number of islands', diff: 'M' },
-    { title: 'Word ladder', diff: 'H' },
-  ]},
-  { tag: 'ml-flavored', items: [
-    { title: 'K-means one iteration', diff: 'M' }, { title: 'Softmax + cross-entropy (numerically stable)', diff: 'M' },
-    { title: 'Batch matrix multiply in NumPy', diff: 'M' }, { title: 'Top-k with a heap', diff: 'M' },
-    { title: 'Sample from a categorical without replacement', diff: 'M' }, { title: 'Implement a min-heap', diff: 'M' },
-    { title: 'Precision @ k / Recall @ k', diff: 'E' },
-  ]},
-  { tag: 'systems', items: [
-    { title: 'LRU cache', diff: 'M' }, { title: 'Rate limiter (token bucket)', diff: 'M' },
-    { title: 'Consistent hashing', diff: 'H' },
-  ]},
+  {
+    tag: 'arrays',
+    items: [
+      { title: 'Sliding-window max', diff: 'M' },
+      { title: 'Product of array except self', diff: 'M' },
+      { title: 'Longest consecutive sequence', diff: 'M' },
+      { title: 'Trapping rain water', diff: 'H' },
+    ],
+  },
+  {
+    tag: 'strings',
+    items: [
+      { title: 'Longest palindromic substring', diff: 'M' },
+      { title: 'Group anagrams', diff: 'M' },
+      { title: 'Edit distance', diff: 'H' },
+    ],
+  },
+  {
+    tag: 'graphs',
+    items: [
+      { title: 'Course schedule (topological sort)', diff: 'M' },
+      { title: 'Number of islands', diff: 'M' },
+      { title: 'Word ladder', diff: 'H' },
+    ],
+  },
+  {
+    tag: 'ml-flavored',
+    items: [
+      { title: 'K-means one iteration', diff: 'M' },
+      { title: 'Softmax + cross-entropy (numerically stable)', diff: 'M' },
+      { title: 'Batch matrix multiply in NumPy', diff: 'M' },
+      { title: 'Top-k with a heap', diff: 'M' },
+      { title: 'Sample from a categorical without replacement', diff: 'M' },
+      { title: 'Implement a min-heap', diff: 'M' },
+      { title: 'Precision @ k / Recall @ k', diff: 'E' },
+    ],
+  },
+  {
+    tag: 'systems',
+    items: [
+      { title: 'LRU cache', diff: 'M' },
+      { title: 'Rate limiter (token bucket)', diff: 'M' },
+      { title: 'Consistent hashing', diff: 'H' },
+    ],
+  },
 ]
 ---
 <BookShell title="Coding set — 20 Leetcode-ML problems">

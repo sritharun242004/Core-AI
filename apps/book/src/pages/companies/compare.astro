@@ -1,13 +1,15 @@
 ---
 export const prerender = false
-import BookShell from '../../components/layout/BookShell.astro'
 import CompareTable from '../../components/companies/CompareTable.astro'
+import BookShell from '../../components/layout/BookShell.astro'
 import { COMPANY_SLUGS, type CompanySlug } from '../../lib/companies'
 
 const url = new URL(Astro.request.url)
 const raw = url.searchParams.get('companies')
 const requested = raw ? raw.split(',') : COMPANY_SLUGS
-const slugs = requested.filter((s): s is CompanySlug => (COMPANY_SLUGS as readonly string[]).includes(s))
+const slugs = requested.filter((s): s is CompanySlug =>
+  (COMPANY_SLUGS as readonly string[]).includes(s),
+)
 const axis = ((): 'philosophy' | 'timeline' | 'loop' | 'papers' | 'angles' => {
   const a = url.searchParams.get('axis')
   return a === 'timeline' || a === 'loop' || a === 'papers' || a === 'angles' ? a : 'philosophy'

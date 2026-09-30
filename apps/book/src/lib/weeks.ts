@@ -41,17 +41,41 @@ export const WEEK_COLUMNS: WeekColumn[] = [
   ...splitWeeks,
   ...Array.from({ length: 9 }, (_, index) => {
     const week = index + 17
-    return { week, slug: `week-${String(week).padStart(2, '0')}-pending`, label: String(week) }
+    const suffixes = [
+      'mini-rag-multimodal',
+      'fsdp-ring-lab',
+      'vllm-benchmark',
+      'evals-mlops-pipeline',
+      'alignment-lab',
+      'tracks',
+      'tracks',
+      'capstone',
+      'interview-prep',
+    ]
+    return { week, slug: `week-${week}-${suffixes[index]}`, label: String(week) }
   }),
 ]
 
 export function weekLabel(entry: WeekNavigationEntry): string {
-  const match = entry.slug.match(/^week-(\d{2})([ab])?-/)
+  const match = entry.slug.match(/^week-(\d{2})([ablpr])?-/)
   if (!match) return String(entry.week).padStart(2, '0')
-  return `${match[1]}${match[2] ?? ''}`
+  const suffix = match[2] ?? ''
+  return `${match[1]}${entry.week >= 22 ? suffix.toUpperCase() : suffix}`
 }
 
 export function compareWeeks(a: WeekNavigationEntry, b: WeekNavigationEntry): number {
   if (a.week !== b.week) return a.week - b.week
-  return weekLabel(a).localeCompare(weekLabel(b))
+  return weekLabel(a).localeCompare(weekLabel(b)) || a.slug.localeCompare(b.slug)
+}
+
+/** A roadmap column can contain three track choices, never a last-write-wins map. */
+export function lessonsForColumn<T extends WeekNavigationEntry>(
+  column: WeekColumn,
+  entries: T[],
+): T[] {
+  return entries
+    .filter(
+      (entry) => entry.week === column.week && (entry.week !== 15 || entry.slug === column.slug),
+    )
+    .sort(compareWeeks)
 }

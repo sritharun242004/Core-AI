@@ -1,6 +1,5 @@
-import { motion } from 'motion/react'
 import type { ComponentChildren } from 'preact'
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 
 export interface ScrollRevealProps {
   children: ComponentChildren
@@ -10,21 +9,7 @@ export interface ScrollRevealProps {
   'data-testid'?: string
 }
 
-function useReducedMotionSafe(): boolean {
-  const [reduce, setReduce] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  })
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const listener = (e: MediaQueryListEvent) => setReduce(e.matches)
-    mq.addEventListener('change', listener)
-    return () => mq.removeEventListener('change', listener)
-  }, [])
-  return reduce
-}
-
+/** Progressive enhancement: SSR/no-JS content is always readable. */
 export function ScrollReveal({
   children,
   delay = 0,
@@ -32,23 +17,55 @@ export function ScrollReveal({
   once = true,
   'data-testid': testId,
 }: ScrollRevealProps) {
-  const reduce = useReducedMotionSafe()
-  if (reduce) {
-    return (
-      <div data-testid={testId} style={{ opacity: 1 }}>
-        {children}
-      </div>
-    )
-  }
+  const element = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(true)
+  const [reduced, setReduced] = useState(true)
+
+  useEffect(() => {
+    const node = element.current
+    if (!node || typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let observer: IntersectionObserver | undefined
+    const configure = () => {
+      observer?.disconnect()
+      setReduced(query.matches)
+      setVisible(true)
+      if (query.matches || typeof IntersectionObserver === 'undefined') return
+      // Only hide offscreen content after the browser can observe it.
+      setVisible(node.getBoundingClientRect().top < window.innerHeight)
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setVisible(true)
+            if (once) observer?.disconnect()
+          } else if (!once) setVisible(false)
+        },
+        { threshold: 0.1 },
+      )
+      observer.observe(node)
+    }
+    configure()
+    query.addEventListener('change', configure)
+    return () => {
+      observer?.disconnect()
+      query.removeEventListener('change', configure)
+    }
+  }, [once])
+
   return (
-    <motion.div
+    <div
+      ref={element}
       data-testid={testId}
-      initial={{ opacity: 0, y }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once, amount: 0.25 }}
-      transition={{ duration: 0.5, delay, ease: 'easeOut' }}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible || reduced ? 'none' : `translateY(${y}px)`,
+        transition: reduced
+          ? 'none'
+          : 'opacity 240ms cubic-bezier(0.16,1,0.3,1), transform 240ms cubic-bezier(0.16,1,0.3,1)',
+        transitionDelay: reduced ? '0s' : `${Math.max(0, delay)}s`,
+      }}
     >
       {children}
-    </motion.div>
+    </div>
   )
 }

@@ -1,7 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { WEEK_COLUMNS, compareWeeks, weekLabel } from '../src/lib/weeks'
+import { WEEK_COLUMNS, compareWeeks, lessonsForColumn, weekLabel } from '../src/lib/weeks'
 
 describe('split-week navigation', () => {
+  it('distinguishes all specialization tracks without overwriting equal week numbers', () => {
+    const entries = ['r', 'l', 'p'].map((track) => ({ week: 22, slug: `week-22${track}-lab` }))
+    expect(entries.sort(compareWeeks).map(weekLabel)).toEqual(['22L', '22P', '22R'])
+    const column = WEEK_COLUMNS.find((entry) => entry.week === 22)
+    if (!column) throw new Error('Week 22 column missing')
+    expect(lessonsForColumn(column, entries)).toHaveLength(3)
+  })
+
+  it('keeps separate 15a and 15b columns exact', () => {
+    const entries = [
+      { week: 15, slug: 'week-15a-sft-lora-dpo-lab' },
+      { week: 15, slug: 'week-15b-moe-and-reasoning' },
+    ]
+    expect(lessonsForColumn(WEEK_COLUMNS[14], entries)).toEqual([entries[0]])
+    expect(lessonsForColumn(WEEK_COLUMNS[15], entries)).toEqual([entries[1]])
+  })
+
   it('labels the subweeks without inventing Week 16', () => {
     expect(weekLabel({ week: 15, slug: 'week-15a-sft-lora-dpo-lab' })).toBe('15a')
     expect(weekLabel({ week: 15, slug: 'week-15b-moe-and-reasoning' })).toBe('15b')

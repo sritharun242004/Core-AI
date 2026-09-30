@@ -7,6 +7,7 @@ import expressiveCode from 'astro-expressive-code'
 import { defineConfig, fontProviders } from 'astro/config'
 import rehypeKatex from 'rehype-katex'
 import remarkMath from 'remark-math'
+import { pagefindDev } from './pagefind-dev.mjs'
 
 export default defineConfig({
   site: 'https://core-ai.book',
@@ -22,7 +23,7 @@ export default defineConfig({
     sitemap(),
   ],
   vite: {
-    plugins: [tailwindcss()],
+    plugins: [tailwindcss(), pagefindDev()],
     resolve: {
       alias: {
         'react/jsx-runtime': 'preact/jsx-runtime',

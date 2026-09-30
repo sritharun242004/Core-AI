@@ -2,6 +2,21 @@
   max-width: 68ch;
   font-family: var(--font-body);
   color: var(--fg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.prose-book table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin-block: 24px;
+}
+.prose-book :where(th, td) {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: start;
+  vertical-align: top;
 }
 .prose-book :where(h1, h2, h3, h4) {
   font-family: var(--font-display);

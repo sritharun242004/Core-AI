@@ -1,31 +1,31 @@
 import { useSignal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import { getProgress, surfaceCounts, totalSolved } from '../../lib/progress'
 import { COMPANIES } from '../../lib/companies'
+import { getProgress, surfaceCounts, totalSolved } from '../../lib/progress'
 
 export function InterviewDashboard() {
   const tick = useSignal(0)
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const bump = () => (tick.value = tick.value + 1)
+    const bump = () => {
+      tick.value = tick.peek() + 1
+    }
     addEventListener('storage', bump)
     addEventListener('progress:changed', bump)
     return () => {
       removeEventListener('storage', bump)
       removeEventListener('progress:changed', bump)
     }
-  }, [])
+  }, [tick])
 
   // Reads happen at render time; tick.value in JSX forces re-subscription.
   const _sub = tick.value
   const total = totalSolved()
   const surfaces = surfaceCounts()
   const perCompany: Record<string, number> = {}
-  {
-    for (const c of COMPANIES) perCompany[c.slug] = 0
-    for (const id of Object.keys(getProgress().answers)) {
-      for (const c of COMPANIES) if (id.includes(`:${c.slug}`)) perCompany[c.slug]++
-    }
+  for (const c of COMPANIES) perCompany[c.slug] = 0
+  for (const id of Object.keys(getProgress().answers)) {
+    for (const c of COMPANIES) if (id.includes(`:${c.slug}`)) perCompany[c.slug]++
   }
 
   return (
@@ -38,7 +38,10 @@ export function InterviewDashboard() {
         <p class="text-sm text-fg-muted">By surface</p>
         <ul class="mt-2 text-sm space-y-1">
           {(['coding', 'sysdes', 'fundamentals', 'behavioral'] as const).map((k) => (
-            <li class="flex justify-between"><span>{k}</span><span>{surfaces[k]}</span></li>
+            <li key={k} class="flex justify-between">
+              <span>{k}</span>
+              <span>{surfaces[k]}</span>
+            </li>
           ))}
         </ul>
       </div>
@@ -46,8 +49,11 @@ export function InterviewDashboard() {
         <p class="text-sm text-fg-muted">By company</p>
         <ul class="mt-2 text-sm grid grid-cols-2 md:grid-cols-4 gap-2">
           {COMPANIES.map((c) => (
-            <li class="flex justify-between border-b border-border-soft/50 py-1">
-              <span>{c.emoji} {c.name}</span><span>{perCompany[c.slug]}</span>
+            <li key={c.slug} class="flex justify-between border-b border-border-soft/50 py-1">
+              <span>
+                {c.emoji} {c.name}
+              </span>
+              <span>{perCompany[c.slug]}</span>
             </li>
           ))}
         </ul>

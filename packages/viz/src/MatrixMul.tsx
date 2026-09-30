@@ -18,13 +18,16 @@ export function MatrixMul({ a, b, width = 480, height = 200, highlight }: Matrix
 
   const drawGrid = (m: number[][], ox: number, label: string, kind: 'a' | 'b') => (
     <g>
-      <text x={ox} y={16} fill={c.muted} fontSize={12} fontFamily="var(--font-mono)">{label}</text>
+      <text x={ox} y={16} fill={c.muted} fontSize={12} fontFamily="var(--font-mono)">
+        {label}
+      </text>
       {m.map((row, i) =>
         row.map((val, j) => {
           const isHi =
             highlight &&
             ((kind === 'a' && i === highlight.i) || (kind === 'b' && j === highlight.j))
           return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: matrix coordinates are cell identity, even when their values change.
             <g key={`${kind}-${i}-${j}`} data-cell>
               <rect
                 x={ox + j * cell}
@@ -55,7 +58,13 @@ export function MatrixMul({ a, b, width = 480, height = 200, highlight }: Matrix
   const oxA = 8
   const oxB = oxA + colsA * cell + gap
   return (
-    <svg role="img" aria-label="Matrix multiplication" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+    <svg
+      role="img"
+      aria-label="Matrix multiplication"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+    >
       {drawGrid(a, oxA, `A (${rowsA}×${colsA})`, 'a')}
       {drawGrid(b, oxB, `B (${b.length}×${colsB})`, 'b')}
     </svg>

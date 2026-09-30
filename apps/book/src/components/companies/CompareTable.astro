@@ -1,7 +1,10 @@
 ---
-import { type CompanySlug } from '../../lib/companies'
 import { getCollection } from 'astro:content'
-interface Props { slugs: CompanySlug[]; axis: 'philosophy' | 'timeline' | 'loop' | 'papers' | 'angles' }
+import type { CompanySlug } from '../../lib/companies'
+interface Props {
+  slugs: CompanySlug[]
+  axis: 'philosophy' | 'timeline' | 'loop' | 'papers' | 'angles'
+}
 const { slugs, axis } = Astro.props
 
 const all = await getCollection('companies')
@@ -10,11 +13,15 @@ const rows = slugs.map((s) => {
   if (!entry) throw new Error(`No profile for ${s}`)
   const d = entry.data
   const cell =
-    axis === 'philosophy' ? d.philosophyLead :
-    axis === 'timeline'   ? d.modelTimeline.map((m) => `${m.year}: ${m.note}`).join(' · ') :
-    axis === 'loop'       ? d.loop.map((r) => r.round).join(' · ') :
-    axis === 'papers'     ? d.papers.slice(0, 5).join(' · ') :
-                            d.seededAngles.map((a) => `W${a.week}: ${a.note}`).join(' · ')
+    axis === 'philosophy'
+      ? d.philosophyLead
+      : axis === 'timeline'
+        ? d.modelTimeline.map((m) => `${m.year}: ${m.note}`).join(' · ')
+        : axis === 'loop'
+          ? d.loop.map((r) => r.round).join(' · ')
+          : axis === 'papers'
+            ? d.papers.slice(0, 5).join(' · ')
+            : d.seededAngles.map((a) => `W${a.week}: ${a.note}`).join(' · ')
   return { name: d.name, tint: d.tint, cell }
 })
 ---

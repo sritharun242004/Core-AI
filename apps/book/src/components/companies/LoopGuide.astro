@@ -1,6 +1,11 @@
 ---
-interface Round { round: string; note: string }
-interface Props { rounds: Round[] }
+interface Round {
+  round: string
+  note: string
+}
+interface Props {
+  rounds: Round[]
+}
 const { rounds } = Astro.props
 ---
 <section class="my-10">

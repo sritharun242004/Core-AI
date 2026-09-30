@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
+import { extractUrls } from './link-urls.mjs'
 
 // Known-flaky or known-blocking URLs that resolve fine in a browser but fail
 // HEAD requests from CI/CLI environments (bot-blocking, method not allowed, etc),
@@ -10,6 +11,8 @@ import { join } from 'node:path'
 const IGNORE_URLS = new Set([
   // docs/superpowers/plans/2026-09-22-core-ai-foundation.md — local dev server
   // and placeholder domains used in code samples, never reachable from any host.
+  // Verified via readable GET on 2026-09-30; OpenAI rejects this checker's HEAD with 403.
+  'https://openai.com/index/introducing-swe-bench-verified/',
   'http://localhost:4321',
   'http://localhost:4321/$s', // shell-loop artifact in a historical plan
   'http://localhost:4321/$s`', // same artifact mentioned in the handoff
@@ -18,7 +21,7 @@ const IGNORE_URLS = new Set([
   'https://core-ai-<hash', // regex artifact of `https://core-ai-<hash>.vercel.app`
   // placeholder GitHub repo referenced in an example footer snippet
   'https://github.com/tharun/core-ai-book',
-  'https://github.com/tharun/core-ai-book/tree/main/${path}`}', // JSX template-literal artifact
+  'https://github.com/tharun/core-ai-book/tree/main/${path}', // historical JSX artifact
   // real Wikimedia asset; upload.wikimedia.org rejects HEAD (and even GET) with
   // 400 regardless of User-Agent — verified working link, checker-method quirk.
   'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg',
@@ -33,14 +36,12 @@ async function* mdxFiles(dir) {
   }
 }
 
-const urlRe = /https?:\/\/[^\s)>\]"']+/g
 const seen = new Set()
 const failed = []
 
 for await (const f of mdxFiles('.')) {
   const text = await readFile(f, 'utf-8')
-  for (const m of text.matchAll(urlRe)) {
-    const url = m[0].replace(/[.,;:!)\]]+$/, '')
+  for (const url of extractUrls(text)) {
     if (seen.has(url) || IGNORE_URLS.has(url)) continue
     seen.add(url)
     try {

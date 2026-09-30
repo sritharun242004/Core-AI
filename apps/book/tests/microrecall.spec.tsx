@@ -1,19 +1,23 @@
 /** @vitest-environment jsdom */
-import { render, fireEvent } from '@testing-library/preact'
+import { fireEvent, render } from '@testing-library/preact'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { MicroRecall } from '../src/components/interactive/MicroRecall'
 
 describe('MicroRecall reveal state', () => {
-  beforeEach(() => { localStorage.clear() })
+  beforeEach(() => {
+    localStorage.clear()
+  })
 
   it('shows the explanation after the user picks a choice', async () => {
-    const questions = [{
-      id: 'q-a',
-      prompt: 'What is 2+2?',
-      choices: ['3', '4', '5'],
-      correct: 1,
-      explain: 'Addition is closed on the integers.',
-    }]
+    const questions = [
+      {
+        id: 'q-a',
+        prompt: 'What is 2+2?',
+        choices: ['3', '4', '5'],
+        correct: 1,
+        explain: 'Addition is closed on the integers.',
+      },
+    ]
     const { container, getByText } = render(<MicroRecall questions={questions} />)
     // Click the correct answer.
     const btn = getByText('4') as HTMLButtonElement

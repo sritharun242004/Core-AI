@@ -1,83 +1,165 @@
-import { signal, effect } from '@preact/signals'
+import { effect, signal } from '@preact/signals'
+import { useEffect, useRef } from 'preact/hooks'
 
-interface PagefindResult { id: string; data: () => Promise<{ url: string; excerpt: string; meta: { title: string } }> }
-interface PagefindModule { search: (q: string) => Promise<{ results: PagefindResult[] }> }
+interface PagefindResult {
+  data: () => Promise<{ url: string; excerpt: string; meta: { title: string } }>
+}
+interface PagefindModule {
+  search: (q: string) => Promise<{ results: PagefindResult[] }>
+}
 
 const open = signal(false)
 const query = signal('')
 const hits = signal<{ url: string; title: string; excerpt: string }[]>([])
+const status = signal<'idle' | 'loading' | 'ready' | 'error'>('idle')
 let pagefind: PagefindModule | null = null
+let request = 0
 
-async function ensurePagefind(): Promise<PagefindModule | null> {
-  if (pagefind) return pagefind
+async function runSearch(value: string) {
+  const current = ++request
+  const text = value.trim()
+  if (!text) {
+    hits.value = []
+    status.value = 'idle'
+    return
+  }
+  status.value = 'loading'
+  hits.value = []
   try {
-    // Runtime-constructed path so Vite/Rollup won't try to resolve it at build.
-    const url = new URL('/pagefind/pagefind.js', location.origin).href
-    // @ts-expect-error — dynamic import of runtime asset
-    pagefind = await import(/* @vite-ignore */ url)
-    return pagefind
+    if (!pagefind) {
+      const url = new URL('/pagefind/pagefind.js', location.origin).href
+      pagefind = (await import(/* @vite-ignore */ url)) as PagefindModule
+    }
+    const result = await pagefind.search(text)
+    const data = await Promise.all(result.results.slice(0, 8).map((entry) => entry.data()))
+    if (current !== request) return
+    hits.value = data.map((entry) => ({
+      url: entry.url,
+      title: entry.meta.title,
+      excerpt: new DOMParser().parseFromString(entry.excerpt, 'text/html').body.textContent ?? '',
+    }))
+    status.value = 'ready'
   } catch {
-    return null
+    if (current === request) {
+      pagefind = null
+      status.value = 'error'
+    }
   }
 }
 
-async function runSearch(q: string) {
-  if (!q) { hits.value = []; return }
-  const pf = await ensurePagefind()
-  if (!pf) { hits.value = []; return }
-  const res = await pf.search(q)
-  const first = res.results.slice(0, 8)
-  const data = await Promise.all(first.map((r) => r.data()))
-  hits.value = data.map((d) => ({ url: d.url, title: d.meta.title, excerpt: d.excerpt }))
-}
-
 if (typeof window !== 'undefined') {
-  addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open.value = true }
-    if (e.key === 'Escape') open.value = false
+  addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') open.value = false
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      open.value = true
+    }
   })
-  effect(() => { runSearch(query.value) })
-  // Expose an imperative opener so pages (e.g. /search) can trigger the dialog
-  // without depending on synthetic KeyboardEvent bubbling / hydration timing.
-  ;(window as unknown as { openSearch?: () => void }).openSearch = () => { open.value = true }
+  effect(() => {
+    void runSearch(query.value)
+  })
+  ;(window as unknown as { openSearch?: () => void }).openSearch = () => {
+    open.value = true
+  }
 }
 
 export function SearchDialog() {
-  if (!open.value) return null
+  const ref = useRef<HTMLDialogElement>(null)
+  const isOpen = open.value
+  useEffect(() => {
+    if (isOpen && !ref.current?.open) {
+      ref.current?.showModal()
+      ref.current?.querySelector('input')?.focus()
+    } else if (!isOpen && ref.current?.open) ref.current.close()
+  }, [isOpen])
+
   return (
-    <div role="dialog" aria-modal="true" aria-label="Search" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-8" onClick={() => (open.value = false)}>
-      <div class="bg-canvas w-full max-w-xl rounded-md border border-border-soft p-4" onClick={(e) => e.stopPropagation()}>
-        <input
-          autoFocus
-          type="search"
-          value={query.value}
-          onInput={(e) => (query.value = (e.target as HTMLInputElement).value)}
-          placeholder="Search the book…"
-          class="w-full bg-canvas-subtle text-fg px-3 py-2 rounded-sm border border-border-soft"
-        />
-        <ul class="mt-3 space-y-2">
-          {hits.value.map((h) => (
-            <li>
-              <a href={h.url} class="block px-3 py-2 rounded-sm hover:bg-canvas-subtle">
-                <p class="font-medium">{h.title}</p>
-                <p class="text-sm text-fg-muted" dangerouslySetInnerHTML={{ __html: h.excerpt }} />
-              </a>
-            </li>
-          ))}
-          {query.value && hits.value.length === 0 && (
-            <li class="text-fg-muted text-sm italic">No matches.</li>
-          )}
-        </ul>
-        <p class="text-xs text-fg-muted mt-2">⌘K to open · Esc to close</p>
+    <dialog
+      ref={ref}
+      aria-label="Search the book"
+      onClose={() => {
+        open.value = false
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) open.value = false
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') open.value = false
+      }}
+      class="m-auto mt-16 w-[calc(100%_-_2rem)] max-w-xl max-h-[80vh] overflow-y-auto bg-canvas text-fg rounded-md border border-border-soft p-5 backdrop:bg-black/40"
+    >
+      <div class="flex justify-between items-center gap-4 mb-4">
+        <h2 class="font-display text-xl">Search the book</h2>
+        <button
+          type="button"
+          onClick={() => {
+            open.value = false
+          }}
+          class="px-3 py-2 border border-border-soft rounded-sm"
+        >
+          Close
+        </button>
       </div>
-    </div>
+      <label for="book-search" class="sr-only">
+        Search query
+      </label>
+      <input
+        id="book-search"
+        type="search"
+        maxLength={160}
+        value={query.value}
+        onInput={(event) => {
+          query.value = event.currentTarget.value
+        }}
+        placeholder="Search concepts, lessons, or companies…"
+        class="w-full bg-canvas-subtle text-fg px-3 py-3 rounded-sm border border-border-soft"
+      />
+      <div aria-live="polite" class="mt-3 text-sm text-fg-muted">
+        {status.value === 'loading' && <p>Searching…</p>}
+        {status.value === 'idle' && <p>Enter a topic to find it in the book.</p>}
+        {status.value === 'error' && (
+          <p>
+            Search is unavailable. Check your connection or build the local index.
+            <button
+              type="button"
+              class="block underline py-2"
+              onClick={() => {
+                void runSearch(query.value)
+              }}
+            >
+              Retry search
+            </button>
+          </p>
+        )}
+        {status.value === 'ready' && hits.value.length === 0 && (
+          <p>No matches. Try a broader topic.</p>
+        )}
+      </div>
+      <ul class="mt-3 space-y-2">
+        {hits.value.map((hit) => (
+          <li key={hit.url}>
+            <a href={hit.url} class="block px-3 py-2 rounded-sm hover:bg-canvas-subtle">
+              <p class="font-medium">{hit.title}</p>
+              <p class="text-sm text-fg-muted">{hit.excerpt}</p>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p class="text-sm text-fg-muted mt-4">⌘K / Ctrl+K to open · Esc to close</p>
+    </dialog>
   )
 }
 
 export function SearchOpener() {
   return (
-    <button type="button" onClick={() => (open.value = true)} class="text-sm px-2 py-1 rounded-sm border border-border-soft">
-      ⌘K Search
+    <button
+      type="button"
+      onClick={() => {
+        open.value = true
+      }}
+      class="text-sm px-3 py-2 rounded-sm border border-border-soft"
+    >
+      Search
     </button>
   )
 }

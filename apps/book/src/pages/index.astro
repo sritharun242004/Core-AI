@@ -21,8 +21,8 @@ const parts = [1, 2, 3, 4, 5, 6].map((p) => ({
   <section class="mb-16">
     <h1 class="font-display text-5xl leading-tight">Core AI</h1>
     <p class="font-display text-2xl text-fg-muted mt-3">From foundation to frontier.</p>
-    <p class="mt-4 max-w-prose">25 weeks. Zero to interview-ready for AI-engineer roles at frontier labs — with math, code, real reference projects, and a Company Lens through every topic.</p>
-    <div class="mt-6 flex gap-3">
+    <p class="mt-4 max-w-prose">A 25-week roadmap from foundations to frontier AI — with math, tested reference projects, three specialization tracks, and a Company Lens through every topic. Practice and feedback—not completion alone—establish interview readiness.</p>
+    <div class="mt-6 flex flex-wrap gap-3">
       <a href="/weeks/week-01-linear-algebra" class="px-4 py-3 bg-accent-p1 text-white rounded-sm">Start Week 1 →</a>
       <a href="/how-to-study" class="px-4 py-3 border border-border-soft rounded-sm">How to study this book</a>
     </div>
@@ -30,15 +30,23 @@ const parts = [1, 2, 3, 4, 5, 6].map((p) => ({
 
   {parts.map(({ part, title, weeks }) => (
     <section class="my-12">
-      <h2 class="font-display text-3xl">Month {part} — {title}</h2>
+      <h2 class="font-display text-3xl">Part {part} — {title}</h2>
+      {part === 6 && (
+        <p class="mt-3 max-w-prose">
+          Choose two tracks: L — LLM product and agents; P — applied ML; R — research.
+          Complete α (W22) then β (W23) within each chosen track. All six lessons are available.
+          Two tracks take four study weeks; the 40-hour capstone needs about two more at a
+          20-hour pace. Roadmap labels are not a promise of a 25-calendar-week finish.
+        </p>
+      )}
       <ol class="mt-4 space-y-2">
         {weeks.map((w) => (
-          <li class="flex justify-between border-b border-border-soft py-2">
+          <li class="flex justify-between gap-4 border-b border-border-soft py-2">
             <a href={`/weeks/${w.data.slug}`} class="hover:text-accent-p1">
               <span class="text-fg-muted mr-3">W{weekLabel(w.data)}</span>
               {w.data.title}
             </a>
-            <span class="text-sm text-fg-muted">{w.data.hours}h</span>
+            <span class="text-sm text-fg-muted shrink-0">{w.data.hours}h</span>
           </li>
         ))}
       </ol>

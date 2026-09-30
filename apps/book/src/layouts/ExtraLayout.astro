@@ -1,6 +1,8 @@
 ---
 import BookShell from '../components/layout/BookShell.astro'
-interface Props { frontmatter: { title: string; tagline: string } }
+interface Props {
+  frontmatter: { title: string; tagline: string }
+}
 const { frontmatter } = Astro.props
 ---
 <BookShell title={frontmatter.title}>

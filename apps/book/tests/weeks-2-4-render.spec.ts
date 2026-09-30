@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 const CASES = [
-  { slug: 'week-02-calculus',           title: 'Calculus' },
-  { slug: 'week-03-probability',        title: 'Probability & Statistics' },
+  { slug: 'week-02-calculus', title: 'Calculus' },
+  { slug: 'week-03-probability', title: 'Probability & Statistics' },
   { slug: 'week-04-python-info-theory', title: 'Python for ML + Information Theory' },
 ]
 

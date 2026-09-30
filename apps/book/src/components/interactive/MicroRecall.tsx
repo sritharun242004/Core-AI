@@ -9,14 +9,18 @@ export interface RecallQuestion {
   explain: string
 }
 
-export interface MicroRecallProps { questions: RecallQuestion[] }
+export interface MicroRecallProps {
+  questions: RecallQuestion[]
+}
 
 export function MicroRecall({ questions }: MicroRecallProps) {
   const idx = useSignal(0)
   const pick = useSignal<number | null>(null)
 
   const q = questions[idx.value]
+  if (!q) return null
   const onPick = (i: number) => {
+    if (pick.value !== null) return
     pick.value = i
     recordAnswer(q.id, i === q.correct)
     // Notify same-tab observers (e.g. /interview dashboard) — the `storage`
@@ -33,20 +37,24 @@ export function MicroRecall({ questions }: MicroRecallProps) {
   return (
     <aside class="my-6 rounded-md border-l-4 border-accent-p1 bg-canvas-subtle p-4">
       <div class="flex items-start gap-3">
-        <span aria-hidden="true" class="text-xl">💡</span>
+        <span aria-hidden="true" class="text-xl">
+          💡
+        </span>
         <div style={{ flex: 1 }}>
           <p class="font-medium">{q.prompt}</p>
           <ul class="mt-3 space-y-2">
             {q.choices.map((c, i) => {
               const chosen = pick.value === i
               const isRight = i === q.correct
-              const cls =
-                !revealed  ? 'border-border-soft' :
-                isRight    ? 'border-accent-p5 bg-accent-p5/10' :
-                chosen     ? 'border-accent-p6 bg-accent-p6/10' :
-                             'border-border-soft opacity-50'
+              const cls = !revealed
+                ? 'border-border-soft'
+                : isRight
+                  ? 'border-accent-p5 bg-accent-p5/10'
+                  : chosen
+                    ? 'border-accent-p6 bg-accent-p6/10'
+                    : 'border-border-soft opacity-50'
               return (
-                <li>
+                <li key={`${q.id}:${c}`}>
                   <button
                     type="button"
                     disabled={revealed}
@@ -61,8 +69,13 @@ export function MicroRecall({ questions }: MicroRecallProps) {
           </ul>
           {revealed && (
             <div class="mt-3 text-sm">
-              <p><strong>{pick.value === q.correct ? '✓ Correct.' : '✗ Not quite.'}</strong> {q.explain}</p>
-              <button type="button" onClick={next} class="mt-2 text-accent-p1 underline">Next →</button>
+              <p>
+                <strong>{pick.value === q.correct ? '✓ Correct.' : '✗ Not quite.'}</strong>{' '}
+                {q.explain}
+              </p>
+              <button type="button" onClick={next} class="mt-2 text-accent-p1 underline">
+                Next →
+              </button>
             </div>
           )}
         </div>
