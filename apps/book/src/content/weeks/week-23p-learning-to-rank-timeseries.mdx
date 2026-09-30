@@ -1,0 +1,284 @@
+---
+week: 23
+part: 6
+track: "P"
+slug: "week-23p-learning-to-rank-timeseries"
+title: "Track P · β — Ranking, causal evidence, and forecasting"
+hook: "A ranking score went up, an experiment was inconclusive, and next month’s demand is uncertain. Which decision does each number justify?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-22p-two-tower-recsys"]
+referenceProject: "projects/week-23p-learning-to-rank-timeseries"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>A ranking score went up, an experiment was inconclusive, and next month’s demand is uncertain. Which decision does each number justify?</Hook>
+
+<Intuition>
+Applied ML asks three questions that sound similar but require different evidence. **Ranking:** which candidate should appear first for this query? **Causal inference:** what would change if we deployed policy B instead of A? **Forecasting:** what happens next, given only information available now? High accuracy on one does not answer the others.
+
+Think of a shop. Ranking arranges the shelf; an experiment compares two shelf policies across randomized shoppers; forecasting plans next week's inventory. A shopper buying an item does not prove its shelf position caused the purchase. Tomorrow's actual demand cannot be used to normalize yesterday's training data. And a more accurate inventory forecast does not by itself prove the new recommendation policy is better.
+
+<svg viewBox="0 0 690 145" role="img" aria-labelledby="p23-evidence-title" style="width:100%;height:auto">
+  <title id="p23-evidence-title">Three distinct evidence boundaries: hold out whole queries for ranking, randomize independent units for experiments, and train only before the origin for forecasts.</title>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="5" y="10" width="215" height="120" rx="4" />
+    <rect x="238" y="10" width="215" height="120" rx="4" />
+    <rect x="471" y="10" width="215" height="120" rx="4" />
+  </g>
+  <g fill="currentColor" text-anchor="middle" font-size="16">
+    <text x="112" y="39">Rank candidates</text><text x="112" y="72">Hold out queries</text><text x="112" y="105">NDCG / Recall</text>
+    <text x="345" y="39">Compare policies</text><text x="345" y="72">Randomize units</text><text x="345" y="105">ATE / uncertainty</text>
+    <text x="578" y="39">Predict the future</text><text x="578" y="72">Respect time origins</text><text x="578" y="105">MAE / calibration</text>
+  </g>
+</svg>
+
+<IntuitionCallout>Make four moves: choose the decision and unit of analysis; write the information boundary; implement a baseline and a trainable alternative; attach uncertainty only when its assumptions are justified.</IntuitionCallout>
+
+The project implements a numeric neural reranker, meaningful delta-NDCG LambdaRank-style gradients, randomized A/B arithmetic and a tiny residual forecasting network. It does **not** call that network LambdaMART, TFT or Prophet. Those named algorithms have distinct structures that we explain rather than pretend to reproduce. All data and outcomes are synthetic; offline ranking, randomized simulation and time-series prediction are separate experiments.
+
+<MicroRecall questions={[
+{id:'w23p-mr-group',prompt:'How should a new-query ranking evaluation split its data?',choices:['By whole query groups','By random documents regardless of query','By labels after training'],correct:0,explain:'Documents from one query belong to one group. Shared queries across train/test can make generalization look easier than it is.'},
+{id:'w23p-mr-causal',prompt:'Does an offline ranking improvement identify a causal business effect?',choices:['Yes','No'],correct:1,explain:'Offline relevance evaluates ordering; causal lift requires randomization or defensible identification assumptions.'}
+]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. Learning to rank: pointwise, pairwise and listwise
+
+A query q has candidate documents dᵢ, features xᵢ, relevance grades rᵢ and model scores sᵢ = fθ(xᵢ). A **pointwise** method predicts each grade/click separately. A **pairwise** method learns which member of a same-query pair belongs above the other. A **listwise** method optimizes an objective over a whole ranked list or a distribution over permutations. None magically removes bias in the labels.
+
+For a preferred pair with rᵢ greater than rⱼ, assume the probability of i outranking j follows a logistic score difference. Taking negative log likelihood gives RankNet's pairwise loss:
+
+<MathBlock latex="P(i\succ j\mid q)=\sigma(s_i-s_j),\qquad \ell_{ij}=-\log\sigma(s_i-s_j)=\log(1+e^{-(s_i-s_j)})" />
+
+Differentiate with respect to the two scores. At a tied score, the preferred document receives a negative gradient and the lower-grade document a positive gradient; descent separates them:
+
+<MathBlock latex="\frac{\partial\ell_{ij}}{\partial s_i}=-\sigma(s_j-s_i),\qquad \frac{\partial\ell_{ij}}{\partial s_j}=+\sigma(s_j-s_i)" />
+
+For margin zero: loss = .6931, gradients = [−.5,+.5]. Only strictly unequal relevance labels form pairs. There are no cross-query pairs; a constant score offset within a query cancels. Our MLP consequently omits the final output bias. It encodes supplied numeric query-document features; it is a neural reranker, not a downloaded text cross-encoder.
+
+The project averages preferred-pair losses within each query, then averages over **all** queries. A query with no preferred pairs contributes differentiable zero. This prevents queries with many candidate pairs from automatically dominating, but it is a modeling convention, not the only possible weighting.
+
+### 2. LambdaRank weights mistakes by ranking consequences
+
+Plain pairwise logistic loss treats pairs equally. Swapping two high-ranked documents can matter much more than swapping two items below the cutoff. Let gain Gᵢ = 2ʳⁱ − 1 and discount D(p) = 1/log₂(p+1) for one-indexed rank p at most k, zero otherwise. Holding the current ranking fixed, the absolute NDCG change from a swap is:
+
+<MathBlock latex="w_{ij}=|\Delta\operatorname{NDCG@k}_{ij}|=\frac{|G_i-G_j|\,|D(p_i)-D(p_j)|}{\operatorname{IDCG@k}},\qquad \lambda_i^{(ij)}=-w_{ij}\sigma(s_j-s_i),\quad \lambda_j^{(ij)}=-\lambda_i^{(ij)}" />
+
+The code recomputes ranks and swap weights each update, then **detaches** them while differentiating the weighted logistic surrogate. Analytical lambdas are separately implemented and tested against autograd and finite differences away from rank changes. This is a meaningful neural **LambdaRank-style** update, not a claim that discrete NDCG has become differentiable everywhere.
+
+**Numeric example:** grades [1,0], equal scores, k = 2, stable input-order tie break. IDCG = 1. Swapping the documents changes NDCG by 1 − 1/log₂3 ≈ .36907. The score gradients become approximately [−.18454,+.18454]. Below-cutoff pairs can have zero weight. Equal-grade pairs are not preferred, and zero ideal gain returns zero.
+
+**Where LambdaMART differs:** LambdaMART uses ranking lambdas within gradient-boosted regression trees, with library-specific curvature and leaf updates. A neural MLP trained with these lambdas is not a boosted tree ensemble. The reference does **not** implement LambdaMART or ship a hidden LightGBM adapter. The challenge assignment adds an explicit optional adapter with query-contiguous rows, correct group lengths and pinned dependencies. It must be evaluated under the same split and metric.
+
+Grouped Recall/NDCG follow Alpha's full-truth denominators. An eligibility mask affects the ranked candidate set, not ideal DCG or the count of relevant documents. To measure full-pipeline quality, include known relevant documents absent from retrieval as ineligible rows. If only candidate labels are supplied, report the result as **conditional candidate-set ranking**, not full-catalog retrieval performance. Equal scores use stable input-row order, never relevance as a tie breaker.
+
+### 3. A/B tests: potential outcomes, assignment and uncertainty
+
+For independent unit i, define Yᵢ(1) and Yᵢ(0), its potential outcomes under treatment and control. Only the assigned outcome is observed. The average treatment effect is the expectation of their difference:
+
+<MathBlock latex="\tau=\mathbb E[Y(1)-Y(0)],\qquad Y_i=Z_iY_i(1)+(1-Z_i)Y_i(0),\qquad \widehat\tau=\overline Y_1-\overline Y_0" />
+
+Z is randomized assignment, not whether a user chose to click. Causal interpretation needs consistency, assignment independent of potential outcomes, no interference between units, and a valid observation/missingness process. Analyze intent-to-treat by assignment; selecting only users who clicked conditions on a post-treatment variable. A social feed can violate no-interference because one user's treatment changes another's exposure.
+
+Under independent units and large-sample approximation, use separate arm sample variances rather than an unjustified common-variance assumption:
+
+<MathBlock latex="\widehat{\operatorname{SE}}(\widehat\tau)=\sqrt{\frac{s_1^2}{n_1}+\frac{s_0^2}{n_0}},\qquad \operatorname{CI}_{1-\alpha}=\widehat\tau\pm z_{1-\alpha/2}\widehat{\operatorname{SE}}" />
+
+For controls [1,3] and treatment [4,6], means are 2 and 5, both sample variances are 2, ATE = 3 and SE = √2. The nominal normal 95% interval is roughly [.2282,5.7718]. This tiny example checks arithmetic, **not** trustworthy normal coverage with two units per arm. Actual small-sample, clustered, heavy-tailed or ratio-metric inference requires a justified alternative.
+
+The experiment function returns arm counts and the chosen confidence level. A confidence procedure has repeated-sampling coverage; a realized 95% interval can miss the true simulated effect. The notebook deliberately prints that outcome rather than switching seeds until the interval looks reassuring. Tests check the formula, uncertainty shrinkage and repeated-simulation coverage separately.
+
+Stable SHA256-based assignment maps unit ID plus experiment seed to a pseudo-random uniform draw, then compares with the intended treatment probability. Assignment is order-independent and persistent for a unit; Python's process-dependent `hash()` is unsuitable. This is Bernoulli allocation, so counts are not exactly balanced. Repeated page views should not be treated as independent units; aggregate to the randomization unit or use valid cluster-aware analysis.
+
+### 4. Sample-ratio mismatch and the causal boundary
+
+Before interpreting an effect, compare observed counts Oₐ with expected counts Eₐ under the planned allocation:
+
+<MathBlock latex="X^2=\sum_{a\in\{0,1\}}\frac{(O_a-E_a)^2}{E_a},\qquad X^2\overset{H_0}{\approx}\chi_1^2" />
+
+The SRM implementation uses the one-degree-of-freedom chi-square survival probability; expected counts must be at least five. A 900/100 observed split under a 50/50 plan is a red flag; 800/200 under an 80/20 plan is not. SRM is an assignment/logging/eligibility diagnostic, not a treatment-effect test. A large p-value does not prove absence of all experiment bias.
+
+Predeclare metrics, allocation, duration, stopping rules and a business-relevant minimum detectable effect. Roughly, standard error shrinks like 1/√n; halving it costs about four times as many independent units. Repeatedly checking a fixed-horizon p-value and stopping on significance invalidates its advertised false-positive rate. Sequential methods and multiple-metric corrections require their own design.
+
+For **observational** data, treatment choice may be confounded. Conditional exchangeability says no unmeasured confounding after adjusting for X; positivity says both treatments are possible at relevant X; consistency connects assigned treatment to its defined outcome. Under those assumptions an inverse-propensity estimator can target ATE:
+
+<MathBlock latex="\widehat\tau_{\mathrm{IPW}}=\frac1n\sum_i\left(\frac{Z_iY_i}{e(X_i)}-\frac{(1-Z_i)Y_i}{1-e(X_i)}\right),\qquad e(X)=P(Z=1\mid X)" />
+
+Extreme weights signal poor overlap and unstable estimates. Doubly robust estimation combines an outcome model and propensity model, but still needs causal identification assumptions; it does not cure unmeasured confounding. **Neither IPW nor a doubly robust estimator is implemented here.** Logged ranking propensities also depend on exposure/position and support; an unobserved counterfactual cannot be recovered by naming a formula.
+
+<Gotcha>Do not turn a narrow simulated A/B interval into a production causal claim. Randomization unit, interference, attrition, logging, novelty effects, multiplicity and stopping rules matter at least as much as the final standard-error line.</Gotcha>
+
+### 5. Forecasting begins with the information set
+
+At origin t, observed values are y₀ through yₜ₋₁. A lookback L supplies the input window; the horizon H defines the future target. Every training target and every fitted preprocessing statistic must come from the prefix strictly before t:
+
+<MathBlock latex="x_t=(y_{t-L},\ldots,y_{t-1}),\quad \widehat y_{t:t+H-1}=f_\theta(x_t),\quad \mu_t=\operatorname{mean}(y_{0:t-1}),\quad \sigma_t=\operatorname{std}(y_{0:t-1})" />
+
+At origin 20, lookback 6 and horizon 3, predict targets [20,21,22] from inputs [14,…,19]. The latest training target window can be [17,18,19] with inputs [11,…,16]. A global scaler fitted on all 23 values would leak future information even if the training tensors themselves were sliced correctly.
+
+Rolling-origin evaluation repeatedly refits on expanding prefixes, then scores the next horizon. Use a past-only validation interval for tuning, preserve a final evaluation interval, and reproduce real availability delays. Known-future calendar features are different from future observed demand, actual weather or revised economic indicators. Randomly splitting overlapping windows, backfilling with future observations or using revised data as if it existed at the origin can each create leakage.
+
+A seasonal-naive model repeats the last observed season of length m. For h counted from zero:
+
+<MathBlock latex="\widehat y_{t+h}=y_{t-m+(h\bmod m)},\qquad \operatorname{MAE}=\frac1H\sum_{h=0}^{H-1}|y_{t+h}-\widehat y_{t+h}|" />
+
+Last season [4,5,6] gives five-step forecast [4,5,6,4,5]. This is a strong baseline on seasonal data, not constant-last-value prediction. MAE is interpretable in target units; MAPE can fail at zero demand. Scaled errors, per-horizon errors and business-specific loss can add context. Hierarchical series additionally require coherent aggregation, which this univariate lab does not implement.
+
+### 6. Actual residual backcast/forecast blocks
+
+N-BEATS uses fully connected blocks with backcast and forecast outputs. Our tiny generic variant keeps the essential residual path: each block explains part of the input and contributes part of the forecast. Let r⁽⁰⁾ be the standardized input, bₖ the backcast, fₖ the forecast contribution and K the number of blocks:
+
+<MathBlock latex="h_k=\operatorname{MLP}_k(r^{(k-1)}),\quad b_k=B_kh_k,\quad f_k=F_kh_k,\quad r^{(k)}=r^{(k-1)}-b_k,\quad \widehat y=\sum_{k=1}^{K}f_k" />
+
+The implemented linear heads also have biases, omitted from the notation for readability. Optimize mean squared forecast error on training windows and invert the training-prefix normalization for evaluation. In a two-block network, the first backcast receives gradients through the second block; the last backcast does not affect the forecast and has no gradient under forecast-only loss. Tests assert that precise behavior rather than inventing a reconstruction objective.
+
+This is **N-BEATS-like**, not a full reproduction: two small blocks, generic learned heads, no published-size stack schedule, interpretable trend/Fourier basis configuration or ensemble. It nevertheless trains real weights through real backcast residual paths. A linear extrapolation placeholder or a call to seasonal naive would not meet that boundary.
+
+**Prophet:** an additive model combining piecewise trend, seasonal terms and holiday/event effects, with configurable changepoints and fitting assumptions. It is often useful for interpretable business time series; automatic holiday inclusion does not guarantee causal event effects. **Temporal Fusion Transformer (TFT):** multi-horizon forecasting with static covariates, time-varying known/observed inputs, variable selection, gated processing and temporal attention, often with quantile outputs. Attention weights are not automatic causal explanations. Neither architecture is implemented by this project; compare them through actual packages only in an explicit extension.
+
+Point forecasts do not supply calibrated prediction intervals. Quantile losses, probabilistic models or conformal calibration require past-only calibration and coverage/width checks by horizon. Rolling errors are dependent, especially with overlapping horizons. We return raw per-origin arrays and MAE, not an unjustified iid confidence interval for forecasts.
+
+<MicroRecall questions={[
+{id:'w23p-mr-lambda',prompt:'For grades [1,0], the swap delta at k=2 is approximately?',choices:['0.36907','1','0'],correct:0,explain:'IDCG is one, so the swap changes gain by 1−1/log2(3).'},
+{id:'w23p-mr-time',prompt:'At origin t, where may the scaler be fitted?',choices:['The entire series','Only the prefix strictly before t','The prediction targets'],correct:1,explain:'Preprocessing is learned state; future values may affect scored errors but not the forecast at that origin.'}
+]} client:visible />
+
+## The code, from scratch
+
+The pairwise loop makes the group restriction visible before vectorizing it. `scores` below belongs to **one query**; never construct the same expression across unrelated queries.
+
+```python
+terms = []
+for i in range(len(scores)):
+    for j in range(len(scores)):
+        if relevance[i] > relevance[j]:
+            terms.append(torch.nn.functional.softplus(-(scores[i] - scores[j])))
+# Equivalent within-query tensor construction:
+preferred = relevance[:, None] > relevance[None, :]
+terms_vectorized = torch.nn.functional.softplus(
+    -(scores[:, None] - scores[None, :])
+)[preferred]
+```
+
+The reference also handles zero-pair groups, stable ranks, detached delta-NDCG weights and per-query averaging. Its public entrypoints connect the three experiments without sharing their labels:
+
+```python
+import torch
+from learning_to_rank_timeseries import (
+    NeuralRanker, ranking_fixture, group_split, train_ranker, grouped_metrics,
+    forecast_fixture, rolling_forecast,
+)
+
+torch.set_num_threads(1)
+x, relevance, groups = ranking_fixture()
+fit, held = group_split(groups)
+model = NeuralRanker(x.shape[1])
+losses = train_ranker(model, x[fit], relevance[fit], groups[fit], method="lambda")
+print(grouped_metrics(model(x[held]), relevance[held], groups[held], k=3))
+for row in rolling_forecast(forecast_fixture(84), initial=60, step=8):
+    print(row["origin"], row["mae"], row["baseline_mae"])
+```
+
+Full implementation: `projects/week-23p-learning-to-rank-timeseries/`. The percent notebook additionally simulates randomized outcomes and prints arm counts, ATE, SE, interval and SRM. It mutates all future values after one origin and asserts the earlier forecast is unchanged. Tests independently verify lambdas, actual parameter updates, residual-block composition, time windows, constant-series scaling and uncertainty formulas. These are synthetic correctness exercises, not published ranking or forecasting benchmarks.
+
+<CompanyLens
+  topic="ranking, experiments and forecasting: what public evidence does and does not establish"
+  tldr={{
+    openai:'InstructGPT publicly uses pairwise human preferences; that connects logistic preference learning to ranking, but does not disclose a search LambdaMART or forecasting stack.',
+    anthropic:'Constitutional AI describes preference supervision from AI feedback. Its pair labels are not randomized evidence of a product treatment effect.',
+    deepmind:'Causal reasoning research by Ortega and colleagues distinguishes intervening from observing; no private product experiment or forecasting implementation is inferred.',
+    meta:'Prophet was published by Facebook researchers Taylor and Letham. It is an additive forecasting approach, not the residual neural network implemented here.',
+    xai:'Public Grok-1 materials support model-level study, not claims about internal randomization, LambdaMART usage or forecasting systems.',
+    deepseek:'R1 documents reasoning-oriented reinforcement learning; its evaluation does not substitute for causal identification of a new ranking policy.',
+    qwen:'Qwen3 Embedding includes public reranking work, making query-level relevance evaluation a direct study target; online treatment effects remain a separate question.'
+  }}
+  whyDiffer="A source can document model training without documenting a causal experiment or a forecasting deployment. Compare the method and unit of evidence rather than assigning every lab an imagined version of the same stack. The prompts below are preparation exercises, not verified private interview questions."
+  sources={{
+    openai:{paper:'Ouyang et al., Training language models to follow instructions with human feedback, arXiv:2203.02155',blog:'openai.com/index/instruction-following/'},
+    anthropic:{paper:'Bai et al., Constitutional AI, arXiv:2212.08073',blog:'anthropic.com/research/constitutional-ai-harmlessness-from-ai-feedback'},
+    deepmind:{paper:'Ortega et al., Shaking the foundations: delusions in sequence models for interaction and control, arXiv:2110.10819',blog:'deepmind.google/discover/blog/'},
+    meta:{paper:'Taylor and Letham, Forecasting at Scale (2018), The American Statistician',blog:'facebook.github.io/prophet/'},
+    xai:{paper:'Grok-1 public repository; no internal experiment or forecasting paper claimed',blog:'github.com/xai-org/grok-1'},
+    deepseek:{paper:'DeepSeek-R1, arXiv:2501.12948',blog:'github.com/deepseek-ai/DeepSeek-R1'},
+    qwen:{paper:'Qwen3 Embedding, arXiv:2506.05176',blog:'qwenlm.github.io/blog/qwen3-embedding/'}
+  }}
+  caseStudy="Taylor and Letham’s Forecasting at Scale describes an additive forecasting system with analyst-adjustable structure. Compare its trend/seasonality assumptions with N-BEATS residual basis learning and TFT’s covariate-aware multi-horizon design. Public method descriptions support that comparison, not a claim that one universally wins or that our tiny fixture reproduces their results."
+  interviewAngle={{
+    openai:'Derive pairwise logistic gradients and explain why preference accuracy and causal product lift are different estimands.',
+    anthropic:'Audit label provenance and design an experiment without post-treatment selection or repeated-view pseudoreplication.',
+    deepmind:'Distinguish observational prediction from intervention and state the assumptions behind an ATE estimate.',
+    meta:'Compare additive and neural demand forecasts under rolling-origin evaluation, then design a ranking A/B guardrail.',
+    xai:'Diagnose sample-ratio mismatch, stopping-rule bias and invalid confidence intervals before a release.',
+    deepseek:'Separate a training-reward improvement from query-level ranking quality and downstream randomized evidence.',
+    qwen:'Design grouped multilingual reranker evaluation with relevance denominators, stable ties and candidate-recall controls.'
+  }}
+/>
+
+<ReferenceProject path="projects/week-23p-learning-to-rank-timeseries" name="learning-to-rank-timeseries" hours="6–8 hrs">
+Train pairwise and LambdaRank-style neural rerankers on heldout query groups, simulate a randomized experiment with explicit uncertainty/SRM, and compare rolling-origin seasonal naive against actual residual backcast/forecast blocks. Offline, deterministic and CPU-first; no false LambdaMART, Prophet or TFT implementation claim.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** derive the .18454 lambda magnitude, √2 ATE standard error and exact indices for one forecast origin.
+- **Build (2–3 hrs):** reproduce grouped ranking, A/B and forecasting reports; demonstrate SRM and future-mutation invariance; distinguish training loss from heldout evidence.
+- **Challenge (3+ hrs):** add a real optional LambdaMART adapter, cluster-aware experimental inference or past-only forecast intervals with coverage/width diagnostics.
+</Assignments>
+
+<InterviewDrill role="applied-ml" time="30 min">
+**“The reranker improves NDCG, your A/B interval includes zero, and demand forecasts beat last-value prediction. Would you launch?”**
+
+- **Baseline:** separate the three estimands, hold out whole queries, compute ATE uncertainty and compare forecasts to seasonal naive—not only last value.
+- **Senior:** inspect eligibility denominators, label/exposure bias, SRM, randomization units, missingness and all preprocessing timestamps.
+- **Staff:** use prespecified business thresholds and guardrails, account for interference/multiplicity/sequential decisions, and define which evidence would justify rollout or rollback.
+
+Worked solution: `projects/week-23p-learning-to-rank-timeseries/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<WeeklyQuiz weekId={23} questions={[
+{id:'w23p-q0',prompt:'Which pairs contribute to the ranking loss?',choices:['Strictly preferred documents within the same query','Every document pair across all queries','Only tied labels'],correct:0,explain:'Cross-query score levels are not identified by within-query ranking.'},
+{id:'w23p-q1',prompt:'LambdaRank-style weights here are based on?',choices:['Document IDs','Absolute current-rank NDCG swap changes','Future experiment outcomes'],correct:1,explain:'Swap deltas prioritize errors that matter to the ranking metric; ranks are held fixed during the gradient step.'},
+{id:'w23p-q2',prompt:'Is this neural lambda model LambdaMART?',choices:['Yes','No'],correct:1,explain:'LambdaMART fits boosted trees; this project updates a neural MLP.'},
+{id:'w23p-q3',prompt:'Does masking a relevant candidate remove it from the ideal denominator?',choices:['No','Yes'],correct:0,explain:'Eligibility changes the ranked list, not the truth set for end-to-end evaluation.'},
+{id:'w23p-q4',prompt:'What is the unadjusted randomized ATE estimator?',choices:['Difference in arm means','Difference in arm sample counts','Ranking loss'],correct:0,explain:'With valid assignment and causal assumptions, the arm-mean difference estimates the treatment effect.'},
+{id:'w23p-q5',prompt:'A 95% confidence procedure guarantees every realized interval contains truth?',choices:['Yes','No'],correct:1,explain:'Coverage is a repeated-sampling property; an individual valid interval may miss.'},
+{id:'w23p-q6',prompt:'SRM primarily diagnoses?',choices:['Forecast seasonality','Candidate relevance','Mismatch with planned treatment allocation'],correct:2,explain:'Unexpected allocation counts can reveal logging, eligibility or assignment problems.'},
+{id:'w23p-q7',prompt:'At a forecast origin, may future targets affect fitted scaling?',choices:['No','Yes if only their mean is used'],correct:0,explain:'A future-derived mean is still leakage.'},
+{id:'w23p-q8',prompt:'What does the backcast do between residual blocks?',choices:['Replace future labels','Subtract an explained component from the input residual','Create a confidence interval'],correct:1,explain:'Backcasts update residual inputs; forecast contributions add across blocks.'},
+{id:'w23p-q9',prompt:'Which statement matches the implementation boundary?',choices:['Full TFT and Prophet are implemented','Point MAE proves calibrated uncertainty','Only a tiny generic N-BEATS-like stack is implemented'],correct:2,explain:'TFT and Prophet are conceptual comparisons; no forecasting uncertainty claim is fabricated.'}
+]} client:visible />
+
+<FurtherReading>
+- **[Learning to Rank: From Pairwise Approach to Listwise Approach — Cao et al. (2007)](https://www.microsoft.com/en-us/research/publication/learning-to-rank-from-pairwise-approach-to-listwise-approach/).** Understand what changes when an objective operates on lists rather than independent pairs.
+- **[From RankNet to LambdaRank to LambdaMART — Burges (2010)](https://www.microsoft.com/en-us/research/publication/from-ranknet-to-lambdarank-to-lambdamart-an-overview/).** The exact boundary between pairwise scores, lambdas and boosted trees.
+- **[N-BEATS — Oreshkin et al. (2020)](https://arxiv.org/abs/1905.10437).** Backcast/forecast residual structure, basis choices and the full experimental protocol.
+- **[Temporal Fusion Transformers — Lim et al. (2021)](https://arxiv.org/abs/1912.09363).** Multi-horizon inputs, variable selection, gating and attention; not a generic name for every forecasting neural network.
+- **[Prophet documentation](https://facebook.github.io/prophet/).** Additive trend/seasonality models and practical configuration, originally from Facebook researchers.
+- **[Causal Inference: What If — Hernán and Robins](https://miguelhernan.org/whatifbook).** Potential outcomes, exchangeability, positivity and the assumptions behind causal claims.
+- **[Forecasting: Principles and Practice — Hyndman and Athanasopoulos](https://otexts.com/fpp3/).** Seasonal baselines, time-series cross-validation and forecast evaluation.
+</FurtherReading>
+
+<KeyTakeaways>
+- Pairwise and LambdaRank-style objectives need query boundaries and explicit macro-averaging contracts.
+- Neural lambdas are not LambdaMART; actual backcast blocks are not a full N-BEATS, TFT or Prophet reproduction.
+- Randomization and causal assumptions justify an ATE; standard errors alone cannot create identification.
+- SRM, stopping rules, independent units and uncertainty belong in an experiment report, not an afterthought.
+- Forecast with past-only preprocessing and rolling origins, compare seasonal naive, and never invent uncertainty from point predictions.
+</KeyTakeaways>
