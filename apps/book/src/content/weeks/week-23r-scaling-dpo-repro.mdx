@@ -1,0 +1,129 @@
+---
+week: 23
+track: "R"
+part: 6
+slug: "week-23r-scaling-dpo-repro"
+title: "Research β — scaling laws, preferences, and honest error bars"
+hook: "Can three tiny models establish a scaling law, and what exactly can a toy preference experiment prove?"
+hours: 22
+computeTier: "red"
+difficulty: 5
+prereqSlugs: ["week-22r-transformer-repro", "week-15a-sft-lora-dpo-lab"]
+referenceProject: "projects/week-23r-scaling-dpo-repro"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Can three tiny models establish a scaling law, and what exactly can a toy preference experiment prove?</Hook>
+<Intuition>
+A scaling law is an empirical model of a family of experiments. A curve that fits three points is not automatically a law, particularly when several coefficients and an irreducible floor are unknown. A preference objective is easier to verify algebraically, but optimizing it on a tiny fixture does not make a language model safe or useful.
+
+This second research week completes a three-paper study: Transformer mechanisms in Research α, **Chinchilla** allocation reasoning from Hoffmann et al. 2022 at DeepMind, and **DPO** from Rafailov et al. 2023 at Stanford. Keep the source, replication assumptions and local observations in separate columns. Read the Epoch AI Chinchilla replication discussion before treating fitted coefficients as universal constants.
+
+<MicroRecall questions={[{id:'23r-fit',prompt:'Can one three-size sweep identify parameter and data exponents plus a loss floor?',choices:['Not without stronger assumptions or more independent data','Always'],correct:0,explain:'Several unknown coefficients can explain a small one-dimensional sweep.'},{id:'23r-dpo',prompt:'Which DPO scores receive gradients?',choices:['Current policy scores','Frozen reference scores'],correct:0,explain:'The reference anchors the comparison and is detached.'}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. A bounded one-dimensional fit
+
+Fix irreducible loss E explicitly and posit excess loss decreasing as a power of parameter count N. Taking logarithms yields a linear regression on log N:
+
+<MathBlock latex="L(N)=E+AN^{-\alpha},\qquad \log(L-E)=\log A-\alpha\log N" />
+
+For a generated fixture with E=1.5, A=4 and alpha=.3, four positive sizes recover the declared parameters up to numerical precision. That proves the fitter, not a property of language models. Changing E changes the fitted slope. Report that sensitivity rather than selecting the floor that produces the most attractive exponent.
+
+### 2. Joint allocation needs a grid
+
+A common stylized joint form adds a data term for D training tokens. Under an approximate dense-Transformer compute budget proportional to ND, optimizing allocation relates model and data budgets—but the fit needs experiments that vary both, with architecture and optimizer conditions controlled.
+
+<MathBlock latex="L(N,D)=E+\frac{A}{N^\alpha}+\frac{B}{D^\beta},\qquad C\approx kND" />
+
+The constant k depends on counting assumptions; measured wall time is not identical to theoretical FLOPs. Equal training tokens across models are unequal compute. Incomplete optimization, tokenizer changes, validation leakage and data quality can all masquerade as scaling effects.
+
+The shipped `run_three_sizes` really trains three small **fixed-context MLP language models**, logs parameters/tokens and evaluates disjoint synthetic context IDs. It is not three Transformers on TinyStories, and its fitted slope is not a Chinchilla estimate. Larger models may overfit and produce a negative fitted exponent; retain that outcome.
+
+### 3. Paired seeds and intervals
+
+When comparing a baseline and an ablation under matched seeds, resample seed-level differences. The sampling unit is a complete run, not the thousands of correlated minibatches within it.
+
+<MathBlock latex="d_s=m_s^{\mathrm{ablation}}-m_s^{\mathrm{baseline}},\qquad \bar d=\frac{1}{S}\sum_s d_s" />
+
+Two or three seeds yield weak uncertainty estimates. Report their raw values, not just a narrow-looking plotted band. Select the metric and stopping policy before inspecting favorable results.
+
+### 4. DPO as a reproducible objective
+
+For prompt x and preferred/rejected completions y+ and y−, form the policy-minus-reference log-ratio margin. Reference probabilities are fixed. Beta scales the preference margin.
+
+<MathBlock latex="z=\beta\left[\log\frac{\pi_\theta(y^+\mid x)}{\pi_{\mathrm{ref}}(y^+\mid x)}-\log\frac{\pi_\theta(y^-\mid x)}{\pi_{\mathrm{ref}}(y^-\mid x)}\right],\qquad L=-\log\sigma(z)" />
+
+At z=0 the loss is log 2. Its chosen-score derivative is negative and rejected-score derivative positive, so gradient descent increases the relative chosen likelihood. This is **Stanford DPO**, not a method invented at another lab because authors later changed affiliations.
+
+The toy policy completes each prompt with one token. Sequence DPO uses **summed completion log-probabilities**, causal shifting and masks; refer to Week 15a for those contracts. Do not substitute token means silently or accidentally update the reference. Preference improvement is not proof of truthfulness, fairness or safety.
+
+## The code, from scratch
+
+```python
+import numpy as np
+from scaling_dpo_repro import fit_power_law, run_three_sizes, train_preference
+
+sizes = np.array([100, 200, 400, 800])
+fit = fit_power_law(sizes, 1.5 + 4 * sizes ** -0.3, irreducible=1.5)
+assert abs(fit['alpha'] - 0.3) < 1e-8
+rows = run_three_sizes(seed=23)
+result = train_preference(seed=23)
+assert result['reference_unchanged']
+```
+
+The implementation isolates RNG state, uses explicit parameter counts, rejects unidentifiable or invalid one-dimensional inputs and permits unfavorable empirical slopes. No model, corpus or provider is downloaded.
+
+### Optional mini-Chinchilla experiment
+
+Use the Week 14 decoder with a fixed tokenizer and a licensed, versioned **local** TinyStories corpus. Choose three widths, at least two independent token budgets per size and several seeds; keep held-out stories untouched. Register architecture, context, optimizer, actual token exposures, theoretical FLOP assumptions, elapsed time and validation loss. Fit only the coefficients the design can identify. Compare a fixed-compute slice as well as fixed-data slices.
+
+This extension is not executed by the reference notebook. The red compute tier refers to this larger experiment. Read the cost ceiling and teardown procedure before optional provisioning; publish incomplete or failed runs rather than fabricating a finished sweep.
+
+<Gotcha>Fitting generated points verifies a numerical routine. Training a synthetic MLP verifies an experimental pipeline. Neither supports a claim about frontier Transformer scaling.</Gotcha>
+
+<CompanyLens topic="scaling, preference objectives, and replication limits"
+ tldr={{openai:'GPT scaling work offers public empirical claims; coefficients depend on the experimental family.',anthropic:'Public scaling and interpretability work motivates careful uncertainty and limits, not extrapolated private training budgets.',deepmind:'Chinchilla is Hoffmann et al. 2022 at DeepMind; read replication critiques and allocation assumptions.',meta:'Open-weight releases support controlled local studies; DPO attribution remains Stanford.',xai:'Public infrastructure reports do not supply missing data for a scaling-law fit.',deepseek:'DeepSeekMath introduced GRPO; R1 later used it. Distinguish verifier-based RL from paired DPO.',qwen:'Qwen reports support model-specific comparisons with tokenizer/data/version controls.'}}
+ whyDiffer="Compute allocation, data quality and post-training objectives answer different questions. A strong research comparison fixes the question before choosing models, records what is public versus unknown, and refuses to use toy observations as evidence for private frontier systems."
+ sources={{openai:{paper:'Scaling Laws for Neural Language Models, arXiv:2001.08361',blog:'openai.com/research'},anthropic:{paper:'Public Claude model cards and scaling research',blog:'anthropic.com/research'},deepmind:{paper:'Training Compute-Optimal Large Language Models, arXiv:2203.15556',blog:'epoch.ai replication discussion'},meta:{paper:'Llama 3 technical report',blog:'ai.meta.com/blog'},xai:{paper:'Public Grok reports; no invented scaling dataset',blog:'x.ai/blog'},deepseek:{paper:'DeepSeekMath, arXiv:2402.03300',blog:'github.com/deepseek-ai'},qwen:{paper:'Qwen2 technical report',blog:'qwenlm.github.io'}}}
+ caseStudy="The generated-law test recovers alpha=.3 while actual tiny-model validation losses may fit a negative slope. Keeping both outputs demonstrates the difference between a correct fitter and a supported scientific claim."
+ interviewAngle={{openai:'Design a compute-matched scaling experiment.',anthropic:'Explain why seed-level uncertainty differs from minibatch variability.',deepmind:'Identify which coefficients a three-size sweep can estimate.',meta:'Derive DPO and freeze reference gradients.',xai:'Reject an unsupported extrapolation from hardware counts.',deepseek:'Contrast DPO pairs with GRPO grouped verifier rewards.',qwen:'Control tokenization and multilingual data across model sizes.'}}
+/>
+<ReferenceProject path="projects/week-23r-scaling-dpo-repro" name="scaling-dpo-repro" hours="6-8 hrs">Run three actual small models, verify a declared power-law fitter, estimate paired-seed uncertainty and train a one-token DPO policy.</ReferenceProject>
+<Assignments>
+- **Warmup (30 min):** recover a generated exponent and show sensitivity to a wrong floor; derive DPO gradients.
+- **Build (2–3 hrs):** run three sizes and three seeds, preserve raw results and report DPO reference invariance.
+- **Challenge (3+ hrs):** preregister the Transformer/TinyStories grid and adapt real sequence DPO with completion masks.
+</Assignments>
+<InterviewDrill role="research-eng" time="25 min">
+**“Your three-point power law predicts a huge model will be excellent. Should the team fund it?”**
+
+Baseline: question extrapolation. Senior: discuss identifiability, optimization and data/compute confounds. Staff: propose a cheap falsifying experiment, uncertainty and a budgeted stop rule. Worked solution: `projects/week-23r-scaling-dpo-repro/SOLUTION_NOTES.md`.
+</InterviewDrill>
+<FurtherReading>
+- **Chinchilla — Hoffmann et al., 2022, arXiv:2203.15556.** Compute-optimal allocation; pair with Epoch AI replication analysis.
+- **Direct Preference Optimization — Rafailov et al., 2023, arXiv:2305.18290.** Stanford's derivation from a KL-regularized objective.
+- **TinyStories — Eldan and Li, arXiv:2305.07759.** A possible optional corpus; check license and version before use.
+- **Week 14 and Week 15a reference projects.** Reuse tested decoder and causal preference contracts rather than improvising them.
+</FurtherReading>
+<KeyTakeaways>
+- A scaling fit is conditional on its experimental design.
+- Three sizes do not identify every parameter/data coefficient.
+- Preserve negative slopes and failed runs.
+- DPO has a fixed reference and precise completion-scoring conventions.
+- Research credibility comes from reproducible evidence and bounded claims.
+</KeyTakeaways>
