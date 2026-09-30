@@ -1,0 +1,259 @@
+---
+week: 23
+part: 6
+track: "L"
+slug: "week-23l-mcp-a2a-adk-lab"
+title: "Agent systems — protocols, evaluation, and economics"
+hook: "Two agents can exchange valid messages and still do the wrong job at twice the price. What contract is missing?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-22l-agents-lab"]
+referenceProject: "projects/week-23l-mcp-a2a-adk-lab"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>Two agents can exchange valid messages and still do the wrong job at twice the price. What contract is missing?</Hook>
+
+<Intuition>
+Imagine a research office with a shared catalogue, a colleague at another desk, and a workflow application. A catalogue request needs a tool interface. Delegating a report needs a task identity and lifecycle. The application decides when to call either one. None of those interfaces tells you whether the finished report is correct or worth its cost.
+
+These roles map roughly to **MCP**, **A2A** and an agent framework such as **ADK**. MCP originated at **Anthropic**. A2A and ADK are **Google Cloud** initiatives, not Google DeepMind products. Do not merge a company's model research, application SDKs and communication standards into one attribution or one trust boundary.
+
+<IntuitionCallout>Make four moves: define the message contract; bind execution to a principal and budget; verify resulting artifacts independently; account for every token and retry. Interoperability, safety, correctness and economics are different properties.</IntuitionCallout>
+
+The reference makes these boundaries executable. A local MCP JSON-RPC server/client exchanges serialized messages for initialization, tool listing and tool calls. A separate A2A-shaped demo tracks submitted, working and terminal tasks. Two tiny repository-shaped tasks exercise an evaluation harness. Routing and response caching remain independent of the protocol. Real Google Cloud ADK construction is available behind a lazy optional import, never required for the offline exercises.
+
+**Scope matters:** the MCP code is a reduced teaching subset referencing version **2024-11-05**; the A2A demo is **local teaching subset v0.1**, not wire-compliant A2A. No real SWE-Bench evaluation or cloud model execution is smuggled into a fixture result.
+
+<MicroRecall questions={[
+{id:'w23l-mr0',prompt:'Which organization originated MCP?',choices:['Anthropic','Google DeepMind','The authors of this toy server'],correct:0,explain:'MCP originated at Anthropic. A2A and ADK are Google Cloud initiatives; attribution is not interchangeable.'},
+{id:'w23l-mr1',prompt:'A valid protocol response establishes?',choices:['The task is correct and safe','The message met the checked interface contract','The model is cost-effective'],correct:1,explain:'Independent authorization, verification and accounting are still needed.'}
+]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. Partition the bill before optimizing it
+
+Let I be total input tokens, H cached-read input tokens, W cache-write input tokens, and O output tokens. These are disjoint input categories in this teaching ledger, so fresh input is I − H − W. Let pᵢ, pₕ, p𝓌 and pₒ be dollars per million tokens, with p𝓌 an **all-in write price**, not a surcharge. Then:
+
+<MathBlock latex="C=\frac{(I-H-W)p_i+Hp_h+Wp_w+Op_o}{10^6},\qquad H+W\le I" />
+
+Worked example: I = 1,000, H = 400, W = 200, O = 100. Hypothetical prices are $2 fresh, $.50 cached read, $2.50 cache write and $8 output per million. Fresh input is 400 tokens:
+
+<MathBlock latex="C=\frac{400(2)+400(0.5)+200(2.5)+100(8)}{10^6}=\$0.0023" />
+
+A hypothetical uniform batch multiplier of .5 gives $0.00115. This is **not a provider price quote** or a promise that batch and cache discounts stack uniformly. Production accounting must pin a dated rate card, tokenizer, regional/model version, cache eligibility, write-price convention and failed/retried request billing. Batch processing can lower unit price while increasing queueing latency; an interactive agent may not be eligible.
+
+### 2. Cache reuse has a break-even point
+
+Consider an unchanged P-token prefix used n times. Let a be the all-in price per token for the initial cache write, b the cached read price and c the ordinary input price. Ignoring expiration and storage fees, caching is cheaper when:
+
+<MathBlock latex="Pa+(n-1)Pb<nPc\quad\Longleftrightarrow\quad n>\frac{a-b}{c-b},\qquad c>b" />
+
+With a = 2.5, b = .5 and c = 2 in consistent per-million units, n > 2/1.5 = 4/3. Thus **two uses** suffice under those assumptions. For a 1,000-token prefix, two fresh reads cost $.004; write plus one cached read costs $.003. A miss, expiry or changed prefix may eliminate that saving.
+
+Provider **prompt/prefix caching** reuses computation for a matching context prefix. Our **response cache** returns a previously computed answer without invoking a model. They have different semantics. Response reuse must bind authenticated principal scope, model, prompt, context/tool revisions and decoding parameters. Do not return a stale answer because only the literal prompt matched.
+
+### 3. Route under constraints, not by price alone
+
+For each candidate model j, estimate cost Cⱼ, quality qⱼ and latency ℓⱼ from appropriately held-out evidence. Choose the cheapest eligible route:
+
+<MathBlock latex="j^*=\arg\min_j C_j\quad\text{subject to}\quad q_j\ge q_{\min},\;\ell_j\le L_{\max},\;C_j\le C_{\max}" />
+
+Suppose a small route costs $.001, scores .70 and takes 60 ms; a larger route costs $.003, scores .90 and takes 150 ms. A .80 quality floor and 200 ms limit admit only the larger route. Tightening the latency limit to 100 ms admits neither. The correct response is an explicit no-route/fallback decision, not silently lowering the quality bar.
+
+The code accepts fixture quality/latency values; it does not predict request difficulty or estimate real service latency. In deployment, route on observable task features and validate by task slice, with uncertainty and distribution-shift monitoring. Distillation can reduce serving cost but adds teacher/data/training expense and may lose tail capabilities. Amortize that work over expected volume rather than treating a smaller model as free.
+
+### 4. Retry changes cost and the evaluation denominator
+
+With independent per-attempt success probability p, at most K attempts, and constant attempt cost c, the probability of at least one success and expected number of attempts are:
+
+<MathBlock latex="P(\mathrm{success})=1-(1-p)^K,\qquad \mathbb E[N]=\sum_{k=1}^{K}(1-p)^{k-1}=\frac{1-(1-p)^K}{p}" />
+
+At p = .5 and K = 3, success is .875 and expected attempts are 1 + .5 + .25 = 1.75. At $.002 per attempt, expected cost is $.0035. Repeated model attempts often have correlated failures and expanding context, so this is a baseline model, not an empirical guarantee. A cost-per-success metric should include failures in its total-spend numerator, not just the successful traces.
+
+For N frozen tasks, let tᵢ indicate independently verified task success and bᵢ any denied attempt. Missing submissions are failures rather than removed rows:
+
+<MathBlock latex="\mathrm{task\ success}=\frac1N\sum_i t_i,\qquad \mathrm{safe\ success}=\frac1N\sum_i t_i(1-b_i),\qquad \mathrm{cost/success}=\frac{\sum_i C_i}{\sum_i t_i}" />
+
+When no task succeeds, cost per success is undefined, not zero. In our two-task fixture, both patches can pass while one trajectory has a denied attempt: task success = 1.0, safe success = .5. That tiny development set tests harness mechanics; it cannot establish production reliability or a statistically meaningful model ranking.
+
+<MicroRecall questions={[
+{id:'w23l-mr2',prompt:'With 1000 input, 400 cached and 200 written tokens, fresh input is?',choices:['1000','600','400'],correct:2,explain:'Input categories are disjoint in this ledger: 1000−400−200 = 400.'},
+{id:'w23l-mr3',prompt:'One of two fixed tasks has no submission. What denominator remains?',choices:['One','Two','Zero'],correct:1,explain:'Missing attempts are failures; dropping them would bias success upward.'}
+]} client:visible />
+
+<Gotcha>Estimated token costs are not provider billing evidence. Likewise, a protocol handshake is not authorization, a successful task status is not independent verification, and an exact cache hit is not a guarantee of fresh or authorized content.</Gotcha>
+
+## The code, from scratch
+
+```python
+from protocol_lab import LocalTransport, MCPClient, MCPServer
+
+transport = LocalTransport(MCPServer(max_calls=4))
+client = MCPClient(transport)
+client.initialize()  # request/response, then initialized notification
+assert [tool['name'] for tool in client.list_tools()] == ['add', 'lookup']
+result = client.call_tool('add', {'a': 2, 'b': 3})
+assert result == {'content': [{'type': 'text', 'text': '5'}], 'isError': False}
+```
+
+`LocalTransport` carries JSON strings, not shared Python objects. The same server runs over newline-delimited stdin/stdout using `python -m protocol_lab`; stream tests use StringIO rather than subprocesses or sockets. Requests have correlated IDs. Notifications produce no response. Each frame is bounded, and clients reject malformed envelopes, mismatched IDs, contradictory result/error bodies and malformed tool content.
+
+### MCP lifecycle and error contracts
+
+The local sequence is **initialize → initialized notification → tools/list or tools/call**. The pinned reference is MCP 2024-11-05, but this server deliberately omits resources, prompts, sampling, HTTP transport, auth, cancellation, pagination and complete schema semantics. It only implements the advertised primitive object schemas and text results. Unsupported versions are rejected rather than negotiated. Those reductions are why we call it a teaching subset, not compliant MCP.
+
+| Boundary | Local behavior |
+| --- | --- |
+| Malformed JSON or oversized frame | JSON-RPC parse error `-32700` |
+| Invalid request envelope | `-32600` |
+| Unknown method | `-32601` |
+| Invalid arguments, unknown tool, unsupported version | `-32602` |
+| Tool request before initialization completes | local error `-32002` |
+| Missing public record | normal RPC result with `isError: true` |
+| Exhausted host call budget | local error `-32000` |
+
+An execution failure is different from an invalid request. That distinction lets a controller recover appropriately without parsing error prose. Every admitted attempted tool call consumes the host budget, including invalid tool names or arguments. The only tools are bounded addition and a public in-memory catalogue: no arbitrary shell, file access or network tool exists.
+
+### A2A task handoffs are not tool calls with a different name
+
+A delegated task can outlive one request. The local demo carries a stable task ID, message, status and artifacts. It follows submitted → working → completed/failed, with cancellation permitted before a terminal state. Replaying the same ID and message is idempotent; changing the message under an existing ID is a conflict. Terminal tasks cannot silently restart.
+
+The public-guide worker is a deterministic fixture, not a language model. The explicit `demo/advance` scheduler method is **not an A2A standard method**. The demo claims only local teaching subset v0.1; it does not implement a released A2A wire version, authenticated discovery, complete Agent Cards, streaming, push notification or remote delegation. Production handoffs need authenticated principals, cancellation semantics, deadlines, version negotiation and artifact provenance.
+
+### Genuine optional ADK, without a hidden cloud dependency
+
+The optional `protocol_lab.adk_sample` lazily imports `google.adk.agents.Agent`. Its typed `lookup_public_record` function becomes an actual ADK function tool. The optional run path uses the real `InMemoryRunner`, session service, `google.genai.types.Content` and `RunConfig(max_llm_calls=2)` APIs. This is SDK wiring, not a class with an ADK-like name.
+
+The extra pins `google-adk==1.18.0` and belongs in a separate disposable environment. The default path constructs an agent only; model execution requires explicit `--run-model`, an available model ID, credentials and quota setup. The offline suite mocks the imported module and never installs or invokes the cloud SDK. Therefore **cloud/API compatibility was not validated by these tests**. A best-effort coroutine deadline does not guarantee provider-side cancellation or zero billing.
+
+### Frameworks: choose state semantics before a logo
+
+| Framework | Conceptual affordance to investigate in its pinned docs | Question before adoption |
+| --- | --- | --- |
+| LangGraph | Explicit state graphs, checkpointing and controlled transitions | Can a replay duplicate a consequential action? |
+| CrewAI | Role/task-oriented crews and flows | Are task outputs independently checked or merely accepted by another role? |
+| AutoGen | Agent conversations, message passing and team orchestration | Who owns termination, shared state and the global budget? |
+| OpenAI Agents SDK | Agents, tools, handoffs, guardrails and tracing | Where is authorization enforced outside model instructions? |
+| Google Cloud ADK | Agent composition, tools, sessions, runners and evaluation tooling | Which session/tool state is durable, isolated and versioned? |
+
+This is a conceptual comparison, not a claim of feature parity, current-version guarantees or included framework implementations. The package does not counterfeit any of these libraries. A framework reduces application wiring; it does not remove the need to understand retries, resource bounds, data provenance or trust boundaries. Prefer a fixed workflow when it meets the product need with fewer failure modes.
+
+### Knowledge-Graph RAG and context engineering
+
+A knowledge graph stores entities and relations; retrieval can traverse relationships before selecting grounded text. In a public repository assistant, a graph might connect a symbol to its module, owner and documentation section. Retrieve candidate nodes, traverse a bounded number of typed edges, rerank source passages and cite the underlying file/version—not just an unsupported graph edge. Entity resolution errors and stale edges can confidently lead to the wrong source.
+
+Graph structure is not a license to include the entire repository in context. Select a token budget across instructions, trusted task state, retrieved evidence and tool results. Preserve source IDs, freshness, unresolved subgoals and constraints. Separate instructions from quoted untrusted material; an instruction inside a retrieved README remains data. Compare graph-assisted retrieval against a simpler text/hybrid baseline using held-out queries, citation correctness and cost. Week 17 provides retrieval foundations; this protocol package does not implement another GraphRAG engine.
+
+Prompt engineering shapes individual requests. Context engineering also determines **which state reaches the model, from where, at what version, and under which permissions**. Summaries, retrieval, tool schemas and caches all change that state. Test stale documents, conflicting sources, malicious-looking quoted instructions and missing evidence before celebrating a longer context window.
+
+### Agent evaluation: artifacts and trajectories
+
+The local evaluation harness edits only allowlisted existing files in in-memory mini repositories. It verifies a JSON timeout and README/package-version consistency independently of the supplied answer. Unknown/duplicate task IDs are errors; missing attempts stay in the denominator; path escapes, oversized replacements and budget excess fail. No patch is executed as Python or a shell command.
+
+SWE-Bench evaluates repository issue resolution; **SWE-Bench Verified** is a curated real benchmark subset, not our two generated tasks. A real run needs official task/version data, reproducible repository environments, an isolated test harness and contamination controls. Report exact versions, environment failures and unresolved cases. Never label our classroom success fraction a SWE-Bench score.
+
+**Inspect AI**, from the UK AI Security Institute, is an evaluation framework with real task, solver and scorer abstractions; it is not an Anthropic product merely because it can evaluate Claude. We discuss how an adapter could connect trusted trajectory logs and artifact verifiers, but do not ship a pretend Inspect integration. Extend [Week 20's evaluation discipline](/weeks/week-20-evals-mlops-pipeline): freeze task splits, calibrate any model judge against independent labels, log scorer versions, and report uncertainty and failure slices.
+
+Trajectory metrics include attempts, denied calls, retries, completion status, wall time, tokens and cost. The reference implements the subset of counters available from deterministic local attempts, not measured cloud latency. In production, record counters at the trusted host—not from model-written statements about how many calls it made. Cost optimization cannot be evaluated honestly when unsuccessful traces disappear from the ledger.
+
+<CompanyLens
+  topic="protocol provenance, evaluation scope, and token economics"
+  tldr={{
+    openai:'Public Agents SDK and API documentation describe tool/handoff interfaces and model-specific usage accounting; validate quality and costs for the chosen version.',
+    anthropic:'MCP originated at Anthropic. Public prompt-caching and agent guidance are useful evidence, but MCP itself is neither an authorization policy nor an evaluator.',
+    deepmind:'Gemini model research is distinct from Google Cloud A2A and ADK. Attribute those products to Google Cloud, not Google DeepMind.',
+    meta:'Open-weight Llama experiments can support local serving/evaluation; account for hardware utilization and operations rather than equating open weights with zero cost.',
+    xai:'Public API documentation can support explicit tool/usage contracts; no undisclosed agent framework, internal evaluation or private pricing is inferred.',
+    deepseek:'Public model reports and API documentation motivate capability/cost comparisons; reasoning-token and retry accounting must be checked for the actual API.',
+    qwen:'Public Qwen models and Qwen-Agent tooling offer reproducible starting points; hosted and self-hosted economics have different resource ledgers.'
+  }}
+  whyDiffer="Protocols, SDKs, model reports and pricing documentation expose different layers of a system. Compare pinned interfaces and measured workloads rather than extrapolating internal architectures or a universal company ranking. The study prompts below are not verified private interview questions."
+  sources={{
+    openai:{paper:'Public Agents SDK documentation; no private framework implementation claim',blog:'openai.github.io/openai-agents-python/'},
+    anthropic:{paper:'Model Context Protocol specification, pinned 2024-11-05 reference',blog:'anthropic.com/news/model-context-protocol'},
+    deepmind:{paper:'Gemini: A Family of Highly Capable Multimodal Models, arXiv:2312.11805',blog:'google.github.io/adk-docs/ — Google Cloud ADK; a2a-protocol.org — A2A'},
+    meta:{paper:'The Llama 3 Herd of Models, arXiv:2407.21783',blog:'ai.meta.com/blog/meta-llama-3-1/'},
+    xai:{paper:'Public API documentation; no invented peer-reviewed agent/economics paper',blog:'docs.x.ai/'},
+    deepseek:{paper:'DeepSeek-R1, arXiv:2501.12948',blog:'api-docs.deepseek.com/'},
+    qwen:{paper:'Qwen2 Technical Report, arXiv:2407.10671',blog:'github.com/QwenLM/Qwen-Agent'}
+  }}
+  caseStudy="Our two repository-shaped fixtures yield 100% task correctness and 50% strict safe success when one correct patch follows a denied call. That difference motivates independent artifact and trajectory metrics; it is not a SWE-Bench result or a report about any company's production agent."
+  interviewAngle={{
+    openai:'Trace a handoff through shared budgets and compute cost per independently verified success.',
+    anthropic:'Explain MCP tool errors, notification behavior and why prompt caching differs from response caching.',
+    deepmind:'Separate Google Cloud protocol/application tooling from Gemini model capability and benchmark evidence.',
+    meta:'Compare self-hosted model serving economics at realistic utilization and quality thresholds.',
+    xai:'Specify malformed-response tests and latency/cost caps without inventing private infrastructure.',
+    deepseek:'Account for long reasoning outputs and correlated retries when comparing cheaper requests.',
+    qwen:'Design versioned local/hosted evaluation while keeping tenant context isolated in caches.'
+  }}
+/>
+
+<ReferenceProject path="projects/week-23l-mcp-a2a-adk-lab" name="protocol-lab" hours="6–8 hrs">
+Run a bounded local MCP JSON-RPC server/client, an explicitly reduced A2A task lifecycle, independent mini-repository patch verification, eligibility routing, token accounting and a TTL/LRU response cache. An optional lazily imported real Google Cloud ADK sample is separate from the fully offline tested core.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** draw request/notification traces, classify protocol versus tool errors, and derive $.0023 request cost plus the two-use cache break-even.
+- **Build (2–3 hrs):** add one safe public tool and one independently verified repository fixture; test malformed transports, missing attempts, denied calls and bounded patches.
+- **Challenge (3+ hrs):** evaluate routing under held-out quality/cost constraints, add one genuine version-pinned SDK adapter, or specify an isolated official SWE-Bench/Inspect AI extension without launching cloud work.
+</Assignments>
+
+<InterviewDrill role="llm-product" time="30 min">
+**“Your protocol-compatible code assistant passes 90% of visible tasks. Its cost doubles after adding retries and a second agent. What do you measure and change before release?”**
+
+- **Baseline:** distinguish protocol validity, task verification and safe trajectories; include missing/failed tasks and all attempts in cost accounting.
+- **Senior:** pin harness/tool/model versions, inspect cache invalidation and tenant isolation, evaluate routing by held-out slice, and bound retries globally.
+- **Staff:** demand independent benchmark provenance and uncertainty; specify sandbox/approval boundaries, rollout gates, observability and explicit no-route behavior when quality/latency constraints conflict.
+
+Worked solution: `projects/week-23l-mcp-a2a-adk-lab/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<WeeklyQuiz weekId={23} questions={[
+{id:'w23l-q0',prompt:'Correct attribution is?',choices:['MCP: Anthropic; A2A and ADK: Google Cloud','All three: Google DeepMind','All three: OpenAI'],correct:0,explain:'Keep protocol origin and Google Cloud application tooling distinct from model research organizations.'},
+{id:'w23l-q1',prompt:'Which message gets no JSON-RPC response?',choices:['tools/list request','Initialized notification','initialize request'],correct:1,explain:'Notifications have no request ID and receive no reply.'},
+{id:'w23l-q2',prompt:'A missing allowed public lookup is represented here as?',choices:['A successful RPC carrying isError:true','A new tool installation','Proof that JSON parsing failed'],correct:0,explain:'Tool execution errors are distinct from malformed request or schema errors.'},
+{id:'w23l-q3',prompt:'What is demo/advance?',choices:['A standardized A2A method','A local deterministic scheduler tick','A cloud model call'],correct:1,explain:'The explicitly labeled teaching subset is not a released A2A wire implementation.'},
+{id:'w23l-q4',prompt:'What runs in required ADK tests?',choices:['A paid Gemini session','A fake imported module checking lazy builder wiring','A deployed Cloud service'],correct:1,explain:'Real SDK construction is optional; no third-party cloud execution is validated offline.'},
+{id:'w23l-q5',prompt:'The two repository fixtures produce which benchmark claim?',choices:['SWE-Bench Verified performance','General coding-agent quality','Only local harness behavior on synthetic tasks'],correct:2,explain:'Official benchmark data, isolated environments and a pinned independent harness are absent.'},
+{id:'w23l-q6',prompt:'The illustrative partitioned token bill is?',choices:['$0.0023','$2.30','$0.00023'],correct:0,explain:'400×2 + 400×.5 + 200×2.5 + 100×8 = 2300, divided by one million.'},
+{id:'w23l-q7',prompt:'Which response-cache key is safer?',choices:['Prompt alone','Prompt and model only','Authenticated scope, model, prompt, context/tool revisions and parameters'],correct:2,explain:'Meaning and authorization can change even when literal prompt text stays fixed.'},
+{id:'w23l-q8',prompt:'No model meets quality and latency constraints. The router should?',choices:['Silently choose the cheapest','Explicitly report no eligible route','Pretend the threshold was met'],correct:1,explain:'A fallback policy must be an explicit product decision, not an unnoticed constraint violation.'},
+{id:'w23l-q9',prompt:'Why retain failed trajectories in cost accounting?',choices:['They consumed resources even without a correct artifact','They are always free','They prove the protocol failed'],correct:0,explain:'Cost per success divides all relevant spend by verified successes, not only successful-trace spend.'}
+]} client:visible />
+
+<FurtherReading>
+- **[MCP specification, 2024-11-05](https://modelcontextprotocol.io/specification/2024-11-05).** Compare the full pinned protocol with the deliberately reduced exercise.
+- **[Introducing MCP — Anthropic](https://www.anthropic.com/news/model-context-protocol).** Primary source for origin and intended role.
+- **[A2A documentation](https://a2a-protocol.org/latest/).** Pin a released revision before attempting real interoperability; the local task API is not a compliance implementation.
+- **[Google Cloud ADK documentation](https://google.github.io/adk-docs/).** Real agents, tools, sessions and runners; separate package installation from cloud execution.
+- **[LangGraph](https://docs.langchain.com/oss/python/langgraph/overview), [CrewAI](https://docs.crewai.com/), [AutoGen](https://microsoft.github.io/autogen/stable/) and [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).** Compare state, termination, checkpoint and tracing semantics in pinned versions.
+- **[SWE-Bench](https://www.swebench.com/) and [SWE-Bench Verified](https://openai.com/index/introducing-swe-bench-verified/).** Official benchmark scope, distinct from our local fixtures.
+- **[Inspect AI](https://inspect.aisi.org.uk/).** UK AI Security Institute evaluation tooling, not an Anthropic-owned framework.
+</FurtherReading>
+
+<KeyTakeaways>
+- MCP, A2A and ADK occupy different interface layers; correct attribution and version scope matter.
+- Real serialized local execution can be useful without claiming full protocol conformance.
+- Independently verify artifacts, preserve failed/denied trajectories and name the actual evaluation suite.
+- Token partitions, cache semantics and retry denominators determine whether savings are real.
+- Framework adoption and interoperability never replace host authorization, held-out evidence or explicit budgets.
+</KeyTakeaways>

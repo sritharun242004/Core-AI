@@ -1,0 +1,21 @@
+[project]
+name = "protocol-lab"
+version = "0.1.0"
+description = "Track L beta — local MCP/A2A teaching subsets, optional ADK, evals and economics"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.7"]
+adk = ["google-adk==1.18.0"]
+
+[project.scripts]
+protocol-lab-mcp = "protocol_lab.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-v --strict-markers"
+testpaths = ["tests"]
