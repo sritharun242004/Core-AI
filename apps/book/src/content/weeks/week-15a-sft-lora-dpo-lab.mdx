@@ -1,0 +1,343 @@
+---
+week: 15
+part: 4
+slug: "week-15a-sft-lora-dpo-lab"
+title: "Week 15a — Post-training a tiny policy: SFT, LoRA, and preference optimization"
+hook: "How do we change a pretrained policy's behavior without confusing a lower toy loss for alignment?"
+hours: 22
+computeTier: "red"
+difficulty: 5
+prereqSlugs: ["week-14-mini-bpe-pretrain"]
+referenceProject: "projects/week-15a-sft-lora-dpo-lab"
+accentVar: "--accent-p4"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>How do we change a pretrained policy's behavior without confusing a lower toy loss for alignment?</Hook>
+
+<Intuition>
+A pretrained causal LM has learned to continue text. Post-training changes the distribution of continuations: supervised examples teach a response format, preference data says which of two responses is better, and a policy update tries to increase the probability of the preferred behavior without destroying useful language ability. These are distinct contracts, not interchangeable labels.
+
+This week follows one response through its anatomy: tokenize a prompt and completion, run a causal transformer, mask the supervised loss, freeze a reference policy, compare sequence log-probabilities, and update a small adapter. The project uses categorical ids held in memory, not a downloaded model or corpus. That makes the mechanics falsifiable while making the quality boundary unusually clear.
+
+<IntuitionCallout>The offline result can establish tensor shapes, finite gradients, identity-preserving adapters, a decreasing fixture loss, and exact checkpoint restoration. It cannot establish instruction following, harmlessness, factuality, preference quality, or a company's private post-training recipe.</IntuitionCallout>
+
+The lesson has eight moves: map the post-training stack; open a causal LM; derive SFT and preference objectives; compare RLHF, DPO, RLAIF, and Constitutional AI; inspect PEFT/LoRA/QLoRA/DoRA; design synthetic data; run the red compute plan honestly; and make a small adapter/checkpoint experiment.
+
+<MicroRecall questions={[{
+  id: 'week15a-recall-sft',
+  prompt: 'In causal SFT, what does a completion mask primarily control?',
+  choices: ['Which vocabulary entries exist', 'Which token positions contribute to the supervised loss', 'How many attention heads the model has', 'Whether the optimizer can load a checkpoint'],
+  correct: 1,
+  explain: 'A prompt/completion mask controls where cross-entropy is measured. It does not change the causal attention graph or prove that a completion is helpful; it makes the data and loss boundary explicit.'
+}]} client:visible />
+
+<MicroRecall questions={[{
+  id: 'week15a-recall-dpo',
+  prompt: 'What does the reference term do in the DPO margin?',
+  choices: ['It replaces the chosen response with a reward label', 'It compares the policy preference shift against a frozen baseline policy', 'It quantizes every policy weight to four bits', 'It guarantees that human preferences are unbiased'],
+  correct: 1,
+  explain: 'DPO uses a policy-vs-reference log-ratio difference inside a logistic preference loss. The reference stabilizes the update; it does not validate the preference data or guarantee alignment.'
+}]} client:visible />
+</Intuition>
+
+## 1. The post-training map
+
+A useful system diagram separates data, policy, evaluator, and update:
+
+```text
+pretraining corpus -> causal LM weights θ0
+                              │
+       demonstrations ────────┼──> SFT policy πSFT
+                              │
+       chosen/rejected pairs ┼──> preference objective -> policy π
+                              │             ▲
+       human / AI / rule feedback ──────────┘
+                              │
+       held-out prompts + safety/evals -> evidence about behavior
+```
+
+**Pretraining** learns broad next-token statistics from a corpus. **Post-training** selects a narrower behavior distribution under a prompt format and an evaluation protocol. SFT, reward-model training, RL, and direct preference objectives may all appear in a program, but a model card or paper must identify which stage produced which result.
+
+A lower training loss is not a universal quality measure. It may show that labels are reachable, while hiding memorization, prompt leakage, length bias, refusal regressions, or a mismatch between the objective and the user-facing task. A post-training report should include a base checkpoint, data provenance and license, tokenizer/template, held-out prompts, safety slices, preference agreement, KL or drift measures, seed, and compute.
+
+<Gotcha>“Aligned” is not a loss value. Alignment is a claim about behavior under stated values, evaluators, distributions, and failure tests. A finite preference loss is one plumbing signal inside that much larger claim.</Gotcha>
+
+## 2. Full anatomy of a tiny causal policy
+
+### Tokens, positions, and the causal direction
+
+Week 14's byte-pair encoding (BPE) produces token ids. A prompt and completion become one sequence:
+
+```text
+<BOS> user:  Explain LoRA.  assistant:  LoRA adds a low-rank update. <EOS>
+  x0       x1 ... xT-1
+```
+
+A decoder-only model uses a triangular attention mask so position `t` cannot read tokens after `t`. The representation starts with a token embedding and a position embedding:
+
+<MathBlock latex="h_t^{(0)}=E[x_t]+P[t]" />
+
+For hidden states `H`, each block forms queries, keys, and values:
+
+<MathBlock latex="Q=HW_Q,\qquad K=HW_K,\qquad V=HW_V" />
+
+and applies causal self-attention:
+
+<MathBlock latex="\operatorname{Attn}(H)=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{d_h}}+M_{causal}\right)V" />
+
+The feed-forward sublayer then applies a position-wise nonlinear map, with residual paths and normalization around the attention and MLP. A final linear head maps each hidden state to a vocabulary logit:
+
+<MathBlock latex="z_t=W_{out}\operatorname{Norm}(h_t),\qquad p(x_{t+1}\mid x_{\le t})=\operatorname{softmax}(z_t)" />
+
+The tiny project keeps one transformer block readable. It ties the output matrix to the token embedding, but this is a parameter-saving teaching choice, not a claim about all decoder LMs.
+
+### SFT loss and masking
+
+For a target token sequence `y`, next-token cross-entropy is:
+
+<MathBlock latex="\mathcal{L}_{SFT}=-\sum_t m_t\log\pi_\theta(y_t\mid x_{<t})\big/\sum_t m_t" />
+
+`m_t` can be one for completion tokens and zero for prompt tokens. Some implementations shift input and labels in the model; others prepare shifted labels in a collator. Either is correct when the alignment is tested. The reference project uses already aligned SFT labels and `-100` as the ignored target sentinel. Its generic `sequence_logprob` helper does not shift; its DPO batch helper explicitly shifts full causal ids and masks before scoring, and can sum or token-normalize selected targets.
+
+Prompt masking prevents the model from being rewarded for reproducing the user instruction, but it does not make the completion truthful or safe. Packing examples changes boundaries and requires attention/label masks. Padding requires a pad policy. Truncation can delete the instruction or the answer. These are data-contract decisions, not incidental details.
+
+### Checkpoint and evaluation contracts
+
+A training step is only reproducible if it names model revision, tokenizer, template, sequence length, batch and gradient accumulation, precision, optimizer, learning rate, seed, data order, checkpoint interval, and evaluation prompts. Checkpoints should store model state, optimizer state when resuming, scheduler/scaler state when applicable, step, and configuration. Load only trusted checkpoint files.
+
+The toy's decreasing loss and exact CPU state restoration are deliberately modest. They test that a policy can be trained and resumed; they do not test that it learned the intended instruction semantics.
+
+## 3. SFT is behavior cloning, not preference understanding
+
+SFT copies demonstrations. If an expert response is `y*`, maximizing its token likelihood increases:
+
+<MathBlock latex="\log\pi_\theta(y^*\mid x)=\sum_t\log\pi_\theta(y_t^*\mid x,y_{<t}^*)" />
+
+Teacher forcing supplies the reference prefix even when the model would have made an earlier mistake. At inference, errors feed back into later positions. This exposure-bias gap is one reason a low teacher-forced loss does not guarantee robust generation.
+
+A practical SFT dataset has at least these fields:
+
+| field | question to answer |
+| --- | --- |
+| prompt and context | what is the user asking, and what information is authorized? |
+| completion | which exact tokens are supervised? |
+| provenance | who wrote or generated it, under which license? |
+| template/version | how are roles, tools, EOS, and refusal markers encoded? |
+| quality/safety label | what was filtered, and what was intentionally retained? |
+| split | can a near-duplicate leak from train into evaluation? |
+
+Synthetic demonstrations can increase coverage and make formatting consistent. They can also amplify teacher errors, stylistic artifacts, hidden assumptions, and evaluator shortcuts. Keep the generator and filtering policy versioned, and evaluate synthetic-only, human-only, and mixed slices when the claim matters.
+
+## 4. Preference learning: RLHF, DPO, and the neighboring family
+
+### Reward modeling and RLHF
+
+Classical RLHF commonly has three stages:
+
+1. SFT initializes a helpful policy.
+2. A reward model `r_\phi(x,y)` learns from preference pairs `(y^+,y^-)`.
+3. An RL optimizer updates the policy while regularizing it toward a reference policy.
+
+A schematic KL-regularized objective is:
+
+<MathBlock latex="\max_\pi\;\mathbb{E}_{x,y\sim\pi}[r_\phi(x,y)]-\beta\,D_{KL}(\pi(\cdot\mid x)\parallel\pi_{ref}(\cdot\mid x))" />
+
+The reward model is an evaluator, not ground truth. It can be miscalibrated, overfit to annotator style, blind to subtle harms, or gamed by verbosity. PPO-style RL adds rollout, value estimation, clipping, and operational complexity. The distinction between reward-model score, human preference, and user outcome should remain explicit.
+
+### DPO — a direct preference objective
+
+This lesson attributes **Direct Preference Optimization to Stanford's Rafailov et al. (2023)**. Their key move is to solve the KL-regularized preference problem in terms of a policy/reference log-ratio, eliminating a separately sampled reward-model/RL loop for the direct objective.
+
+For chosen response `y^+`, rejected response `y^-`, policy `\pi_\theta`, and frozen reference `\pi_ref`, define:
+
+<MathBlock latex="m=\left[\log\pi_\theta(y^+|x)-\log\pi_\theta(y^-|x)\right]-\left[\log\pi_{ref}(y^+|x)-\log\pi_{ref}(y^-|x)\right]" />
+
+Then the logistic loss is:
+
+<MathBlock latex="\mathcal{L}_{DPO}=-\log\sigma(\beta m)" />
+
+The reference term says “increase the chosen-over-rejected preference relative to where the base/reference policy already was.” It is not a magic preference label, safety proof, or reward-model calibration. Sequence masks, length normalization, prompt formatting, pair quality, beta, reference checkpoint, and held-out evaluation all affect the result.
+
+The project implements this equation over already aggregated log-probabilities and keeps the named **Stanford Rafailov et al. 2023** attribution. Its batch helper scores a causal sequence as `logits[:, :-1]` against `ids[:, 1:]`, shifts completion masks with those targets, and evaluates the reference in temporary eval/no-grad mode. It is a finite objective helper, not the data, scale, or experiment from that paper.
+
+### KTO, IPO, ORPO, and SimPO
+
+The family shares a preference signal but changes the estimator and reference assumptions:
+
+| objective | local teaching shape | important design question |
+| --- | --- | --- |
+| DPO | reference-adjusted logistic pair margin | are the pair and reference-policy log-probs comparable? |
+| KTO | bounded desirable/undesirable utility around a detached, non-negative KL estimate | are independent binary labels calibrated and balanced, and is the KL estimate representative? |
+| IPO | squared target margin, commonly on token-mean scores | how does the chosen target margin and beta interact with length? |
+| ORPO | SFT anchor plus the log odds-ratio term | are scores token means, and how should supervised behavior and preference pressure trade off? |
+| SimPO | reference-free margin on length-normalized scores | does removing the reference increase drift or simplify tuning? |
+
+Names do not specify every implementation detail. Report whether log-probabilities are sums or means, which tokens are masked, how ties/noise are filtered, and whether the base policy is frozen.
+
+## 5. RLAIF and Constitutional AI
+
+**RLAIF** replaces or supplements human preference labels with AI-generated evaluations. This can make feedback faster and broaden coverage, but it moves the burden to evaluator prompts, model choice, rubric validity, calibration, disagreement analysis, and adversarial testing. “AI feedback” is not automatically objective; it is a measurement instrument with its own bias and failure modes.
+
+**Constitutional AI** is a family of approaches in which written principles guide critique, revision, and/or preference generation. A constitution makes values inspectable and can reduce the need to expose annotators to every harmful example. It does not make principles unambiguous, remove cultural or deployment trade-offs, or guarantee that a critic follows them. A credible report names the principles, critique/revision prompts, model versions, filtering, and human audit.
+
+RLAIF and Constitutional AI can be combined with SFT, reward modeling, or direct preference optimization. They are not synonyms for DPO, and none is established by the toy's scalar loss. The local lab deliberately uses deterministic categorical pairs so objective plumbing does not masquerade as AI evaluation evidence.
+
+## 6. Parameter-efficient fine-tuning
+
+### PEFT as a systems choice
+
+Parameter-efficient fine-tuning (PEFT) updates a small set of parameters while preserving a frozen base. Benefits can include lower optimizer memory, many task adapters per base, and a smaller artifact. Costs include adapter capacity limits, base-version compatibility, merging/dtype issues, and possible quality or safety regressions. “Fewer trainable parameters” is not equivalent to “free” or “safe.”
+
+### LoRA
+
+LoRA adds a low-rank update to a frozen map `W`:
+
+<MathBlock latex="W' = W + \frac{\alpha}{r}BA,\qquad A\in\mathbb{R}^{r\times d_{in}},\quad B\in\mathbb{R}^{d_{out}\times r}" />
+
+The forward map is `Wx + (alpha/r)BAx`. The adapter has `r(d_in+d_out)` parameters. Initializing `B=0` keeps the original function at step zero; later updates learn a task-specific direction. Which modules to target—attention query/value, output, MLP, embeddings, or all linear maps—is an experimental choice.
+
+The project injects LoRA into named `q_proj` and `v_proj` maps, freezes and clears stale gradients from the dense base by default, preserves existing adapters when adding targets, checks the trainable count, and tests initial-logit equality. Checkpoint loading validates the injected LoRA configuration and restores saved trainability flags; load into the same adapter architecture. It does not claim to reproduce a PEFT library's sharding, merge, adapter composition, or kernels.
+
+### QLoRA
+
+QLoRA combines a quantized frozen base with trainable LoRA weights and a higher-precision compute path. The conceptual memory win comes from storing the base compactly while gradients flow through the adapter rather than updating quantized base weights. Real systems make decisions about quantization format, scale/statistics, dequantization kernels, optimizer paging, activation dtype, and outlier handling.
+
+The reference project has an optional symmetric int8 round trip and a `qlora_recipe()` explanation. It intentionally does not call bitsandbytes, require CUDA, or call its helper NF4 QLoRA. A low reconstruction error on one tensor is not a throughput or quality benchmark. The local KTO baseline also reuses a labeled batch; it is an explicit approximation to the paper's mismatched-pair KL estimate, not a full trainer.
+
+### DoRA
+
+DoRA separates the learned magnitude from the directional update. A simplified conceptual form decomposes a weight into a magnitude and normalized direction, then applies a low-rank directional change plus a learned magnitude adjustment. This can improve the expressiveness of a low-rank adapter in some settings, but it adds parameters and initialization/merge choices. DoRA is part of the design map here, not implemented in the tiny reference project; an implementation belongs behind tests for identity, gradients, merge, dtype, and parameter counts.
+
+## 7. Synthetic preference data and evaluator boundaries
+
+A deterministic pair fixture is useful for a unit test, not for claiming preference quality. Synthetic preference data can be made by:
+
+1. writing task templates and explicit rubrics;
+2. generating multiple candidate responses;
+3. scoring with rules, a model evaluator, or both;
+4. retaining the prompt, candidates, score/reason, evaluator version, and tie;
+5. auditing a sample with humans and adversarial cases; and
+6. splitting by prompt/template/entity so near-duplicates do not leak.
+
+Common artifacts include length preference, refusal-template preference, judge self-consistency, contamination, and reward hacking. Test candidates that are verbose but wrong, safe-sounding but evasive, and formatted to exploit the evaluator. A held-out evaluator or human audit is more informative than selecting the lowest training loss.
+
+RLAIF, Constitutional AI, and synthetic-data pipelines are policy and evaluation choices around the objective. A direct preference loss cannot recover information that the pair construction never measured.
+
+<Gotcha>A preference pair says which response won under one rubric and context. It does not say that the chosen response is true, universally safe, or better for every user. Record abstentions and annotator/evaluator disagreement.</Gotcha>
+
+## 8. The offline lab and the red compute plan
+
+`projects/week-15a-sft-lora-dpo-lab` contains:
+
+- `model.py`: a tiny causal LM with causal multi-head attention;
+- `data.py`: deterministic SFT and chosen/rejected token fixtures;
+- `objectives.py`: masked/optionally normalized sequence log-probability, causal DPO, KTO, IPO, ORPO, and SimPO;
+- `lora.py`: named-module injection, frozen-base hygiene, checkpoint configuration support, and trainable-parameter accounting;
+- `quantization.py`: optional int8 round trip and an honest QLoRA recipe;
+- `train.py`: deterministic SFT smoke training and checkpoint restoration;
+- `tests/`: shape, finite-loss, identity, quantization, training, checkpoint, and offline-contract tests; and
+- `notebooks/01-sft-lora-dpo.py`: a percent-format end-to-end walkthrough.
+
+Run the required local path from the project directory:
+
+```bash
+PYTHONPATH=src ../../.venv/bin/python -m pytest
+../../.venv/bin/ruff check src tests notebooks
+PYTHONPATH=src ../../.venv/bin/python notebooks/01-sft-lora-dpo.py
+```
+
+The red `COMPUTE.md` gives a **planning envelope** for two A100 40 GB GPU-hours on RunPod, Modal, and Vast.ai, including estimated rates, spend caps, and teardown. The local path remains the required path and costs $0. A cloud A100 can host an optional named-checkpoint adapter experiment; it is not needed to establish the tensor contracts above.
+
+<ReferenceProject path="projects/week-15a-sft-lora-dpo-lab" name="sft-lora-dpo-lab" hours="6-8 hrs">
+An offline PyTorch lab with a tiny causal LM, deterministic SFT and preference ids, Stanford Rafailov et al. 2023 DPO log-ratio loss with causal shifting, equation-level KTO/IPO/ORPO/SimPO helpers with explicit score normalization, hand-written LoRA injection with frozen-base hygiene, an optional int8/QLoRA explanation, and exact adapter checkpoint tests. It makes no downloads or required cloud/API calls; its loss curves are plumbing checks, not alignment or language-quality benchmarks.
+</ReferenceProject>
+
+## Company Lens: public evidence versus practice analogy
+
+<CompanyLens
+  topic="post-training, preference optimization, parameter-efficient adaptation, and synthetic feedback"
+  tldr={{
+    openai: "Public OpenAI research and release documentation can support discussion of named post-training or alignment results. It does not establish this tiny SFT/DPO trainer, every current policy pipeline, or private data and evaluation choices.",
+    anthropic: "Public Anthropic papers and documentation support release-scoped discussion of preference, constitutional, and safety research. They do not establish a complete current Claude post-training stack or make this toy a reconstruction.",
+    deepmind: "Public Google DeepMind work supports named research on preference learning, alignment, and parameter-efficient methods where a source says so. It does not establish every current Gemini training choice or evaluator.",
+    meta: "Public Meta/FAIR papers and open model releases support discussion of the specific methods and artifacts they document. They do not establish every deployed Llama adapter, preference dataset, reward model, or serving decision.",
+    xai: "Public xAI announcements and technical material are release-specific and limited for exact post-training internals. The practice analogy is to measure adapter drift, evaluator reliability, and cost rather than infer a private Grok recipe.",
+    deepseek: "Public DeepSeek reports support named-release discussion of their stated training and reasoning methods. They do not establish that this SFT/DPO lab reproduces a DeepSeek system or reveal private data, evaluators, or later changes.",
+    qwen: "Public Qwen technical reports, repositories, and release posts support versioned discussion of named open artifacts. They do not establish Qwen's entire preference, synthetic-data, adapter, or serving pipeline."
+  }}
+  whyDiffer="A public paper, model card, or open checkpoint is evidence for its named scope, date, method, and evaluation. It is not evidence for a company's complete private stack, current data mixture, annotator policy, safety filters, hardware schedule, or undocumented internal architecture. The local project establishes only deterministic tensor contracts: a causal forward pass, SFT reduction, finite preference objectives, identity-preserving LoRA injection, an int8 teaching round trip, and checkpoint restoration. Each entry below therefore separates public evidence from a practice analogy and avoids attributing the local implementation to a company."
+  sources={{
+    openai: { paper: "Use the exact public OpenAI alignment/post-training paper or release being discussed; named-work scope only", blog: "openai.com/research — public index, not evidence of undocumented current internals" },
+    anthropic: { paper: "Use a named Anthropic alignment or constitutional-safety paper and its stated experiment; do not generalize beyond it", blog: "anthropic.com/research — public research index with release boundaries" },
+    deepmind: { paper: "Use a named Google DeepMind preference/alignment/PEFT paper and only the equations and results it reports", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "Meta/FAIR papers and open model cards — public artifact scope, not a deployment inventory", blog: "ai.meta.com/research — public FAIR index, not evidence of private training details" },
+    xai: { paper: "Public xAI/Grok technical material — inspect the exact version before making a claim", blog: "x.ai/blog — public announcements, not private architecture evidence" },
+    deepseek: { paper: "Named DeepSeek reports and repositories — release-specific evidence only; this lesson does not claim a reproduction", blog: "deepseek.com/research — public research and release index" },
+    qwen: { paper: "Named Qwen technical reports and open checkpoints — versioned artifact evidence", blog: "qwenlm.github.io/blog — public release posts with version boundaries" }
+  }}
+  caseStudy="The case study is one fixed local experiment: a tiny decoder receives aligned token ids; SFT lowers a fixture cross-entropy; query/value projections receive zero-initialized LoRA matrices; a symmetric int8 helper round-trips one weight tensor; chosen/rejected categorical sequences produce finite preference losses; and a saved CPU checkpoint restores exactly. It cannot establish instruction-following, truthfulness, harmlessness, human preference agreement, synthetic-data quality, PEFT production speed, scaling, or any company's current architecture. A credible extension reports seed, tokenizer/template, mask, base/reference revision, rank/alpha, beta/gamma, data provenance, held-out prompts, evaluator disagreement, device, wall-clock, memory, and teardown cost."
+  interviewAngle={{
+    openai: "Design a matched-budget post-training evaluation that separates SFT loss, preference win rate, safety slices, and user outcomes. State which named public release would support any OpenAI attribution and which private facts remain unknown.",
+    anthropic: "Explain why a written principle or AI critique is an evaluator contract rather than proof of constitutional behavior. Add adversarial and human-audit slices before making a safety claim.",
+    deepmind: "Compare full fine-tuning and LoRA at matched base checkpoint, data, and evaluation. Distinguish a named public Google DeepMind method from an unsupported claim about every current Gemini pipeline.",
+    meta: "Propose an adapter ablation with rank, target modules, drift/KL, held-out preference, and safety metrics. Explain why public FAIR releases do not reveal every deployed preference or adapter choice.",
+    xai: "With sparse public internals, define what can be measured locally—trainable count, log-ratio drift, evaluator agreement, and cost—and refuse to infer a private Grok training recipe.",
+    deepseek: "Keep the DPO attribution to Stanford's Rafailov et al. 2023 and separate it from named DeepSeek reports. Explain why a tiny categorical preference loss is not evidence about a DeepSeek release.",
+    qwen: "Use a named open Qwen checkpoint only as a versioned comparison point. Report tokenizer/template, adapter settings, preference source, held-out slices, and limitations without generalizing to undocumented Qwen deployments."
+  }}
+/>
+
+## Assignments
+
+<Assignments>
+- **Warmup (45–60 min):** derive the causal attention and masked SFT shapes; hand-compute a two-token cross-entropy and a DPO margin; count dense versus rank-4 LoRA parameters; compare RLHF, DPO, KTO, IPO, ORPO, and SimPO; and write one test for a masked sequence log-probability. Start with a failing assertion.
+- **Build (3–4 hrs):** run the notebook offline, record the SFT loss trace and all/trainable parameter counts, inject and train only LoRA, measure an int8 round-trip error, compute all five finite preference helpers on the deterministic pairs, and restore a checkpoint exactly. Report seed, device, mask, rank/alpha, beta/gamma, reference policy, and the boundary between plumbing and behavior evidence.
+- **Challenge (4+ hrs):** add completion-only DPO masks, a held-out synthetic preference split, a tested DoRA magnitude path, adapter merge/export, evaluator-noise analysis, or a matched dense/LoRA ablation. Add tests first and report win rate, safety/failure slices, log-ratio drift, latency/memory, provenance, and cost. Never call the result alignment proof or infer a private company system.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="25 min">
+**“Your LoRA-DPO run lowers loss and wins more pairwise comparisons. Is the model aligned?”**
+
+Rubric:
+- **Baseline signal:** derives causal masking and SFT labels, writes the DPO reference-adjusted margin, counts adapter parameters, checks finite gradients, and names data, seed, checkpoint, mask, beta, and evaluation split.
+- **Senior signal:** discusses teacher forcing, prompt/completion leakage, preference noise, reward/evaluator hacking, length bias, reference drift, catastrophic forgetting, safety regressions, synthetic-data contamination, and matched compute.
+- **Staff signal:** proposes a preregistered evaluation with held-out templates, human and AI-rater agreement, adversarial safety slices, KL/log-ratio drift, calibration, latency/memory/cost, checkpoint/license provenance, and a public-evidence boundary. Explicitly attributes DPO to Stanford's Rafailov et al. (2023), not Meta, and refuses to infer private company internals.
+
+Worked solution: `projects/week-15a-sft-lora-dpo-lab/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Direct Preference Optimization: Your Language Model is Secretly a Reward Model**, Rafailov et al. (2023), Stanford — named source for DPO's reference-adjusted logistic preference objective and its stated experiments.
+- **Training language models to follow instructions with human feedback**, Ouyang et al. (2022) — named InstructGPT/RLHF pipeline and its evaluation scope.
+- **Constitutional AI: Harmlessness from AI Feedback**, Bai et al. (2022) — constitutional critique/revision and AI-feedback framing, scoped to the paper.
+- **LoRA: Low-Rank Adaptation of Large Language Models**, Hu et al. (2021) — low-rank adapter parameterization and ablations, scoped to the named work.
+- **QLoRA: Efficient Finetuning of Quantized LLMs**, Dettmers et al. (2023) — quantized-base/LoRA design and its reported implementation, not the local int8 helper.
+- **DoRA: Weight-Decomposed Low-Rank Adaptation**, Liu et al. (2024) — magnitude/direction decomposition, scoped to the named paper.
+- **KTO: Model Alignment as Prospect Theoretic Optimization**, Ethayarajh et al. (2024) — desirable/undesirable feedback framing, scoped to the named method.
+- **Identity Preference Optimization**, Azar et al. (2024) — IPO objective and assumptions, scoped to the named work.
+- **ORPO: Monolithic Preference Optimization without Reference Model**, Hong et al. (2024) — odds-ratio/SFT framing, scoped to the named method.
+- **SimPO: Simple Preference Optimization with a Reference-Free Reward**, Meng et al. (2024) — reference-free margin design, scoped to the named method.
+</FurtherReading>
+
+<KeyTakeaways>
+- A causal LM maps token prefixes to next-token distributions; SFT is masked behavior cloning, and its loss is not a universal quality or alignment measure.
+- RLHF uses a reward/evaluation model plus an RL update and reference regularization; RLAIF changes the feedback source; Constitutional AI makes principles and critique/revision part of the feedback design.
+- This lesson attributes DPO to **Stanford's Rafailov et al. (2023)**. DPO's reference-adjusted log-ratio loss is direct preference optimization, not a guarantee that preference data is true or unbiased.
+- KTO, IPO, ORPO, and SimPO make different choices about labels, reference policies, anchors, and margins. Name masks, causal shifting, sum versus selected-token mean, beta/gamma, KL approximation, and checkpoint whenever comparing them.
+- PEFT/LoRA can reduce updated parameters; QLoRA combines a quantized frozen base with adapters; DoRA adds magnitude/direction structure. Fewer trainable parameters do not guarantee quality, safety, or lower end-to-end cost.
+- Synthetic and AI feedback can scale coverage while introducing evaluator bias, verbosity/reward hacking, contamination, and principle ambiguity. Audit them with held-out prompts, adversarial slices, and human disagreement.
+- The Week 15a project is an offline microscope: its finite losses, adapter identity test, and checkpoint round trip establish plumbing only. Public company evidence remains release-specific and must be separated from practice analogy.
+</KeyTakeaways>

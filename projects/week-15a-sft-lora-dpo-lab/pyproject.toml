@@ -1,0 +1,20 @@
+[project]
+name = "sft-lora-dpo-lab"
+version = "0.1.0"
+description = "Week 15a — an offline PyTorch lab for SFT, LoRA, and preference optimization"
+requires-python = ">=3.13"
+dependencies = ["torch>=2.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/post_training_lab"]
