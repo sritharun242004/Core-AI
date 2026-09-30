@@ -1,0 +1,17 @@
+# Architecture source; SVG is a checked-in hand-authored accessible fallback.
+# Optional regeneration: d2 inference-path.d2 inference-path.generated.svg
+# Review generated labels/contrast and preserve the SVG title/description before replacing.
+direction: right
+requests: "Authenticated request\nexact input token IDs"
+scheduler: "Admission + scheduler\nqueue / batch / prefill chunks"
+prefix: "Tenant-scoped prefix index\nmodel + tokenizer + adapter + positions"
+blocks: "KV block table\nlogical pages -> physical pages"
+engine: "Prefill / decode engine\nweights + kernels + KV reads"
+stream: "Token observations\nTTFT / TPOT / wall window"
+requests -> scheduler
+scheduler -> prefix: "lookup"
+prefix -> blocks: "eligible hit"
+scheduler -> engine: "missing prefix / new tokens"
+blocks -> engine: "KV handles"
+engine -> blocks: "append / release safely"
+engine -> stream

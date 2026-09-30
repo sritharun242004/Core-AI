@@ -1,0 +1,498 @@
+---
+week: 19
+part: 5
+slug: "week-19-vllm-benchmark"
+title: "Inference engineering — serve tokens, not benchmark fiction"
+hook: "How can a server produce twice as many words each second while making every person wait longer?"
+hours: 24
+computeTier: "red"
+difficulty: 5
+prereqSlugs: ["week-18-fsdp-ring-lab"]
+referenceProject: "projects/week-19-vllm-benchmark"
+accentVar: "--accent-p5"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>How can a server produce twice as many words each second while making every person wait longer?</Hook>
+
+<Intuition>
+Think of a restaurant. Reading an order and setting up its ingredients is different
+from plating one course at a time. Combining orders can make the kitchen more
+efficient, but a diner can still wait longer. In language-model inference, **prefill**
+processes input tokens and creates reusable key/value state; **decode** generates
+new tokens sequentially while consulting that state. A request can also spend time
+in an admission queue before either phase starts.
+
+[Week 18](/weeks/week-18-fsdp-ring-lab) split training work across devices. Here the
+objective changes: avoid repeated work and memory movement while meeting a user's
+latency budget. More tokens per second across a server is not automatically faster
+streaming for one user. A smaller weight file is not automatically a faster kernel.
+A cache hit is not automatically safe to share with another tenant.
+
+<IntuitionCallout>The required project is a $0 offline microscope: group quantization, page ownership, exact-prefix identity, timing arithmetic, and a distribution-preserving speculative sampler. Its invented timestamps are explicitly labelled simulations. A separate, opt-in HF/vLLM CLI measures a supplied local model; it neither downloads a checkpoint nor claims we ran a GPU benchmark.</IntuitionCallout>
+
+<figure>
+  <img src="/diagrams/week-19/inference-path.svg" width="960" height="350" loading="lazy" alt="Requests enter admission and scheduling; an exact tenant-scoped prefix index supplies KV page handles, while the engine processes missing prefill and new decode tokens before streaming timed outputs." />
+  <figcaption>Scheduling decides when work runs; prefix identity decides what work can be reused; a page table decides where KV lives. Token observations and the wall window define different metrics. <a href="/diagrams/week-19/inference-path.d2">D2 source</a>; checked-in accessible, hand-authored SVG fallback.</figcaption>
+</figure>
+
+The diagram is an architecture sketch, not a trace. An authenticated request first
+enters a queue. A cache lookup may supply an already computed prefix. The engine
+reads those blocks, computes missing tokens, and returns ownership when requests
+finish. Sharing cached pages in a real engine additionally requires reference counts
+and copy-on-write; our simulator deliberately does not pretend to implement them.
+
+<MicroRecall questions={[{
+  id: 'week19-recall-prefill', prompt: 'Which operation does an exact prompt-prefix cache primarily avoid?',
+  choices: ['Computing the unchanged input prefix again', 'Generating every new output token', 'Authenticating the tenant', 'All network latency'], correct: 0,
+  explain: 'The saved KV state removes repeated prefill work. Novel input suffixes and output tokens still require computation, and authorization remains mandatory.'
+}, {
+  id: 'week19-recall-throughput', prompt: 'Why might larger batches improve server throughput but worsen chat latency?',
+  choices: ['Tokens no longer need model weights', 'More requests share work, but queueing and iteration duration can grow', 'TPOT always becomes zero', 'A batch eliminates prefill'], correct: 1,
+  explain: 'Batching can amortize weight reads while increasing waiting or iteration time. Throughput and per-request latency are different objectives.'
+}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. Start with memory and the limiting resource
+
+For ordinary full-attention KV storage, let `B` be the number of live sequences,
+`T` their equal cached length, `L` transformer layers, `H_kv` key/value heads,
+`d_h` head dimension, and `b` bytes per element. The factor two is for keys **and**
+values. Ignoring metadata, alignment, and replication:
+
+<MathBlock latex="M_{KV}=2BTLH_{kv}d_hb" />
+
+With B=1, T=4096, L=32, H_kv=8, d_h=128, and FP16 b=2, this is
+536,870,912 bytes = **512 MiB** for one sequence. Sixteen such sequences need 8 GiB
+of KV alone. GQA reduces H_kv relative to query heads; MQA uses one KV head. Sliding
+windows, latent/compressed attention, sharding, and hybrid layers require different
+accounting. This formula must not be applied blindly to DeepSeek's MLA.
+
+Weight memory is approximately parameters times bytes per weight. A rough roofline
+lower bound for an operation with `F` FLOPs and `D` transferred bytes is:
+
+<MathBlock latex="t\;\ge\;\max\left(\frac{F}{P},\frac{D}{W}\right)" />
+
+Here `P` is attainable FLOPs/second and `W` attainable bytes/second, not marketing
+peaks. Large prefill matrix operations often exploit compute parallelism; low-batch
+decode often spends much of its time moving weights and growing KV. These are workload
+tendencies, not universal laws. Quantization, larger batches, and different memory
+architectures change arithmetic intensity; launch, communication, and queueing overhead
+can make the bound loose.
+
+### 2. Group INT8/INT4: define the quantizer before reporting compression
+
+For weights `w_i` in one group `g`, use a symmetric scale and zero point zero. Let
+`k` be 4 or 8, and `Q` the largest positive code. Our scheme intentionally uses
+−7…7 or −127…127 rather than the asymmetric full signed range:
+
+<MathBlock latex="Q=2^{k-1}-1,\qquad s_g=\frac{\max_{i\in g}|w_i|}{Q},\qquad q_i=\operatorname{clip}(\operatorname{round}(w_i/s_g),-Q,Q),\qquad \hat w_i=s_gq_i" />
+
+All-zero groups use scale 1. Without clipping and up to floating-point roundoff,
+nearest rounding gives an absolute error at most `s_g/2`. For `[-1,0,0.5,1]` at
+INT4, scale=1/7; in exact arithmetic ties-to-even gives codes [-7,0,4,7], and
+reconstructed 0.5 becomes 4/7: error=1/14. Float32 can put that midpoint just below
+the tie, yielding 3/7 instead with approximately the same error. The notebook reports
+its actual codes. Small groups protect ordinary weights from an unrelated outlier, at a metadata cost.
+For 128 weights with two float32 scales, ideal packed INT4 storage is 64+8=72 bytes,
+versus 256 bytes for FP16: **3.56×**, not a free 4×. The lab stores codes in int8
+arrays; it estimates packed storage but does not implement packing or an INT4 kernel.
+
+**GPTQ** (Frantar et al., ICLR 2023) uses approximate second-order information and
+calibration activations to compensate quantization error across weights. **AWQ**
+(Lin et al., MLSys 2024) uses activation statistics to identify salient channels and
+choose equivalent scaling that protects important weights. Neither is “round every
+weight to four bits,” and neither is implemented by this baseline quantizer. Evaluate
+calibration-domain coverage, perplexity and task quality, kernel/format compatibility,
+load time, memory, and latency together. Weight-only quantization does not imply
+low-bit activations or KV.
+
+**KV-cache quantization** changes a growing runtime state rather than static weights.
+INT8/FP8 or lower-bit KV may save context memory, but scales, outliers, attention-error
+accumulation, and dequantization bandwidth matter. Reducing b from two to one halves
+the ideal KV payload in the example, not total GPU memory. Validate long-context
+retrieval and generation quality; do not infer correctness from a finite tensor.
+
+### 3. Paging: ownership is the first invariant
+
+Let page capacity be `S` tokens, request length be `t_r`, and pool capacity be `C`
+pages. Its page count and unused tail slots are:
+
+<MathBlock latex="n_r=\left\lceil\frac{t_r}{S}\right\rceil,\qquad u_r=n_rS-t_r,\qquad N_{free}+\sum_r n_r=C" />
+
+For positive lengths, tail waste is between zero and S−1 slots; zero tokens need
+zero pages. With S=4 and lengths 5 and 4, three pages are allocated, three slots are
+unused, and a fourth page cannot be allocated from a three-page pool. Appending three
+tokens to the first request uses its tail; appending four needs another page. Failed
+allocation must leave both the free list and request table unchanged.
+
+The PagedAttention paper maps contiguous **logical** KV blocks to potentially
+noncontiguous **physical** blocks and uses attention kernels that follow those
+mappings. This reduces the need to reserve each request's maximum context up front.
+It does not make memory infinite or eliminate final-block waste. Our ownership model
+proves disjoint pages and capacity conservation, not kernel correctness, eviction,
+sharing, or production scheduler performance.
+
+### 4. TTFT, TPOT, throughput: write the denominator
+
+For request `r`, define submission `s_r`, observed output-token times
+`t_r,1 … t_r,n`, and completion `c_r`. All times are in seconds on the same monotonic
+clock. Submission includes whatever queue is inside the chosen boundary:
+
+<MathBlock latex="\operatorname{TTFT}_r=t_{r,1}-s_r,\qquad \operatorname{TPOT}_r=\frac{t_{r,n}-t_{r,1}}{n-1}\;(n>1),\qquad \operatorname{latency}_r=c_r-s_r" />
+
+TTFT is undefined for no output; TPOT is undefined for zero or one output token.
+Do not replace those values with zero and improve your average accidentally. For
+an explicit observation window from `a` to `z`, containing completed requests:
+
+<MathBlock latex="\operatorname{output\ throughput}=\frac{\sum_r n_r}{z-a},\qquad \operatorname{weighted\ TPOT}=\frac{\sum_{r:n_r>1}(t_{r,n_r}-t_{r,1})}{\sum_{r:n_r>1}(n_r-1)}" />
+
+Worked example: request A starts at 0, emits at 0.2/0.3/0.4, and finishes at 0.5.
+Its TTFT=0.2, TPOT=0.1, latency=0.5. Request B starts at 0.1, emits one token at 0.6,
+and finishes at 0.8: TTFT=0.5, TPOT absent. In a declared [0,1] window, output
+throughput is **4/1=4 tokens/s**, counting both first tokens. Mean TTFT=0.35 s.
+The wall denominator includes idle time; it is not the sum of overlapping durations.
+These are invented fixture times, not measured vLLM numbers.
+
+Report macro request TPOT separately from interval-weighted TPOT, p50/p95 TTFT and
+latency with sample counts, actual output lengths, errors, and SLO goodput. A
+one-request wall window and a loaded server answer different questions. A remote API
+includes network/queue effects that a local engine loop omits. Text stream chunks can
+contain zero, one, or several tokens: timestamp token IDs or disclose chunk-level
+observation limits rather than pretending a chunk is a token.
+
+<MicroRecall questions={[{
+  id: 'week19-math-tpot', prompt: 'Fill in: tokens observed at 0.2, 0.3, 0.4 s give TPOT = ___ s.',
+  choices: ['0.2/3', '0.1', '0.4', '0.2'], correct: 1,
+  explain: '(0.4−0.2)/(3−1)=0.1 seconds per decode interval. The first token belongs to TTFT.'
+}, {
+  id: 'week19-math-pages', prompt: 'Fill in: five tokens in four-token pages require ___ pages, with ___ unused slots.',
+  choices: ['1 page, 0 slots', '2 pages, 3 slots', '5 pages, 15 slots', '2 pages, 1 slot'], correct: 1,
+  explain: 'ceil(5/4)=2 pages; 2×4−5=3 tail slots. Page count is not a fractional allocation.'
+}]} client:visible />
+
+### 5. Speculative decoding: preserve the target distribution
+
+A cheap draft proposes token `x` with probability `q(x)`; a target model would sample
+from `p(x)`, at the **same accepted prefix** and on the same vocabulary. Accept the
+proposal with probability `A(x)`. On rejection, sample from the positive residual:
+
+<MathBlock latex="A(x)=\min\left(1,\frac{p(x)}{q(x)}\right),\qquad R(x)=\frac{[p(x)-q(x)]_+}{\sum_y[p(y)-q(y)]_+}" />
+
+A zero-q token is never proposed, so its ratio need not be evaluated. If p=q,
+rejection has zero probability and the residual branch is unreachable. Let
+`Z=1−Σ min(p,q)` be rejection probability. Since accepted mass is `qA=min(p,q)`:
+
+<MathBlock latex="P(\text{output}=x)=\min(p(x),q(x))+ZR(x)=\min(p(x),q(x))+[p(x)-q(x)]_+=p(x)" />
+
+For p=(0.6,0.3,0.1), q=(0.2,0.3,0.5), acceptance=(1,1,0.2), accepted mass totals
+0.6, and R=(1,0,0). The remaining 0.4 mass restores p. Resampling from p instead of
+R would produce (0.44,0.42,0.14): **biased**. Use the post-temperature/post-filtering
+p and q; applying unrelated top-k masks after the proof changes the distributions.
+
+A full algorithm drafts several tokens, verifies their prefix-conditioned target
+probabilities in one target pass, accepts until the first rejection, draws its
+residual, and discards the rejected suffix. If all proposals pass, it samples a
+bonus target token. Both KV caches must reflect only the accepted continuation.
+Speedup depends on accepted progress divided by draft, verify, scheduling, and cache
+costs—not acceptance rate alone. The lab implements the exact **one-step** law,
+not a multi-token model speedup. Greedy agreement is a different decoding policy.
+
+<Gotcha>“Lossless speculative sampling” means preserving the target sampling law under its assumptions. It does not mean every run returns the same string, every draft speeds things up, or a one-step probability simulation measures a serving engine.</Gotcha>
+
+## The code, from scratch
+
+Start with the per-group loop so that grouping and metadata remain visible. In the
+reference implementation, the outer loop chooses a last-axis group and the inner
+arithmetic is vectorized over rows and weights:
+
+```python
+qmax = 2 ** (bits - 1) - 1
+for group, start in enumerate(range(0, width, group_size)):
+    block = weights[..., start:start + group_size]
+    maximum = np.max(np.abs(block), axis=-1)
+    scale = np.where(maximum == 0, 1.0, maximum / qmax)
+    scales[..., group] = scale
+    codes[..., start:start + group_size] = np.clip(
+        np.rint(block / scale[..., None]), -qmax, qmax
+    ).astype(np.int8)
+```
+
+The last group may be shorter; no dummy weights are counted. Broadcasting a scale
+per row/group is different from using one scale for the whole tensor. Source adds
+validation and a subnormal-scale guard. Compare reconstruction error, not only code
+range. Then test ownership and denominators without any inference dependency:
+
+```python
+from vllm_benchmark import PagedKVCache, RequestTrace, aggregate_metrics
+
+pages = PagedKVCache(num_pages=3, page_size=4)
+pages.allocate("A", 5)
+pages.allocate("B", 4)
+pages.release("B")
+pages.append("A", 4)
+pages.check_invariants()
+
+trace = RequestTrace(0.0, (0.2, 0.3, 0.4), 0.5)
+report = aggregate_metrics([trace], window_start_s=0.0, window_end_s=1.0)
+assert report["output_tokens_per_s"] == 3.0  # Simulated one-second window.
+```
+
+Full implementation: `projects/week-19-vllm-benchmark/src/vllm_benchmark/`.
+`notebooks/01-inference-contracts.py` is an executable percent-format notebook;
+convert locally with Jupytext if you want an `.ipynb`. The tests begin with error
+bounds, allocator failure atomicity, identity invalidation, timing denominators,
+analytic probability mass, and seeded frequency checks.
+
+## Choose the engine by the workload, not the logo
+
+| Engine or layer | Useful framing | What to verify for your release |
+|---|---|---|
+| **vLLM** | LLM serving runtime associated with PagedAttention and continuous batching | Model support, scheduler/chunked-prefill policy, quantized kernel, prefix cache and speculative support |
+| **Hugging Face Transformers** | Flexible model APIs and a transparent generation baseline | Generation config, cache implementation, precision, attention backend, instrumentation overhead |
+| **TGI** | Hugging Face Text Generation Inference serving stack | Current maintenance/release guidance, supported models, streaming, batching, quantization and metrics |
+| **TensorRT-LLM** | NVIDIA-focused inference optimization/runtime stack | GPU generation, model conversion/build path, supported precision, runtime and shape constraints |
+| **NVIDIA Triton Inference Server** | Server/orchestration layer that hosts model backends, including LLM backends | Which backend executes generation and where scheduling actually happens |
+| **llama.cpp** | Local inference ecosystem with GGUF and CPU/GPU backends | Quantization format, offload policy, context size, hardware backend, thread count |
+
+**Triton Inference Server is not the Triton kernel language** used in Week 18.
+Similarly, a serving wrapper is not the underlying model kernel. Feature support
+changes by engine release; record versions rather than treating this table as a
+compatibility matrix or claiming that one engine always wins.
+
+Static batching waits for a batch to finish; **continuous batching** replaces
+finished requests between iterations. It avoids holding every slot for the longest
+response, but needs admission control and fairness. Long prefills can delay decode
+work; **chunked prefill** splits them into schedulable pieces. Larger batches may
+amortize weight reads while increasing TPOT, and KV pressure can force preemption.
+Sweep offered load and report failures plus goodput under declared TTFT/TPOT SLOs.
+
+The optional lab CLI runs **serial concurrency=1** on the same explicit local model.
+HF observes synchronized token-ID streamer callbacks; vLLM observes cumulative token
+deltas after an engine step. Multiple tokens in a step share an observation time.
+The measured wall window excludes load, tokenization, and warmup, but includes
+per-request generation overhead. The report contains actual token counts, timings,
+versions, device/dtype, checkpoint label, and input-token hash. This establishes a
+bounded instrumented comparison—not continuous-batching gains or remote-API latency.
+
+## Prompt and context caching: reuse is a security decision
+
+Distinguish **within-request KV cache** from **cross-request prefix reuse**, and both
+from a semantic response cache that returns an old answer. The first avoids
+recomputing previous tokens during decode; the second can skip repeated prefill;
+the third changes application behavior and needs a different correctness contract.
+A long document is reusable only while its earlier token sequence and computational
+state still match. Inserting a timestamp before it can invalidate the entire prefix.
+
+Our exact cache key serializes tenant, immutable weight revision, tokenizer revision,
+adapter revision, positional/mask configuration, KV dtype, and ordered token IDs
+using versioned JSON, then hashes it. It never concatenates integers ambiguously or
+hashes decoded text. Prefix-entry `[1,23]` must miss for `[12,3]` and `[1,23,4]`:
+this teaching cache does not implement longest-prefix lookup. A block-based cache
+would include preceding-block identity and safely handle partial/shared tails.
+
+[OpenAI's prompt-caching guide](https://platform.openai.com/docs/guides/prompt-caching)
+and [Anthropic's prompt-caching guide](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)
+document product-level prefix reuse and usage accounting. Anthropic documents
+`cache_control` and cache read/write counters; OpenAI documents prompt-prefix reuse
+and model-dependent controls. Check the selected model/platform's current threshold,
+retention, pricing, isolation, and usage fields. Do not assume a cached token has
+the same price, lifetime, or eligibility across providers. These docs do not reveal
+all internal page layouts or justify reverse-engineering claims.
+
+Privacy checklist: authenticate the tenant before deriving the namespace; avoid
+cross-tenant sharing by default; bound retention and bytes; invalidate on model or
+adapter rollout; reference-count shared blocks and copy-on-write mutable tails;
+restrict cache inspection and logs; treat hit timing as a possible side channel.
+Hashing is **not encryption** and known prompts may be guessable. Multimodal inputs
+need additional content and preprocessing identity. Warmup can populate a cache, so
+label cold/warm experiments explicitly; a fast warm request is not a cold-start win.
+
+## Alternative silicon: Groq, Cerebras, SambaNova
+
+These are supporting hardware/inference vendors, **not additional rows in the seven
+first-class lab comparison**. Their public architecture explanations teach different
+ways to move data; vendor speed claims are not our measurements.
+
+- **Groq:** its [LPU explanation](https://groq.com/blog/the-groq-lpu-explained) describes
+  compiler-scheduled execution, predictable data movement, and on-chip memory. Ask
+  how the chosen model maps across chips and what constraints the public service adds.
+  Deterministic hardware scheduling does not remove Internet or admission latency.
+- **Cerebras:** its [wafer-scale technology page](https://www.cerebras.ai/chip) describes
+  a wafer-scale processor and on-chip resources. Ask about model partitioning,
+  serving configuration, supported context/precision, and complete-system power and
+  cost. Wafer size is not an application tokens/s measurement.
+- **SambaNova:** its [dataflow architecture description](https://sambanova.ai/products/dataflow-architecture)
+  discusses Reconfigurable Dataflow Units, programmable compute/memory units, and
+  a memory hierarchy. Ask about compiler support, model switching, memory tiers,
+  concurrency, and which deployed configuration a result actually used.
+
+For a fair GPU/API comparison, match checkpoint or disclose that it differs; match
+input/output distributions, decoding, precision where known, region, cache state,
+concurrency, time window, and quality. Separate single-user decode rate from aggregate
+throughput and successful SLO goodput. Include network effects, rate limits, failures,
+pricing units, and the date. Unknown precision stays **unknown**. Do not make a
+“fastest silicon” leaderboard from incompatible vendor examples.
+
+<CompanyLens
+  topic="inference efficiency and the boundary of public evidence"
+  tldr={{
+    openai: "OpenAI documents prompt-prefix caching and usage accounting for supported API models. That product contract does not establish a particular private paging kernel, quantizer, or speculative draft model.",
+    anthropic: "Anthropic documents prompt caching, cache_control, and cache read/write accounting. Selected model/platform retention and isolation rules must be checked; no Claude KV layout is inferred here.",
+    deepmind: "The Gemini 1.5 report describes long-context capabilities and experiments. Long context makes serving memory an important practice problem, but the report is not a complete current Gemini serving inventory.",
+    meta: "The Llama 3 report supplies a versioned open-model reference, including architectural choices. Running a local Llama checkpoint through an engine measures that setup, not Meta production serving.",
+    xai: "The public Grok-1 repository is a release-specific model artifact. It does not establish current Grok inference kernels, prefix retention policy, or production latency.",
+    deepseek: "DeepSeek-V3 documents Multi-head Latent Attention and deployment-related design. MLA changes KV accounting; do not substitute the ordinary full-KV formula or infer every hosted-service detail.",
+    qwen: "The Qwen2.5 report and Qwen deployment documentation provide named model/tooling references. Compatibility guidance is not a claim that Alibaba serves every model with one engine or precision."
+  }}
+  whyDiffer="Hosted API documentation defines an external product contract; open-weight releases expose more model structure but still not a complete service. Neither alone gives a fair engine benchmark. The transferable comparison is which latency, memory, quality, and isolation claims each public artifact can support. The following interview angles are practice prompts, not verified questions from private hiring loops."
+  sources={{
+    openai: { paper: "No paper is used to infer proprietary cache internals", blog: "OpenAI prompt caching guide — https://platform.openai.com/docs/guides/prompt-caching" },
+    anthropic: { paper: "No paper is used to infer proprietary Claude KV layout", blog: "Anthropic prompt caching guide — https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching" },
+    deepmind: { paper: "Gemini 1.5 technical report — arXiv:2403.05530; bounded to the named report", blog: "Gemini API context caching guide — https://ai.google.dev/gemini-api/docs/caching (product documentation, not private architecture evidence)" },
+    meta: { paper: "The Llama 3 Herd of Models — arXiv:2407.21783", blog: "Llama 3 release — https://ai.meta.com/blog/meta-llama-3/" },
+    xai: { paper: "No serving paper is claimed; the Grok-1 code release is https://github.com/xai-org/grok-1", blog: "Grok-1 open release — https://x.ai/news/grok-os" },
+    deepseek: { paper: "DeepSeek-V3 Technical Report — arXiv:2412.19437", blog: "Official model/release repository — https://github.com/deepseek-ai/DeepSeek-V3" },
+    qwen: { paper: "Qwen2.5 Technical Report — arXiv:2412.15115", blog: "Qwen deployment documentation — https://qwen.readthedocs.io/en/latest/deployment/vllm.html" }
+  }}
+  caseStudy="The concrete public case is PagedAttention (Kwon et al., SOSP 2023): logical KV blocks and noncontiguous physical storage enable flexible memory management. Its published comparisons are results for its own models, hardware, and workloads, not current guarantees. Our three-page fixture reproduces only ownership arithmetic: A=5 and B=4 occupy three four-token pages; releasing B permits A to grow. The optional CLI would add local measurements only after an explicit supplied-checkpoint run."
+  interviewAngle={{
+    openai: "Design cold versus warm prefix-cache measurements, separate usage accounting from measured latency, and state which service details remain unknown.",
+    anthropic: "Design a tenant-isolated cache and retention policy; explain invalidation when tools, context, or settings change without attributing private Claude internals.",
+    deepmind: "Budget long-context KV memory and propose TTFT/TPOT experiments. Explain why a long-context evaluation is not an inference throughput benchmark.",
+    meta: "Use a named Llama checkpoint to compare HF and vLLM with matched tokenizer, hardware, and precision; separate local evidence from Meta deployment claims.",
+    xai: "Given a public model artifact but sparse serving evidence, identify measurable contracts and explicitly leave current production architecture unknown.",
+    deepseek: "Explain why MLA needs different KV accounting, then derive speculative acceptance and residual sampling without confusing a model report with a hosted API SLO.",
+    qwen: "Reproduce a versioned local deployment, audit quantized-format compatibility and quality, and explain why a documented integration does not prove all deployments use it."
+  }}
+/>
+
+<ReferenceProject path="projects/week-19-vllm-benchmark" name="Inference contracts and local-model benchmark" hours="6–8 hrs">
+The Python 3.13 baseline implements group INT8/INT4, atomic paged allocation/free,
+exact tenant-scoped prefix keys, explicit timing metrics, and exact one-step
+speculative sampling. The optional lazy-import HF/vLLM CLI requires a local model
+path, revision label, and local prompt file; it has no default model or download.
+README documents APIs and measurement limits, SOLUTION_NOTES derives the answers,
+and COMPUTE includes provider, budget, stop conditions, and teardown.
+</ReferenceProject>
+
+### Run locally, rent only deliberately
+
+```bash
+ROOT="$PWD"
+cd projects/week-19-vllm-benchmark
+export PYTHONPATH="$PWD/src"
+"$ROOT/.venv/bin/python" -m pytest
+"$ROOT/.venv/bin/python" notebooks/01-inference-contracts.py
+"$ROOT/.venv/bin/python" -m vllm_benchmark demo
+```
+
+The full lesson is **red tier** because real engine experiments may need a compatible
+CUDA host, not because the baseline spends money. `COMPUTE.md` proposes an optional
+RunPod A100 40 GB for 1–2 hours, assuming $1–3/hour and a $10 total cap including
+storage/transfer. Those are planning estimates, not live quotes. Verify pricing,
+wheel/Python/CUDA compatibility, license, and local weight availability before
+provisioning. Set a timer; stop at the budget limit. Copy sanitized reports, terminate
+the pod, delete unused volumes/endpoints, and verify the billing inventory. Closing
+SSH does not stop a rented GPU. No cloud run was performed to create this lesson.
+
+<Assignments>
+- **Warmup (30 min):** hand-calculate quantization error/storage and timing denominators, including zero/one-token responses. Deliver a unit-labelled numeric table.
+- **Build (2–3 hrs):** prove allocator lifecycle invariants, add cache invalidation tests, and produce two labelled synthetic workload reports. Optionally append same-checkpoint HF/vLLM measured JSON and teardown evidence.
+- **Challenge (3+ hrs):** extend speculation to two-token blocks with an explicit transition-table target and distribution tests; design a failure-inclusive serving sweep and a source-bounded alternative-silicon comparison.
+
+Detailed acceptance criteria live in `projects/week-19-vllm-benchmark/assignments/`.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="45–60 min">
+**“Your new server doubles aggregate tokens/second, but users say it feels slower.
+Diagnose it, propose two controlled experiments, and explain how caching and
+quantization could both help and mislead you.”**
+
+Surface: ML system design + numerical correctness.
+- **Baseline:** distinguish prefill/decode, TTFT/TPOT/latency, and define throughput's wall denominator.
+- **Senior:** match workload/precision/cache state, inspect tail latency and failures, and propose batching or prefill-scheduling ablations with quality checks.
+- **Staff:** add admission control and tenant isolation, goodput under explicit SLOs, reproducible measurement boundaries, and budget/teardown ownership.
+
+<details>
+  <summary>Reveal a worked answer</summary>
+  <p>First compare actual output lengths, arrival rates, queue times, hardware and cache state. A larger batch can amortize weight reads while extending waits or decode iterations. Run fixed-workload batch/load sweeps and a separate no-cache/warm-cache ablation; report TTFT and TPOT percentiles, errors, and SLO goodput. Quantization can free memory but needs kernel and quality checks. Prefix caching removes repeated prefill, not novel output work. Authenticate cache namespaces, bound retention, and keep model/tokenizer/adapter revisions in the key. A serial local benchmark is not evidence of production capacity. The full probability and memory calculations are in SOLUTION_NOTES.md.</p>
+</details>
+</InterviewDrill>
+
+## Weekly synthesis quiz
+
+<WeeklyQuiz weekId={19} questions={[{
+  id: 'week19-quiz-0', prompt: 'Which memory expression counts standard FP16 KV for B sequences?',
+  choices: ['B×T bytes', '2×B×T×L×H_kv×d_h×2 bytes', 'Parameter count only', 'Query heads alone'], correct: 1,
+  explain: 'There are K and V tensors per layer, position, KV head, and head dimension. FP16 contributes two bytes per element; architecture/sharding may change the formula.'
+}, {
+  id: 'week19-quiz-1', prompt: 'What does our INT4 array implementation actually store?',
+  choices: ['Packed GPU nibbles with measured acceleration', 'Symmetric codes in int8 arrays plus scales, with an ideal packed-size estimate', 'GPTQ-calibrated model weights', 'A quantized KV kernel'], correct: 1,
+  explain: 'The baseline proves group error/storage arithmetic. It is neither a packed format nor GPTQ, AWQ, or an accelerator kernel.'
+}, {
+  id: 'week19-quiz-2', prompt: 'What primarily distinguishes AWQ from ordinary per-group rounding?',
+  choices: ['It removes all calibration information', 'It uses activation statistics to protect salient weight channels through scaling', 'It caches every output answer', 'It requires no compatible inference kernel'], correct: 1,
+  explain: 'AWQ is activation-aware weight quantization. GPTQ instead uses approximate second-order reconstruction information; neither is the simple baseline.'
+}, {
+  id: 'week19-quiz-3', prompt: 'An append needs a new KV page but none are free. What must happen?',
+  choices: ['Reuse another live request page silently', 'Increase token count and fail later', 'Fail without changing request or free-list state', 'Return a negative page ID'], correct: 2,
+  explain: 'Capacity checks precede mutation. Atomic failure preserves ownership and prevents aliasing or lost pages.'
+}, {
+  id: 'week19-quiz-4', prompt: 'Same token IDs, different LoRA adapter: may this exact cache key hit?',
+  choices: ['Yes, IDs alone are sufficient', 'No, adapter revision changes the KV computation identity', 'Only if the text sounds similar', 'Yes, hashing provides authorization'], correct: 1,
+  explain: 'KV depends on model computation, not tokens alone. Adapter, weights, tokenizer/positions and tenant namespace belong in the identity.'
+}, {
+  id: 'week19-quiz-5', prompt: 'How should a one-token response contribute to TPOT?',
+  choices: ['As zero', 'As its TTFT', 'As missing: it has zero inter-token intervals', 'As its completion time'], correct: 2,
+  explain: 'TPOT needs n−1 intervals. That first token still counts toward output throughput and supplies a TTFT observation.'
+}, {
+  id: 'week19-quiz-6', prompt: 'After rejecting a draft sample, which law restores the target distribution?',
+  choices: ['The draft again', 'The target without adjustment', 'Normalized positive part of target minus draft', 'Absolute target minus draft'], correct: 2,
+  explain: 'Accepted mass is min(p,q); adding the missing positive mass reconstructs p. Resampling p directly is biased.'
+}, {
+  id: 'week19-quiz-7', prompt: 'What can the optional serial HF/vLLM CLI establish?',
+  choices: ['Continuous-batching capacity under overload', 'Instrumented local-model latency for its explicit workload and clock boundary', 'Every vendor GPU speedup', 'A production p99 guarantee'], correct: 1,
+  explain: 'Concurrency=1, warmup excluded, explicit local weights, and token-observation instrumentation define a bounded experiment, not a serving load test.'
+}, {
+  id: 'week19-quiz-8', prompt: 'How should Groq, Cerebras, and SambaNova performance claims be compared?',
+  choices: ['Rank vendor headline numbers directly', 'Assume their models and tokenizers are identical', 'Match or disclose model, workload, precision, network, cache state and failure rates', 'Ignore aggregate throughput'], correct: 2,
+  explain: 'Architecture descriptions and vendor benchmarks are useful sources, not interchangeable independent measurements.'
+}, {
+  id: 'week19-quiz-9', prompt: 'Which action completes a cloud experiment responsibly?',
+  choices: ['Close SSH and assume billing stopped', 'Keep an idle pod as a cache', 'Save sanitized results, terminate compute, remove unneeded storage/endpoints and verify billing', 'Delete the benchmark JSON only'], correct: 2,
+  explain: 'Compute and persistent storage have separate lifecycles. A successful script exit is not provider teardown.'
+}]} client:visible />
+
+<FurtherReading>
+- [Kwon et al., PagedAttention / vLLM (SOSP 2023)](https://arxiv.org/abs/2309.06180) — block tables, memory management, and the paper's own benchmark conditions.
+- [Frantar et al., GPTQ (ICLR 2023)](https://arxiv.org/abs/2210.17323) and [Lin et al., AWQ (MLSys 2024)](https://arxiv.org/abs/2306.00978) — compare calibration objectives, not only bit widths.
+- [Leviathan, Kalman, Matias, speculative decoding (ICML 2023)](https://arxiv.org/abs/2211.17192) — derive the exact sampling correction and examine the reported workload.
+- [vLLM documentation](https://docs.vllm.ai/en/latest/) and [TGI documentation](https://huggingface.co/docs/text-generation-inference/index) — release-specific runtime support and serving controls.
+- [TensorRT-LLM](https://nvidia.github.io/TensorRT-LLM/) and [Triton Inference Server](https://github.com/triton-inference-server/server) — distinguish model execution from server orchestration.
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) — local backends, GGUF, and deployment constraints.
+</FurtherReading>
+
+<KeyTakeaways>
+- Prefill, decode, queueing, and networking occupy different parts of a user's wait.
+- Quantization needs error, metadata, kernel, and quality evidence—not only a bit-width label.
+- KV paging conserves ownership; exact prefix reuse additionally needs semantic identity and privacy boundaries.
+- TTFT, TPOT, and output throughput have different denominators; undefined metrics stay absent.
+- Correct speculation uses acceptance ratios and a positive residual, not target resampling on rejection.
+- Report simulations as simulations, bound public claims, and terminate rented resources after every run.
+</KeyTakeaways>
