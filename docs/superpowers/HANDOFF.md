@@ -1,8 +1,8 @@
 # Core AI — Development Handoff
 
 **For:** any AI operator (Claude, GPT, or similar) resuming development on this repo.
-**From:** the operator that shipped Plan 6 after Plans 1-5 (foundation + platform + Months 2-4 content).
-**Date:** 2026-09-28.
+**From:** the operator completing Plans 7–8 after the foundation/platform and Weeks 1–17.
+**Date:** 2026-09-30.
 **Repo:** https://github.com/sritharun242004/Core-AI (private) · main working branch: `plan-1-foundation`.
 
 Read this file top-to-bottom before touching anything. Skimming will bite you.
@@ -25,28 +25,31 @@ The deliverable is a static site (`apps/book/`) that renders 25 weekly articles 
 - Plan 5 (§6 below) — Weeks 9-12 (deep learning foundations) + 4 Python reference projects. Shipped, tagged `v0.5.0-week12`.
 - Plan 6 (§7 below) — Weeks 13-17 (transformers, LLMs, post-training) + 5 Python reference projects. Shipped, tagged `v0.6.0-week17`.
 
-**Plans remaining:** Introduces the first cloud-GPU 🔴 weeks.
-- Plan 7 — Weeks 18-21 (systems + safety) — see §8.
-- Plan 8 — Weeks 22-25 (specialization + capstone + interview prep) — see §9.
+- Plan 7 (§8 below) — Weeks 18–21 (systems + safety), four reference projects. Shipped as `v0.7.0-week21`.
+
+**Plans remaining:**
+- Plan 8 — Weeks 22–25 (all six specialization lessons/projects, capstone rubrics and interview prep) — see §9 and `plans/2026-09-30-core-ai-completion.md`.
 
 ---
 
-## 2. Current state (as of Plan 6 completion, tag `v0.6.0-week17`)
+## 2. Current state (as of Plan 7 completion, tag `v0.7.0-week21`)
 
 ### 2.1 Test snapshot
 - Viz vitest: **3/3**
-- Book vitest: **6/6**
-- Playwright: **69/69 + 2 fixme'd** (motion-reduce SSR/hydration edge, deferred — see §12.1)
+- Book vitest: **8/8**
+- Playwright: **78/78 + 2 fixme'd** (motion-reduce SSR/hydration edge, deferred — see §12.1)
 - Python pytest (per-project): **11 + 6 + 11 + 9 + 10 + 23 + 4 + 11 + 11 + 14 + 11 + 23 + 48 + 11 + 54 + 61 + 37 = 355/355**
 
-**Total: 435/435 automated tests green** (plus the 2 deferred Playwright fixmes).
+- Plan 7 Python: **70 + 51 + 16 + 27 = 164/164** freshly validated, bringing the cumulative Python inventory to **519**.
+
+**Total inventory: 608 passing automated tests** (355 prior Python tests retained from Plan 6, plus the fresh Plan 7/site checks; 2 deferred Playwright fixmes).
 
 ### 2.2 What ships in the built book
-- 34 prerendered static pages (`dist/client/`) + 1 SSR route (`/companies/compare`)
+- 38 prerendered static pages (`dist/client/`) + 1 SSR route (`/companies/compare`)
 - Pagefind client-side search (⌘K), index freshness pinned by test
-- 17 weekly articles (W1-W15a, W15b, W17; no W16), each with the full 8-part anatomy and 7-company CompanyLens
+- 21 weekly articles (W1–W15a, W15b, W17–W21; no W16), each with full lesson anatomy and 7-company CompanyLens
 - 7 company profiles (`/companies/[slug]`), all attribution-clean per spec §5.3
-- 7×25 CompanyLens matrix at `/companies` — 16/25 distinct week columns populated
+- 7×25 CompanyLens matrix at `/companies` — 21/25 roadmap columns now have lesson routes
 - `/interview` dashboard + `/interview/coding-set` (20 problems) + weak-spot heatmap
 - 5 companion routes: `/how-to-study`, `/glossary`, `/math-primer`, `/paper-reading-protocol`, `/tech-writing`
 - Interactive islands: MicroRecall, WeeklyQuiz, InterviewDashboard, WeakSpotHeatmap, ThemeToggle, SearchDialog — all Preact + Signals
@@ -250,7 +253,13 @@ Core-AI/
 
 ## 8. Plan 7 — Weeks 18-21 (systems + safety)
 
-**All cloud-GPU except W20+W21.**
+**Status:** shipped as `v0.7.0-week21`.
+
+W18/W19 cloud extensions are red-tier; all shipped correctness tests and notebooks run offline on CPU. W20/W21 are yellow-tier. Real multi-GPU training, HF/vLLM checkpoint inference and external tracking/provider integrations were not executed.
+
+**Fresh validation:** 164 Python tests (70/51/16/27), four offline notebooks, new-project Ruff checks, 3 viz and 8 book unit tests, Astro/Pagefind with 38 pages, 78 browser tests plus 2 pre-existing fixmes. Link checking encountered one transient Google documentation timeout; the live URL was independently fetched successfully and the rerun passed all 33 URLs.
+
+**Rulings:** D2 architecture sources plus explicitly hand-authored accessible SVG fallbacks (D2 CLI unavailable); Inspect AI correctly attributed to UK AI Security Institute; scientific/serving claims distinguish simulations from measured results. Completion plan explains the historical 25-week versus specialization/calendar-time mismatch.
 
 | Week | Topic | Project | Tier |
 |---|---|---|---|
