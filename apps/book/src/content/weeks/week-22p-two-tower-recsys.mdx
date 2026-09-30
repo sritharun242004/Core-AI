@@ -1,0 +1,247 @@
+---
+week: 22
+part: 6
+track: "P"
+slug: "week-22p-two-tower-recsys"
+title: "Track P · α — Retrieval, recommendation, and graph signals"
+hook: "Your ranker is perfect, but the item a user wants never reaches it. Where did the system fail?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-21-alignment-lab"]
+referenceProject: "projects/week-22p-two-tower-recsys"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>Your ranker is perfect, but the item a user wants never reaches it. Where did the system fail?</Hook>
+
+<Intuition>
+A recommender is a sequence of narrowing decisions. Imagine a librarian: first find shelves that might contain useful books, then compare a small stack carefully, then remove unavailable books and avoid handing you five near-identical titles. Candidate generation, ranking and policy constraints have different objectives and latency budgets. A later stage cannot rescue a relevant item discarded earlier.
+
+<svg viewBox="0 0 680 125" role="img" aria-labelledby="p22-pipeline-title" style="width:100%;height:auto">
+  <title id="p22-pipeline-title">Catalog flows through retrieval, ranking and policy checks to a small recommendation list. Every stage can remove relevant items.</title>
+  <g fill="none" stroke="currentColor" stroke-width="1.5">
+    <rect x="5" y="24" width="135" height="65" rx="4" />
+    <rect x="182" y="24" width="135" height="65" rx="4" />
+    <rect x="360" y="24" width="135" height="65" rx="4" />
+    <rect x="537" y="24" width="135" height="65" rx="4" />
+    <path d="M140 56h42m-8-6 8 6-8 6M317 56h43m-8-6 8 6-8 6M495 56h42m-8-6 8 6-8 6" />
+  </g>
+  <g fill="currentColor" text-anchor="middle" font-size="16">
+    <text x="72" y="50">Catalog</text><text x="72" y="73">all eligible items</text>
+    <text x="249" y="50">Retrieve</text><text x="249" y="73">broad candidates</text>
+    <text x="427" y="50">Rank</text><text x="427" y="73">rich interactions</text>
+    <text x="604" y="50">Constrain</text><text x="604" y="73">final list</text>
+  </g>
+</svg>
+
+A **two-tower model** separately maps user context and item content into vectors. Their inner product is cheap to compare, and catalog vectors can be precomputed. Our smallest honest version learns ID embeddings on both sides. It cannot infer the taste of a never-seen user from nothing. Popularity is therefore both a baseline and an explicit cold-start fallback, not an embarrassing detail to hide.
+
+A graph adds a second intuition: people who connect to related items may benefit from sharing neighborhood information. But a heldout interaction is an answer key. Including it in the graph—even without its rating—reveals information the model should not have.
+
+<IntuitionCallout>Make four moves: define what was knowable at prediction time; retrieve with a trainable score; preserve the full relevant set in evaluation; compare against an uncomplicated baseline before adding graph complexity.</IntuitionCallout>
+
+This is the first of two Track P lessons. The fixture has 24 users, 18 items and 120 synthetic positive interactions. It is MovieLens-shaped, not downloaded MovieLens. Follow with [Track P β](/weeks/week-23p-learning-to-rank-timeseries) for reranking, experiments and forecasting. Choosing two tracks adds four specialization study weeks; roadmap labels 22–23 are not a claim that all alternatives fit into two calendar weeks.
+
+<MicroRecall questions={[
+{id:'w22p-mr-retrieve',prompt:'Can a perfect reranker recover an item missing from its candidates?',choices:['No','Yes, by changing its score','Only if NDCG is used'],correct:0,explain:'The reranker orders available candidates. Candidate recall places a ceiling on what later stages can recover.'},
+{id:'w22p-mr-graph',prompt:'May a heldout edge be used to compute training graph degrees?',choices:['Yes, because its label is hidden','No, its existence leaks the relationship','Only for popular nodes'],correct:1,explain:'Adjacency and normalization are model inputs; build both from the training graph only.'}
+]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. Two independent encoders make retrieval cheap
+
+Let u be user features or an ID, i be item features or an ID, and d the embedding dimension. Encoders with parameters θ and φ return vectors in the same space:
+
+<MathBlock latex="p_u=f_\theta(u)\in\mathbb R^d,\qquad q_i=g_\phi(i)\in\mathbb R^d,\qquad s(u,i)=p_u^\top q_i=\sum_{j=1}^d p_{uj}q_{ij}" />
+
+For p = [1,2], positive-item q⁺ = [2,1] and negative-item q⁻ = [1,0], scores are 4 and 1. The margin is 3. These unnormalized inner products are neither probabilities nor cosine similarities. Normalizing vectors changes the objective and the ranking; do not do it silently at index-build time.
+
+A production feature tower can encode an item's text/category and a user's recent activity. Independent encoding makes catalog precomputation possible but restricts arbitrary user-item interactions. A later neural reranker or cross-encoder spends more compute on a smaller candidate set. Train/serve feature parity and version-compatible item indexes are part of model correctness.
+
+### 2. Learn from relative preference, without pretending missing means disliked
+
+An implicit positive indicates observed engagement. An unobserved item may be unseen rather than disliked. BPR compares observed item i with training-unobserved item j for the same user:
+
+<MathBlock latex="\Delta_{uij}=s(u,i)-s(u,j),\qquad \mathcal L=\frac1{|\mathcal T|}\sum_{(u,i,j)\in\mathcal T}\log(1+e^{-\Delta_{uij}})+\lambda\left(\operatorname{mean}(P^2)+\operatorname{mean}(Q^2)\right)" />
+
+Here T is the set of training triples; P and Q are the trainable embedding tables; λ is the regularization coefficient. We state the mean-square convention because a sum penalty would require a different λ when table sizes change. Differentiate the softplus term:
+
+<MathBlock latex="\frac{\partial\ell}{\partial\Delta}=-\sigma(-\Delta),\quad \frac{\partial\ell}{\partial p_u}=-\sigma(-\Delta)(q_i-q_j),\quad \frac{\partial\ell}{\partial q_i}=-\sigma(-\Delta)p_u,\quad \frac{\partial\ell}{\partial q_j}=\sigma(-\Delta)p_u" />
+
+At margin 0, loss is log 2 ≈ .6931 and derivative is −.5. At margin 3, loss is about .04859 and derivative is −.04743. Correctly ordered pairs still contribute smaller updates. `softplus(-margin)` avoids overflow from a naive exponential implementation.
+
+The fixture enumerates all training-unobserved items rather than random negative sampling. No heldout labels enter this enumeration. Some future positives consequently act as training negatives: that is a real implicit-feedback limitation, not permission to consult the test set. Sampled softmax and in-batch contrastive learning are other objectives with different sampling corrections and false-negative issues; they are not implemented here.
+
+### 3. Recall and NDCG need denominators that survive retrieval failures
+
+Let Rᵤ be the complete heldout positive set, Cᵤ the ordered prediction list and k the cutoff. Recall measures how much of the known relevant set was retrieved. NDCG discounts low-ranked results and supports relevance grade r ≥ 0:
+
+<MathBlock latex="\operatorname{Recall@k}(u)=\frac{|C_u[:k]\cap R_u|}{|R_u|},\qquad \operatorname{DCG@k}=\sum_{t=1}^{k}\frac{2^{r_{C_{ut}}}-1}{\log_2(t+1)},\qquad \operatorname{NDCG@k}=\frac{\operatorname{DCG@k}}{\operatorname{IDCG@k}}" />
+
+IDCG sorts the **full truth mapping**, not just labels found in the candidate list. Missing predictions contribute no gain; duplicate item predictions are rejected. Empty relevance or zero ideal gain returns zero in this API. Other benchmarks skip empty queries—report which convention you use. Aggregate with equal user weight, not equal interaction weight, and report the user count.
+
+**Worked example:** prediction [9,2], positive set [2,3,4], k = 2. Recall = 1/3. DCG = 1/log₂3 ≈ .63093; IDCG = 1 + 1/log₂3 ≈ 1.63093; NDCG ≈ .38685. The missing positives cannot vanish from either denominator. A reranker's *conditional* NDCG on supplied candidates is a different diagnostic from end-to-end NDCG; label it separately.
+
+<Gotcha>Exclude training-seen items before selecting top-k, not afterward. Filtering after truncation can return a needlessly short list and alter comparisons. Our contract sorts equal scores by ascending item ID, never returns masked items, and returns fewer than k items only when the eligible catalog is exhausted.</Gotcha>
+
+### 4. Graph propagation is a train-time information boundary
+
+Construct a bipartite adjacency A over user and item nodes from training positives only. D contains training node degrees; E⁽⁰⁾ stacks both embedding tables. This one-hop LightGCN-style variant uses symmetric degree normalization and averages propagated and original embeddings:
+
+<MathBlock latex="\widetilde A=D^{-1/2}AD^{-1/2},\qquad E^{(1)}=\widetilde A E^{(0)},\qquad E=\tfrac12(E^{(0)}+E^{(1)})" />
+
+For edges (u₀,i₀), (u₀,i₁), (u₁,i₁), degrees are [2,1,1,2]. The coefficient from i₀ to u₀ is 1/√2 ≈ .7071; from i₁ to u₀ it is 1/2. A heldout (u₁,i₀) must remain absent in **both directions**. Isolated nodes have no incoming messages; clamp the zero degree for numerical safety but do not interpret random embeddings as a cold-start solution.
+
+General message-passing GNNs can learn transformed neighbor messages, attention weights and node updates. This code deliberately implements only one normalized linear propagation step, inspired by LightGCN—not a full GCN, GAT or paper reproduction. The graph is dense for readability. Scaling requires sparse operations, sampling and careful oversmoothing/oversquashing analysis.
+
+<MicroRecall questions={[
+{id:'w22p-mr-denominator',prompt:'One hit at k=2 out of three relevant items gives Recall@2 of?',choices:['1/3','1/2','1'],correct:0,explain:'Recall divides by all relevant items, including relevant items absent from candidates.'},
+{id:'w22p-mr-gradient',prompt:'At BPR margin zero, the loss derivative with respect to margin is?',choices:['0.5','0','−0.5'],correct:2,explain:'d softplus(−margin)/d margin = −sigmoid(−margin); descent increases the margin.'}
+]} client:visible />
+
+## The code, from scratch
+
+First make the scalar meaning clear; then vectorize the same operation. Positive and negative tensors below contain item vectors for each training triple, not labels consulted from the holdout.
+
+```python
+# For one training triple:
+margin = sum(user[j] * (positive[j] - negative[j]) for j in range(dim))
+# For a batch, with each tensor shaped [triples, dim]:
+margin_batch = (users * (positives - negatives)).sum(-1)
+loss = torch.nn.functional.softplus(-margin_batch).mean()
+```
+
+The actual runnable project handles graph construction, L2, optimizer state and split validation:
+
+```python
+import torch
+from two_tower_recsys import TwoTower, Popularity, temporal_split
+from two_tower_recsys import synthetic_movielens, train, evaluate
+
+torch.set_num_threads(1)
+fit, held = temporal_split(synthetic_movielens())
+print(evaluate(Popularity(fit, 18), fit, held, k=4))
+for graph in (False, True):
+    model = TwoTower(24, 18, graph_train=fit if graph else None)
+    losses = train(model, fit, steps=100)
+    print(losses[0], losses[-1], evaluate(model, fit, held, k=4))
+```
+
+The split yields 96 training and 24 heldout positive events. Both towers receive actual backpropagation updates. Tests pin metric denominators, empty relevance, score ties, seen exclusion, unknown-user fallback, split-time ties and train-only graph normalization. The notebook asserts that every heldout graph edge is zero. No accuracy number here is a real MovieLens benchmark.
+
+`load_movielens(path)` optionally parses an **existing** modern `ratings.csv`, keeps ratings at least 4, and returns contiguous ID maps. It does not download data or support legacy `.dat` files. Repeated user/item positives are rejected by the splitter so you must choose an explicit aggregation/repeat-consumption policy. Per-user leave-last-out is not a global time split; real feature timestamps must also precede every prediction.
+
+### Retrieval at scale, search and ads
+
+An exact inner-product scan costs O(number of items × embedding dimension) per query. An approximate-nearest-neighbor index trades latency/memory for approximate retrieval; measure index recall against an exact search on a manageable sample. This lab is exact and tiny, not an ANN implementation. Item churn, deletions, index refresh and feature-schema changes create failure modes that an offline loss cannot detect.
+
+Search adds explicit query intent, lexical matching and freshness: combine a lexical candidate source such as BM25 with semantic retrieval, then calibrate or learn fusion on heldout queries. Recommendation adds history, repetition and exploration. Ads add eligibility, bid/budget constraints, pacing, calibration and delayed conversions. A simple expected-value score might multiply a bid by a predicted click/conversion probability, but a raw BPR margin is **not** such a probability and this is not a complete auction design.
+
+Clicks are affected by exposure and position, not only relevance. Do not train on unshown items as confirmed negative clicks, or infer causal product lift from offline NDCG. Log candidate versions, impressions, positions, timestamps and randomization/propensity information where lawful. Use user experience, provider diversity and safety guardrails rather than optimizing one engagement proxy without constraints.
+
+### Graphs beyond recommendation
+
+- **Fraud:** account/device/payment graphs expose relationships but require event-time edges, delayed labels and inductive evaluation; a future chargeback or shared investigation node can leak labels.
+- **Molecules:** atoms/bonds have typed features and often require permutation-invariant graph readouts and geometric structure. Molecular scaffold splits test a different generalization question than random molecule splits.
+- **Social systems:** link prediction and feed ranking encounter homophily, heterophily, privacy and interference. Neighbor exposure can violate independent-user experiment assumptions.
+- **Recommendation:** collaborative graphs transfer interaction structure, but popularity amplification and sparse cold-start nodes remain. More message-passing layers are not automatically better.
+
+<CompanyLens
+  topic="public retrieval and graph evidence, not assumed private recommendation stacks"
+  tldr={{
+    openai:'CLIP demonstrates learned paired representations and similarity-based transfer; it is not evidence that a private feed uses this toy two-tower recommender.',
+    anthropic:'Public contextual retrieval describes adding context and combining retrieval signals. This is document retrieval evidence, not disclosure of an ads-ranking architecture.',
+    deepmind:'Battaglia and colleagues formalize graph-network relational inductive biases. That motivates graph reasoning without implying a particular commercial recommender.',
+    meta:'The public DLRM work directly studies deep learning for personalization and recommendation. Its feature interactions differ from this minimal ID-dot-product model.',
+    xai:'Grok-1 open weights provide public model evidence; no xAI recommendation training stack is inferred from that release or from another organization’s ranking repository.',
+    deepseek:'DeepSeek-V3 publicly documents a language-model architecture and training. Applying its representations to retrieval would require an independently evaluated adaptation.',
+    qwen:'Qwen3 Embedding publicly covers embedding and reranking models. Retrieval relevance and model-specific evaluation should not be replaced with general language-model scores.'
+  }}
+  whyDiffer="Retrieval spans paired representation learning, document search, personalization and graph reasoning. Public sources establish different pieces, not a comparable disclosure of seven private recommendation systems. These interview angles are study exercises rather than claims about confidential hiring questions."
+  sources={{
+    openai:{paper:'Radford et al., Learning Transferable Visual Models From Natural Language Supervision, arXiv:2103.00020',blog:'openai.com/index/clip/'},
+    anthropic:{paper:'No recommender architecture claimed; primary public contextual-retrieval write-up',blog:'anthropic.com/news/contextual-retrieval'},
+    deepmind:{paper:'Battaglia et al., Relational inductive biases, deep learning, and graph networks, arXiv:1806.01261',blog:'deepmind.google/discover/blog/'},
+    meta:{paper:'Naumov et al., Deep Learning Recommendation Model for Personalization and Recommendation Systems, arXiv:1906.00091',blog:'github.com/facebookresearch/dlrm'},
+    xai:{paper:'Grok-1 public repository; no recommender paper claimed',blog:'github.com/xai-org/grok-1'},
+    deepseek:{paper:'DeepSeek-V3 Technical Report, arXiv:2412.19437',blog:'github.com/deepseek-ai/DeepSeek-V3'},
+    qwen:{paper:'Qwen3 Embedding: Advancing Text Embedding and Reranking Through Foundation Models, arXiv:2506.05176',blog:'qwenlm.github.io/blog/qwen3-embedding/'}
+  }}
+  caseStudy="Meta’s DLRM publication makes embedding interactions and systems constraints inspectable through a public model and repository. Compare its explicit feature interactions with independently encoded dot-product retrieval; the point is an architectural trade-off, not a claim that this fixture reproduces Meta’s production performance."
+  interviewAngle={{
+    openai:'Explain independent encoders, negative sampling and why contrastive scores are not calibrated click probabilities.',
+    anthropic:'Design a contextual retrieval evaluation that separates candidate recall from reranking and respects source boundaries.',
+    deepmind:'Derive normalized graph propagation and choose a split that tests the intended inductive generalization.',
+    meta:'Design a multi-stage recommender with sparse features, freshness, popularity controls and a latency budget.',
+    xai:'Specify versioned online/offline evidence before claiming a new retrieval model improves a product.',
+    deepseek:'Compare adapting a general model with training a retrieval-specific encoder under a compute budget.',
+    qwen:'Evaluate multilingual embedding retrieval and reranking separately with query-level denominators.'
+  }}
+/>
+
+<ReferenceProject path="projects/week-22p-two-tower-recsys" name="two-tower-recsys" hours="6–8 hrs">
+Train independent embedding towers and a one-hop train-only graph variant on a synthetic MovieLens-shaped fixture. Compare heldout Recall/NDCG against popularity, inspect masks and gradients, and execute the percent notebook entirely offline. Optional local CSV ingestion does not make the fixture a MovieLens benchmark.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** calculate the .38685 NDCG example, a zero-margin BPR gradient and one graph normalization coefficient.
+- **Build (2–3 hrs):** reproduce all three models, audit graph/time boundaries, then introduce a separate validation split before tuning.
+- **Challenge (3+ hrs):** add a content tower, sparse propagation or retrieval-plus-reranking; report seed variation and paired user-bootstrap uncertainty with stated assumptions.
+</Assignments>
+
+<InterviewDrill role="applied-ml" time="30 min">
+**“Design a recommendation service. Offline NDCG improves, but new users do worse and the online experiment is flat. What do you inspect?”**
+
+- **Baseline:** separate candidate retrieval, ranking and final eligibility; compare popularity; inspect seen masking, relevance denominators and cold-start slices.
+- **Senior:** audit temporal features and graph edges, index/model compatibility, exposure bias, candidate recall and latency; never call a raw score a probability.
+- **Staff:** define product guardrails, experiment randomization units, interference risks, rollout/rollback thresholds and evidence that would overturn the proposed launch.
+
+Worked solution: `projects/week-22p-two-tower-recsys/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<WeeklyQuiz weekId={22} questions={[
+{id:'w22p-q0',prompt:'What enables item-vector precomputation?',choices:['Independent user and item encoders','Arbitrary joint cross-attention over every pair','Using test labels'],correct:0,explain:'Independent item encoding supports reusable catalog vectors; richer cross interactions usually belong in later ranking.'},
+{id:'w22p-q1',prompt:'An unobserved item is necessarily disliked?',choices:['Yes','No'],correct:1,explain:'It may never have been exposed. Implicit negative sampling introduces assumptions.'},
+{id:'w22p-q2',prompt:'At zero BPR margin the unregularized loss is?',choices:['Zero','One','log 2'],correct:2,explain:'softplus(0) equals log 2.'},
+{id:'w22p-q3',prompt:'Which relevance set defines IDCG for end-to-end NDCG?',choices:['All known relevance for that query','Only the returned positive items','Only training positives'],correct:0,explain:'Otherwise retrieval failures disappear from the ideal denominator.'},
+{id:'w22p-q4',prompt:'When do we exclude seen items?',choices:['After selecting top-k','Before selecting top-k'],correct:1,explain:'Pre-selection exclusion yields the best eligible list and avoids needless short results.'},
+{id:'w22p-q5',prompt:'What resolves tied scores in this project?',choices:['Heldout grade','Ascending item ID','Random unspecified order'],correct:1,explain:'A stable label-independent tie break makes evaluation reproducible.'},
+{id:'w22p-q6',prompt:'Does a heldout edge belong in graph degree normalization?',choices:['No','Yes if its rating is removed'],correct:0,explain:'Relationship existence is information too; build degrees from training adjacency.'},
+{id:'w22p-q7',prompt:'Unknown users receive what here?',choices:['An out-of-range embedding lookup','An invented preference vector','Training-only popularity'],correct:2,explain:'The ID-only model has no learned representation for them; the fallback is explicit.'},
+{id:'w22p-q8',prompt:'Does a positive offline NDCG delta identify online causal lift?',choices:['Yes','No'],correct:1,explain:'Exposure, feedback and product constraints differ; randomized experiments or defensible identification are needed.'},
+{id:'w22p-q9',prompt:'What does this GNN implementation actually include?',choices:['One normalized bipartite propagation step averaged with original embeddings','A complete graph-attention recommender at production scale','Molecular geometry prediction'],correct:0,explain:'It is a small LightGCN-style variant with explicit limits, not all graph learning.'}
+]} client:visible />
+
+<FurtherReading>
+- **[BPR — Rendle et al. (2009)](https://arxiv.org/abs/1205.2618).** Bayesian personalized ranking and the assumptions behind implicit pairwise learning.
+- **[LightGCN — He et al. (2020)](https://arxiv.org/abs/2002.02126).** Simplified graph convolution for collaborative filtering; distinguish the full paper from our one-layer variant.
+- **[DLRM — Naumov et al. (2019)](https://arxiv.org/abs/1906.00091).** Public recommendation architecture and systems benchmark, not a two-tower synonym.
+- **[Graph networks — Battaglia et al. (2018)](https://arxiv.org/abs/1806.01261).** Relational inductive biases and graph-network building blocks.
+- **[MovieLens datasets — GroupLens](https://grouplens.org/datasets/movielens/).** Dataset provenance and terms; bring an already acquired local CSV if extending the lab.
+- **[Qwen3 Embedding (2025)](https://arxiv.org/abs/2506.05176).** Retrieval-specific representations and reranking as separate stages.
+</FurtherReading>
+
+<KeyTakeaways>
+- Retrieval, ranking and final constraints remove different kinds of candidates; inspect the whole pipeline.
+- Train both towers on training information only, with honest assumptions about implicit negatives.
+- Preserve full relevance denominators, exclude seen items before top-k and define ties and empty cases.
+- Graph edges and degrees are data; future relationships can leak even without labels.
+- Cold-start slices, popularity baselines and causal experiments are essential companions to offline NDCG.
+</KeyTakeaways>
