@@ -1,0 +1,172 @@
+---
+week: 14
+part: 4
+slug: "week-14-mini-bpe-pretrain"
+title: "Tokenization and pretraining — give text a shape"
+hook: "A language model cannot learn from words until you decide what a token is, where a position lives, and what it means to predict the next symbol."
+hours: 20
+computeTier: "yellow"
+difficulty: 4
+prereqSlugs: ["week-13-nano-gpt-ssm"]
+referenceProject: "projects/week-14-mini-bpe-pretrain"
+accentVar: "--accent-p4"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>A language model cannot learn from words until you decide what a token is, where a position lives, and what it means to predict the next symbol.</Hook>
+
+<Intuition>
+Tokenization is the interface between a byte string and a tensor. Characters waste sequence length; whole words cannot handle names, code, or new morphology. Byte-pair encoding starts small, counts adjacent pairs, and repeatedly merges the most useful pair. The resulting vocabulary is a compromise between sequence length, coverage, and the cost of the embedding and output matrices.
+
+<IntuitionCallout>
+A checkpoint is not just weights. It is weights plus configuration plus tokenizer vocabulary and merge rules. Change the tokenizer while keeping the tensor shapes and you have changed the model's language.
+</IntuitionCallout>
+
+The four moves are: train and round-trip a deterministic BPE vocabulary, derive the next-token objective, compare RoPE with ALiBi, and distinguish pretraining from every later post-training stage.
+
+<MicroRecall questions={[{
+  id: 'week14-recall-bpe',
+  prompt: 'What does BPE merge repeatedly?',
+  choices: ['Random labels', 'Frequent adjacent symbol pairs', 'Attention heads', 'Validation examples'],
+  correct: 1,
+  explain: 'BPE starts with small symbols and merges frequent adjacent pairs, recording the merge order as part of the tokenizer.'
+}, {
+  id: 'week14-recall-rope',
+  prompt: 'What does RoPE rotate?',
+  choices: ['The vocabulary IDs', 'Query and key feature pairs by position-dependent phases', 'The loss curve', 'The optimizer state'],
+  correct: 1,
+  explain: 'Rotary position embeddings apply a position-dependent 2D rotation to query and key feature pairs before their dot product.'
+}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. BPE changes sequence length
+
+Let a token sequence be $s=(s_1,\ldots,s_T)$. A merge replaces adjacent $(a,b)$ with a new symbol $ab$. The merge is selected by frequency:
+
+<MathBlock latex="(a^*,b^*)=\arg\max_{(a,b)}\operatorname{count}(a,b)" />
+
+The project uses a lexicographic tie-break, so the merge list is reproducible. Encoding applies the learned list in rank order; decoding expands each learned symbol back to its children. In production byte-level implementations, the initial alphabet and whitespace policy are more elaborate, but the contract is the same.
+
+### 2. Next-token prediction
+
+Given token IDs $x_1,\ldots,x_T$, a decoder predicts $x_{t+1}$ from the prefix $x_{\le t}$. For logits $z_t$ and target $x_{t+1}$:
+
+<MathBlock latex="p_\theta(x_{t+1}\mid x_{\le t})=\operatorname{softmax}(z_t)_{x_{t+1}},\qquad L(\theta)=-\frac{1}{T-1}\sum_{t=1}^{T-1}\log p_\theta(x_{t+1}\mid x_{\le t})" />
+
+The training implementation shifts each window by one and applies cross-entropy over every next-token position. Pretraining learns broad continuation behavior from the token stream; supervised fine-tuning and preference optimization are later objectives, not alternative names for the same phase.
+
+### 3. RoPE: relative phase through absolute rotations
+
+For a query/key pair $(q_{2i},q_{2i+1})$, position $p$ applies a 2D rotation with angle $p\omega_i$:
+
+<MathBlock latex="R(\theta)=\begin{bmatrix}\cos\theta&-\sin\theta\\\sin\theta&\cos\theta\end{bmatrix},\qquad q'_p=R(p\omega_i)q_p" />
+
+Because both query and key are rotated before their dot product, their interaction depends on a relative phase between positions. The frequency schedule uses different angular rates for different feature pairs. It is a geometric transformation, not an extra learned token ID.
+
+### 4. ALiBi and long context
+
+ALiBi keeps content vectors unchanged and adds a head-specific distance penalty to attention scores:
+
+<MathBlock latex="s_{h,i,j}=\frac{q_{h,i}^\top k_{h,j}}{\sqrt{d_h}}-m_h(i-j),\qquad i\ge j" />
+
+Some heads receive a steep slope and focus locally; others receive a shallow slope. YaRN and other long-context methods modify or extend positional behavior, but the engineering test remains the same: evaluate retrieval and perplexity at longer lengths without confusing one synthetic needle test for general reasoning.
+
+<Gotcha>Never load a checkpoint with a different vocabulary and call the failure a “position issue.” Token IDs, merge ranks, embedding rows, output rows, sequence length, and positional configuration all belong in the compatibility contract.</Gotcha>
+
+## The code, from scratch
+
+```python
+# one causal training step
+inputs, targets = dataset.sample_batch(batch_size=4, generator=generator)
+logits = model(inputs)
+loss = torch.nn.functional.cross_entropy(
+    logits.reshape(-1, logits.size(-1)), targets.reshape(-1)
+)
+loss.backward()
+optimizer.step()
+```
+
+The complete offline tokenizer, RoPE/ALiBi helpers, decoder, training loop, and checkpoint round trip live in `projects/week-14-mini-bpe-pretrain/`.
+
+<CompanyLens
+  topic="tokenization, positions, and pretraining"
+  tldr={{
+    openai: "Public GPT and tokenizer work makes token boundaries a first-class modeling choice; private vocabularies and training mixtures are not inferred here.",
+    anthropic: "Context length and safety evaluation depend on the token stream, but public sources do not establish every internal positional choice.",
+    deepmind: "Chinchilla makes data/parameter trade-offs a public scaling-law case study; tokenizer and checkpoint compatibility remain practical engineering concerns.",
+    meta: "Llama and PyTorch provide public open-weight and tooling context for studying tokenization, positions, and reproducible checkpoints.",
+    xai: "Public model reports do not justify a claim about a private tokenizer; use the lab to compare position mechanisms under controlled evidence.",
+    deepseek: "DeepSeek model reports are a public systems context for efficient language modeling, not a license to invent tokenizer internals.",
+    qwen: "Qwen technical reports provide open-weight model context; a tokenizer vocabulary and merge list should still be inspected directly."
+  }}
+  whyDiffer="Tokenization and positions sit below model-family narratives. A model can have an impressive name while still inheriting the basic contract that token IDs select embeddings, causal masks hide the future, and checkpoints must travel with their tokenizer. Public papers document some choices; they do not expose every production training mixture or long-context trick."
+  sources={{
+    openai: { paper: "GPT-3 technical report", blog: "openai.com/research" },
+    anthropic: { paper: "Claude model cards", blog: "anthropic.com/research" },
+    deepmind: { paper: "Chinchilla, Hoffmann et al. 2022", blog: "deepmind.google/discover/blog" },
+    meta: { paper: "Llama 3.1 model card", blog: "ai.meta.com/blog" },
+    xai: { paper: "Grok technical reports", blog: "x.ai/blog" },
+    deepseek: { paper: "DeepSeek-V3 arXiv:2412.19437", blog: "deepseek.com/research" },
+    qwen: { paper: "Qwen2 Technical Report", blog: "qwenlm.github.io" }
+  }}
+  caseStudy="The project checkpoint stores model configuration and tokenizer metadata together. Restoring the same weights with a changed vocabulary is an immediate, reproducible failure; restoring the same token contract lets you ask the more interesting questions about position and data."
+  interviewAngle={{
+    openai: "Explain why tokenizer choice changes training FLOPs and context economics.",
+    anthropic: "Compare RoPE and ALiBi for a long-context evaluation and name a failure mode for each.",
+    deepmind: "State what a scaling-law fit estimates and why tokenizer changes can invalidate a comparison.",
+    meta: "Implement a causal language-model loss and identify the exact shift between inputs and targets.",
+    xai: "Audit a checkpoint handoff: which tokenizer, vocabulary, context, and positional fields must be pinned?",
+    deepseek: "Explain pretraining versus post-training without treating a model report as evidence of hidden data mixtures.",
+    qwen: "Design a reproducible open-weight tokenizer release and a round-trip compatibility test."
+  }}
+/>
+
+<ReferenceProject path="projects/week-14-mini-bpe-pretrain" name="mini-bpe-pretrain" hours="6-8 hrs">
+Train a deterministic BPE tokenizer, inspect RoPE and ALiBi, pretrain a tiny causal LM on a six-story in-memory fixture, and save/load a compatible checkpoint. The fixture is intentionally offline and not a benchmark dataset.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** train a vocabulary by hand, inspect five merge ranks, and round-trip special tokens.
+- **Build (2-3 hrs):** run matched RoPE and ALiBi toy pretraining and log token count, sequence length, loss, and checkpoint metadata.
+- **Challenge (3+ hrs):** implement a needle-in-context audit across positions and explain what it cannot say about general long-context reasoning.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“A checkpoint loads, but generations are nonsense after a tokenizer update. Diagnose it.”**
+
+Rubric:
+- **Baseline signal:** checks vocabulary IDs, merge rules, context shape, and causal shift.
+- **Senior signal:** compares RoPE/ALiBi behavior, tokenizer fertility, and checkpoint metadata rather than tuning blindly.
+- **Staff signal:** proposes a compatibility manifest, canary generations, and long-context evaluation protocol.
+
+Worked solution: `projects/week-14-mini-bpe-pretrain/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Build a Large Language Model from Scratch — Raschka.** Tokenization and training loop foundations.
+- **RoFormer (Su et al., 2021).** Original rotary position embedding derivation.
+- **Train Short, Test Long (Press et al., 2022).** ALiBi and length extrapolation intuition.
+- **Chinchilla (Hoffmann et al., 2022).** Data/parameter scaling trade-offs; read with the Epoch AI replication caveat.
+</FurtherReading>
+
+<KeyTakeaways>
+- Tokenizer merges, special IDs, and normalization rules are part of the model interface.
+- Causal pretraining is next-token prediction over a one-position-shifted stream.
+- RoPE rotates query/key pairs; ALiBi adds distance-dependent score biases.
+- Pretraining, supervised fine-tuning, and preference optimization answer different objectives.
+- A long-context plot is only as trustworthy as its tokenizer, split, metric, and evaluation task.
+</KeyTakeaways>
