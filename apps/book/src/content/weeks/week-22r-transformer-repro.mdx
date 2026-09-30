@@ -1,0 +1,121 @@
+---
+week: 22
+track: "R"
+part: 6
+slug: "week-22r-transformer-repro"
+title: "Research α — reproduce a Transformer mechanism"
+hook: "What does it mean to reproduce a paper when your code runs but your data, architecture and metric are different?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-21-alignment-lab", "week-13-nano-gpt-ssm"]
+referenceProject: "projects/week-22r-transformer-repro"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>What does it mean to reproduce a paper when your code runs but your data, architecture and metric are different?</Hook>
+<Intuition>
+Research reproduction has three levels. **Mechanism parity** means a mathematical operation matches its derivation. **Experimental parity** means the dataset, architecture, training and evaluation approximate the published experiment. **Claim replication** asks whether the evidence supports the same conclusion. Passing a tensor-shape test addresses only part of the first level.
+
+Start with Vaswani et al. 2017, Google Brain before its merger with DeepMind. Read the abstract for the claim, figures for information flow, equations for implementation units, and appendices for training details. Build a claim → oracle → experiment → limitation table before opening an editor. This week reproduces causal attention and a small decoder mechanism, not the original WMT translation result.
+
+<MicroRecall questions={[{id:'22r-scope',prompt:'A tiny decoder overfits a fixture. What was reproduced?',choices:['A training/mechanism contract','The original translation BLEU result'],correct:0,explain:'The source used a full encoder-decoder and different data/evaluation.'},{id:'22r-oracle',prompt:'Why use an analytic attention fixture?',choices:['To avoid comparing two implementations with the same bug','To prove language quality'],correct:0,explain:'An independent expected result is stronger than self-consistency.'}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### Attention from a weighted sum
+
+Queries Q and keys K have final width d. Values V may have a different final width. Dot products produce one score for each query/key pair. Scaling by square root d controls variance when dimensions contribute approximately independently. Causal masking excludes future keys **before** normalization.
+
+<MathBlock latex="S=QK^\top/\sqrt{d},\qquad A_{ij}=\frac{\exp(S_{ij})\mathbf{1}[j\le i]}{\sum_{k\le i}\exp(S_{ik})},\qquad O=AV" />
+
+For zero Q/K every allowed score is equal. With scalar values [1,3,8], output positions are [1,2,4]. A wrong mask can still make rows sum to one, so verify the expected prefix averages and suffix-perturbation invariance as independent tests.
+
+### Gradient oracle
+
+For a scalar objective f and parameter coordinate x_i, centered finite differences approximate the derivative. Compare them against autograd in float64, away from nondifferentiable boundaries.
+
+<MathBlock latex="\frac{\partial f}{\partial x_i}\approx\frac{f(x+\epsilon e_i)-f(x-\epsilon e_i)}{2\epsilon}" />
+
+Too large epsilon introduces approximation error; too small amplifies cancellation. PyTorch `gradcheck` manages tolerances, but the experiment still needs finite, nondegenerate inputs. Gradient parity matters because matching inference outputs does not establish a correct training implementation.
+
+### Reproduction choices are variables
+
+The original paper uses encoder-decoder attention, sinusoidal positions, ReLU feed-forward layers and its specified normalization/training schedule. Our one-block causal decoder uses learned positions, GELU and pre-norm. These are deliberate teaching choices, not hidden claims of architectural identity.
+
+<MathBlock latex="h'=h+\operatorname{Attention}(\operatorname{LN}(h)),\qquad h''=h'+\operatorname{FFN}(\operatorname{LN}(h'))" />
+
+Pre-norm places normalization before each residual branch. Compare post-norm under a controlled ablation; do not simultaneously change width, learning rate and data, then attribute the curve to normalization alone.
+
+## The code, from scratch
+
+```python
+import torch
+from transformer_repro import attention, train_fixture
+
+q = torch.zeros(1, 3, 4)
+v = torch.tensor([[[1.0], [3.0], [8.0]]])
+out, weights = attention(q, q, v)
+torch.testing.assert_close(out[..., 0], torch.tensor([[1.0, 2.0, 4.0]]))
+curve = train_fixture(seed=22, steps=30)
+assert curve[-1] < curve[0]
+```
+
+The public API also includes `TinyTransformer` and `causal_batch`. Each input window excludes its last token; each label window excludes its first. The notebook compares three seeds without changing global RNG state outside the training helper. Checkpoint tests hold architecture fixed; a real release needs constructor, vocabulary and tokenizer metadata too.
+
+### A paper-reading and reporting protocol
+
+1. Write one falsifiable claim and name the exact figure/table/equation supporting it.
+2. List data, optimizer, architecture, compute, metric and sampling assumptions.
+3. Implement the smallest unit with an independent oracle and a failing regression.
+4. Run a seeded baseline, preserve raw artifacts, then one ablation.
+5. Report uncertainty, failed runs, deviations and what your experiment cannot establish.
+
+A four-page report can use: question and source claim; implementation/protocol; results plus ablation; limitations and extension. Do not hide adverse seeds or tune on the final holdout. The companion [paper-reading protocol](/paper-reading-protocol) and [technical writing guide](/tech-writing) supply the reading/writeup workflow.
+
+<Gotcha>A successful overfit test is desirable software evidence and deliberately poor generalization evidence. Give each metric the interpretation its experiment supports.</Gotcha>
+
+<CompanyLens topic="research reproduction and evidence"
+ tldr={{openai:'GPT and CLIP papers offer public claims to reproduce at a carefully bounded scale.',anthropic:'Toy Models of Superposition is a useful small-scale research template; feature interpretation still needs controls.',deepmind:'Attention originated at Google Brain; Chinchilla is DeepMind research. Track organizational and experimental attribution separately.',meta:'Llama and public PyTorch code help inspect implementation choices; open weights do not expose all training data.',xai:'Use release-specific public Grok documentation; missing evidence stays missing, not an invented reproduction target.',deepseek:'DeepSeekMath and V3 reports support mechanism studies; a tiny model is not a frontier-scale replication.',qwen:'Qwen reports and code permit release-specific implementation audits and multilingual evaluation design.'}}
+ whyDiffer="A research artifact earns credibility through bounded claims and reproducibility, not the prestige of the lab it mentions. Choose a question whose decisive experiment fits your budget, and retain an explicit gap between source evidence and your own measurements."
+ sources={{openai:{paper:'GPT-3, arXiv:2005.14165',blog:'openai.com/research'},anthropic:{paper:'Toy Models of Superposition',blog:'transformer-circuits.pub'},deepmind:{paper:'Attention Is All You Need, arXiv:1706.03762',blog:'deepmind.google/discover/blog'},meta:{paper:'Llama 3, arXiv:2407.21783',blog:'pytorch.org/docs'},xai:{paper:'Public Grok release documentation',blog:'x.ai/blog'},deepseek:{paper:'DeepSeekMath, arXiv:2402.03300',blog:'github.com/deepseek-ai'},qwen:{paper:'Qwen2, arXiv:2407.10671',blog:'qwenlm.github.io'}}}
+ caseStudy="The analytic [1,2,4] prefix-average fixture catches a mask bug that a simple row-sum test misses. This is a local teaching case: independent oracles strengthen a reproduction before larger experiments."
+ interviewAngle={{openai:'Explain a failed reproduction without hiding deviations.',anthropic:'Separate feature correlation from intervention evidence.',deepmind:'Derive attention and list original-paper versus toy choices.',meta:'Audit a checkpoint and implementation manifest.',xai:'State which claims cannot be tested from public documentation.',deepseek:'Design a budget-matched mechanism ablation.',qwen:'Describe multilingual and tokenizer confounds in a reproduction.'}}
+/>
+<ReferenceProject path="projects/week-22r-transformer-repro" name="transformer-repro" hours="6-8 hrs">A from-scratch causal attention/decoder mechanism with analytic, gradient, causality, training and checkpoint tests.</ReferenceProject>
+<Assignments>
+- **Warmup (30 min):** derive prefix averages and introduce a wrong mask to see the oracle fail.
+- **Build (2–3 hrs):** compare normalization placement over three seeds and write the deviations table.
+- **Challenge (3+ hrs):** implement one missing encoder-decoder mechanism and propose a bounded translation experiment.
+</Assignments>
+<InterviewDrill role="research-eng" time="25 min">
+**“Your replication misses the paper's score. How do you investigate?”**
+
+Baseline: inspect data, metric and implementation. Senior: isolate one mechanism with oracles and ablations. Staff: distinguish claim/experimental/mechanism parity, report uncertainty and propose the cheapest discriminating experiment. Worked solution: `projects/week-22r-transformer-repro/SOLUTION_NOTES.md`.
+</InterviewDrill>
+<FurtherReading>
+- **Attention Is All You Need — Vaswani et al., 2017, arXiv:1706.03762.** Read architecture and training details, not only the headline.
+- **The Annotated Transformer — Harvard NLP.** Cross-check implementation choices against the source paper.
+- **On Layer Normalization in the Transformer Architecture — Xiong et al., arXiv:2002.04745.** A controlled normalization question.
+- **PyTorch reproducibility notes.** Seeds alone do not promise cross-hardware bitwise identity.
+</FurtherReading>
+<KeyTakeaways>
+- Define the level of reproduction before writing code.
+- Independent analytic and gradient oracles catch different bugs.
+- State every architectural deviation.
+- Preserve failed runs and negative results.
+- A small, honest experiment is stronger than an unsupported frontier claim.
+</KeyTakeaways>

@@ -1,0 +1,3 @@
+# Compute — yellow
+
+The deterministic fixture uses CPU, seconds to a minute and $0 provider spend. No model/data downloads. A translation-scale paper reproduction is outside this tested reference. Before an optional GPU run, fix data license, token budget, architecture, seeds and stop condition; get a current RunPod/Modal quote. A provisional small single-GPU rehearsal could cost $5–20 including storage, but actual requirements depend on the experiment. Do not provision from a notebook implicitly. Export checkpoints, stop the instance, remove unwanted volumes and verify billing. Never claim an original-paper BLEU score from the offline fixture.
