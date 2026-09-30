@@ -42,7 +42,7 @@ latency budget. More tokens per second across a server is not automatically fast
 streaming for one user. A smaller weight file is not automatically a faster kernel.
 A cache hit is not automatically safe to share with another tenant.
 
-<IntuitionCallout>The required project is a $0 offline microscope: group quantization, page ownership, exact-prefix identity, timing arithmetic, and a distribution-preserving speculative sampler. Its invented timestamps are explicitly labelled simulations. A separate, opt-in HF/vLLM CLI measures a supplied local model; it neither downloads a checkpoint nor claims we ran a GPU benchmark.</IntuitionCallout>
+<IntuitionCallout>The required project is a zero-cost offline microscope: group quantization, page ownership, exact-prefix identity, timing arithmetic, and a distribution-preserving speculative sampler. Its invented timestamps are explicitly labelled simulations. A separate, opt-in HF/vLLM CLI measures a supplied local model; it neither downloads a checkpoint nor claims we ran a GPU benchmark.</IntuitionCallout>
 
 <figure>
   <img src="/diagrams/week-19/inference-path.svg" width="960" height="350" loading="lazy" alt="Requests enter admission and scheduling; an exact tenant-scoped prefix index supplies KV page handles, while the engine processes missing prefill and new decode tokens before streaming timed outputs." />
@@ -404,7 +404,7 @@ export PYTHONPATH="$PWD/src"
 
 The full lesson is **red tier** because real engine experiments may need a compatible
 CUDA host, not because the baseline spends money. `COMPUTE.md` proposes an optional
-RunPod A100 40 GB for 1–2 hours, assuming $1–3/hour and a $10 total cap including
+RunPod A100 40 GB for 1–2 hours, assuming USD 1–3/hour and a USD 10 total cap including
 storage/transfer. Those are planning estimates, not live quotes. Verify pricing,
 wheel/Python/CUDA compatibility, license, and local weight availability before
 provisioning. Set a timer; stop at the budget limit. Copy sanitized reports, terminate

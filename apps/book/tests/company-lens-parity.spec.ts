@@ -18,8 +18,20 @@ const WEEKS = [
   'week-15a-sft-lora-dpo-lab',
   'week-15b-moe-and-reasoning',
   'week-17-mini-rag-multimodal',
+  'week-18-fsdp-ring-lab',
+  'week-19-vllm-benchmark',
+  'week-20-evals-mlops-pipeline',
+  'week-21-alignment-lab',
 ]
-const ORDER = ['OpenAI', 'Anthropic', 'Google DeepMind', 'Meta AI (FAIR)', 'xAI', 'DeepSeek', 'Alibaba Qwen']
+const ORDER = [
+  'OpenAI',
+  'Anthropic',
+  'Google DeepMind',
+  'Meta AI (FAIR)',
+  'xAI',
+  'DeepSeek',
+  'Alibaba Qwen',
+]
 
 for (const slug of WEEKS) {
   test(`${slug} CompanyLens renders all 7 companies in fixed order`, async ({ page }) => {
