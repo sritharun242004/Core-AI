@@ -1,0 +1,124 @@
+---
+week: 25
+part: 6
+slug: "week-25-interview-prep"
+title: "Interview week — practice the work, not a persona"
+hook: "Can you explain, implement, debug and defend your own work under a time limit without pretending to know what you do not?"
+hours: 22
+computeTier: "green"
+difficulty: 4
+prereqSlugs: ["week-24-capstone"]
+referenceProject: "interview"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Can you explain, implement, debug and defend your own work under a time limit without pretending to know what you do not?</Hook>
+<Intuition>
+An interview samples behavior under constraints. Practice four surfaces separately: coding, system design, fundamentals aloud, and behavioral/project discussion. A strong notebook does not automatically create a clear 90-second explanation, and memorized explanations do not repair a broken gradient.
+
+Use your capstone plus two strongest assignments as evidence. Rehearse with a timer, preserve the recording or notes privately, and review against a rubric. Company-loop anecdotes are noisy and time-dependent; recruiter instructions outrank a blog post or this curriculum.
+
+<MicroRecall questions={[{id:'w25-rubric',prompt:'What should a mock score measure?',choices:['Observable correctness and reasoning','Confidence alone'],correct:0,explain:'A fluent but incorrect answer needs a low correctness score.'},{id:'w25-ai',prompt:'When is AI assistance appropriate?',choices:['When explicitly allowed and disclosed','Whenever it is convenient'],correct:0,explain:'Follow the actual assessment policy and protect private data.'}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### Allocate practice to evidence-backed weaknesses
+
+For surface s, let a_s be attempted rubric items and c_s be correct items. A simple error estimate is 1-c_s/a_s; unattempted surfaces remain unknown, not mastered. Weight important surfaces and repeat mistakes after a delay rather than practicing only what feels fluent.
+
+<MathBlock latex="e_s=1-\frac{c_s}{a_s},\qquad p_s=\frac{w_se_s}{\sum_jw_je_j}" />
+
+This is a planning heuristic, not a validated model of hiring probability. Example: coding error .2 and fundamentals error .6 at equal weights allocate one-quarter versus three-quarters of targeted remediation time. Still schedule at least one rehearsal of every surface to avoid blind spots.
+
+### Budget the mock loop
+
+Time is part of the constraint. Four 35-minute rounds, three 5-minute breaks and a 45-minute review require 200 minutes. Reserve review before adding another mock; repeating an unexamined error reinforces it.
+
+<MathBlock latex="T=4\times35+3\times5+45=200\ \mathrm{minutes}" />
+
+## The code, from scratch
+
+Start with the [coding companion set](/interview/coding-set) and the [interview dashboard](/interview). Then use `interview/PRACTICE.md`: three AI-assisted coding exercises, two timed take-homes and three debugging drills, each with acceptance evidence and a scoring rubric.
+
+The debugging cases deliberately break disposable copies, not the canonical references: unshifted causal targets, future-derived features, and unequal-rank mean reduction. Diagnose each with a minimal failing regression before changing code. Never conceal assistant contributions when the assessment requires disclosure.
+
+## The seven-day protocol
+
+### D1 — Coding refresh
+
+Select weak categories from a larger ML-flavored problem bank; do not attempt fifty full problems in one day. Reimplement a heap/top-k utility, vectorized softmax, a training step and one model component without copying. Explain time/memory complexity and edge cases. Complete one 45-minute AI-assisted task under a written assistance policy, then review every accepted suggestion.
+
+### D2 — Fundamentals aloud
+
+Record three 20-minute explanations: bias/variance and leakage; backprop and optimization; attention, tokenization and preference learning. Derive one equation on paper and define every symbol. Use a rubric for correctness, assumptions, examples and communication. Repeat the weakest explanation after a break without memorizing a script.
+
+### D3 — Two system designs
+
+Design a recommender and a RAG system at a stated workload. Begin with requirements, data/metrics and a baseline, then budget retrieval, ranking/generation, storage, cache, latency, evaluation and failure recovery. Avoid arbitrary “100k QPS” claims: derive capacity from assumptions and distinguish measured numbers from estimates.
+
+### D4 — Three target companies
+
+Read one current public paper/report and one job description for each of three targets. Use the [company matrix](/companies) to revisit technical axes and [/companies/compare](/companies/compare) to synthesize differences. Prepare evidence-backed questions and list unknowns. Verify the current loop with the recruiter; do not treat the seeded practice angles as leaked interview questions.
+
+### D5 — Behavioral, values and recruiter call
+
+Prepare eight real STAR-plus-reflection stories covering ambiguity, disagreement, failure, debugging, ownership, collaboration, prioritization and ethical judgment. Map stories to competencies without fabricating impact or borrowing someone else's experience. Rehearse a 60-second introduction and ask about role scope, assistance policy, location and timeline.
+
+For Anthropic-related values discussion, read the current public Responsible Scaling Policy and separate your own reasoning from slogans. For Google DeepMind-related ethics discussion, analyze a concrete trade-off and uncertainty. Do not claim knowledge of a private scoring rubric. Templates and privacy guidance live in `interview/OUTREACH.md`.
+
+### D6 — Full mock loop
+
+Run four rounds covering the four surfaces, with one explicitly permitted AI-assisted coding segment. Have a peer—or a strict written rubric—score artifacts rather than confidence. Record one blocking misconception and one communication habit per round. Rehearse the 90-minute and four-hour take-homes from `interview/PRACTICE.md` in separate reserved blocks if the week cannot honestly fit both.
+
+### D7 — Portfolio, outreach and logistics
+
+Spend half the day polishing resume/LinkedIn and the three artifacts: capstone plus two assignments. Each project needs a working reproduction command, tests, evidence, limitations and a short demo. Draft a personalized, low-pressure outreach note; **do not send bulk messages automatically**.
+
+Compare compensation across base, bonus, vesting, equity type and liquidity. Public aggregators such as levels.fyi are noisy samples, not offers; RSUs and profit-participation units are not interchangeable cash. Seek qualified advice for tax/legal specifics. Confirm timezones and daylight-saving offsets for Mistral/DeepMind London or other European interviews, along with location/visa constraints from the actual role.
+
+<Gotcha>Completing this book does not guarantee interview readiness or employment. Use mocks and external feedback to find gaps; report uncertainty honestly rather than performing confidence.</Gotcha>
+
+<CompanyLens topic="evidence-backed interview preparation"
+ tldr={{openai:'Practice ML debugging, implementation and deployment trade-offs; verify the current role-specific loop.',anthropic:'Prepare safety/value reasoning and timed coding, following the actual assistance policy.',deepmind:'Practice mathematical clarity, experimental rigor and ethical trade-offs without assuming one universal loop.',meta:'Practice coding and ML system design, with explicit complexity and data/metric reasoning.',xai:'A bounded full-stack rehearsal is useful; confirm current take-home requirements rather than relying on anecdotes.',deepseek:'Prepare efficient implementation and objective/system reasoning grounded in public work.',qwen:'Prepare open-weight engineering and multilingual evaluation discussion, checking role and location requirements.'}}
+ whyDiffer="Preparation should reflect the role, published work and direct recruiter guidance. Public accounts are dated samples, not stable promises about question counts or rounds. The goal is to demonstrate your own judgment and evidence, not impersonate a company's culture."
+ sources={{openai:{paper:'Public OpenAI technical reports and system cards',blog:'openai.com/careers'},anthropic:{paper:'Public Responsible Scaling Policy and model cards',blog:'anthropic.com/careers'},deepmind:{paper:'Public Google DeepMind research',blog:'deepmind.google/careers'},meta:{paper:'Llama technical reports; PyTorch documentation',blog:'metacareers.com'},xai:{paper:'Public Grok documentation',blog:'x.ai/careers'},deepseek:{paper:'DeepSeek-V3 and R1 reports',blog:'github.com/deepseek-ai'},qwen:{paper:'Qwen technical reports',blog:'qwenlm.github.io'}}}
+ caseStudy="A mock candidate explains attention fluently but scores the current token instead of the next token. The fix is not another rehearsed paragraph: write the shift regression, explain it aloud, and repeat the timed task. This is a teaching scenario, not a report of a real interview."
+ interviewAngle={{openai:'Diagnose a broken training loop using evidence.',anthropic:'Explain a safety trade-off and its uncertainty.',deepmind:'Derive a mechanism and design a discriminating experiment.',meta:'Design retrieval/ranking and defend its operational metrics.',xai:'Ship a bounded usable prototype and document its errors.',deepseek:'Explain memory, compute and objective trade-offs.',qwen:'Audit tokenizer/model compatibility and multilingual slices.'}}
+/>
+<ReferenceProject path="interview" name="timed rehearsals and outreach workbook" hours="6-8 hrs">Eight scored rehearsal tasks plus behavioral, recruiter, portfolio and outreach guidance. No outreach is sent and no hiring outcome is promised.</ReferenceProject>
+<Assignments>
+- **Warmup (30 min):** score one recorded fundamentals explanation against a written rubric.
+- **Build (2–3 hrs):** complete the 90-minute take-home and review its weakest criterion.
+- **Challenge (3+ hrs):** run the full mock loop or four-hour take-home, preserve artifacts and plan targeted remediation.
+</Assignments>
+<InterviewDrill role="llm-product" time="30 min">
+**“Explain your strongest project in two minutes, then implement and test its smallest critical component.”**
+
+Baseline: truthful overview and working core. Senior: edge-case tests, complexity and trade-offs. Staff: evidence limits, failure diagnosis, privacy and communication under uncertainty. Worked rubrics: `interview/PRACTICE.md` and `interview/OUTREACH.md`.
+</InterviewDrill>
+<FurtherReading>
+- **Machine Learning System Design Interview — Aminian and Xu.** Practice structured requirements and trade-offs.
+- **Deep Learning Interviews — Kashani and Ivry, arXiv:2201.00650.** Fundamentals practice.
+- **Designing Data-Intensive Applications, 2E — Kleppmann and Riccomini.** Operational systems reasoning.
+- **Current job descriptions and recruiter instructions.** Primary authority for your actual assessment format.
+</FurtherReading>
+<KeyTakeaways>
+- Practice all four surfaces and remediate observed errors.
+- Review every timed exercise instead of collecting attempts.
+- Follow the real AI-assistance and privacy rules.
+- Ground stories and portfolio claims in your own evidence.
+- Treat outreach, compensation and scheduling as careful human decisions.
+</KeyTakeaways>

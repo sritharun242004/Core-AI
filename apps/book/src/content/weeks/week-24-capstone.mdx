@@ -1,0 +1,126 @@
+---
+week: 24
+part: 6
+slug: "week-24-capstone"
+title: "Capstone — turn your strongest work into evidence"
+hook: "Can a stranger reproduce your result, understand its limits, and trust your system when the happy path breaks?"
+hours: 40
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-21-alignment-lab"]
+referenceProject: "capstone"
+accentVar: "--accent-p6"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>Can a stranger reproduce your result, understand its limits, and trust your system when the happy path breaks?</Hook>
+<Intuition>
+A portfolio artifact is an argument made executable. The README states the claim, the code implements the method, tests defend correctness, experiments support the result and the writeup defines its limits. A polished video without reproducible evidence is not a substitute for this chain.
+
+Finish two specialization tracks before beginning. Choose one capstone role, not a project that tries to demonstrate every concept at once. The week number is a roadmap label: this capstone budgets approximately **40 hours**, so a learner with 20 hours per calendar week should reserve two weeks.
+
+<MicroRecall questions={[{id:'w24-evidence',prompt:'What supports a portfolio result?',choices:['Reproducible artifacts and explicit limits','A screenshot alone'],correct:0,explain:'Readers need the method, protocol and failures behind the result.'},{id:'w24-scope',prompt:'Best first capstone decision?',choices:['One question and a baseline','Every feature from every track'],correct:0,explain:'A narrow question makes a decisive experiment possible.'}]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### Score evidence, then apply hard gates
+
+Each track has five criteria scored 0–20. Add them for a 100-point self-assessment; release gates such as objective correctness, absence of leakage and safe handling of secrets cannot be compensated for by good documentation.
+
+<MathBlock latex="S=\sum_{j=1}^{5}s_j,\quad 0\le s_j\le20,\qquad \mathrm{ready}=\mathbf{1}[S\ge80]\prod_k\mathbf{1}[g_k\ \mathrm{passes}]" />
+
+Worked example: [18,16,17,19,12] totals 82. If the evaluation leaks future labels, the artifact is not ready despite that number. The 80-point guideline is a study target, not an employer hiring threshold.
+
+### Pair quality with cost
+
+Measure baseline and candidate on identical held-out cases, report uncertainty and choose the operational constraint before seeing the winner. For a serving project, throughput, latency and dollar cost have explicit denominators; for research, parameter count and token exposure are not interchangeable with measured GPU-hours.
+
+<MathBlock latex="\Delta=\frac{1}{n}\sum_i(s_i^{\mathrm{candidate}}-s_i^{\mathrm{baseline}}),\qquad \mathrm{cost/task}=\frac{\mathrm{total\ measured\ cost}}{\mathrm{completed\ tasks}}" />
+
+A system that completes only easy tasks can artificially lower average cost per completed task. Also report attempt counts, failure rate, retry cost and task slices. Use Week 20's paired evaluation discipline rather than inventing a new favorable metric after results arrive.
+
+## The code, from scratch
+
+Your capstone code is deliberately **not supplied**: building it is the assessment. The repository supplies complete rubrics and a deliverable contract, not an empty application disguised as a finished solution.
+
+```text
+capstone/track-<role>/<your-project>/
+  README.md       # setup, one-command run, known limits
+  WRITEUP.md      # claim, method, protocol, results, limitations
+  DEMO.md         # ordinary path + error path + measured evidence
+  COMPUTE.md      # budget, stop conditions, teardown
+  SELF_RUBRIC.md  # criterion -> evidence -> points -> deductions
+  src/
+  tests/
+  evals/
+  configs/
+  notebooks/
+```
+
+### Research engineering
+
+Choose mini-Chinchilla, verifier-based mini-GRPO, dense versus sparse MoE at matched active parameters, or test-time-compute scaling. Deliver correctness oracles, a baseline, ablations, seed-level uncertainty and a four-page report with one justified extension. Do not turn synthetic fixture slopes into frontier scaling claims. Rubric: `capstone/track-research/RUBRIC.md`.
+
+### Applied ML
+
+Choose a four-stage MovieLens recommender, fraud GNN+GBM comparison, ad-ranking/A-B simulator, or hierarchical forecasting study. Deliver temporal/entity splits, production-shaped transforms, strong simple baselines, measured local latency/cost and honest experiment assumptions. A simulated A/B lift is not a deployed causal result. Rubric: `capstone/track-applied-ml/RUBRIC.md`.
+
+### LLM product / agentic
+
+Choose citation-backed research, bounded code review, a domain fine-tune+RAG hybrid or voice-native interaction. Deliver a real usable interface, task/regression/red-team evaluations, bounded tools, failure recovery and measured latency/cost. A mock protocol exchange is not a standards-compliant deployed service. Rubric: `capstone/track-llm-product/RUBRIC.md`.
+
+### Seven work sessions
+
+| Session | Output | Stop condition |
+|---|---|---|
+| D1 | Scope, question, baseline, non-goals and license/budget | Cannot name a decisive metric |
+| D2–3 | Architecture, data contract and failing acceptance tests | No reproducible baseline |
+| D4–5 | Core implementation and raw artifacts | Unbounded scope or compute spend |
+| D6 | Holdouts, ablations, failure review and polish | Known correctness/leakage/safety violation |
+| D7 | Writeup, demo, clean reproduction and self-score | Claim has no linked evidence |
+
+<Gotcha>Do not upload credentials or restricted data to make a demo convenient. Public publication, cloud spending and outreach are explicit learner decisions; this curriculum performs none automatically.</Gotcha>
+
+<CompanyLens topic="portfolio evidence and role fit"
+ tldr={{openai:'Practice explaining a measured product or research improvement and its deployment trade-offs.',anthropic:'Include safety boundaries, failure analysis and evidence of thoughtful risk handling.',deepmind:'Emphasize controlled experimentation and clear mathematical/scientific reasoning.',meta:'Make implementation, reproducibility and system constraints easy to inspect.',xai:'Show a functioning bounded system and first-principles debugging evidence; do not assume a fixed interview format.',deepseek:'Present efficient experiments with honest compute accounting and objective correctness.',qwen:'Make open-weight/version/tokenizer and multilingual evaluation assumptions explicit.'}}
+ whyDiffer="These are role-oriented portfolio suggestions, not claims about private hiring rubrics. Read current job descriptions and ask recruiters about the actual assessment. One well-evidenced artifact can support several discussions without pretending to replicate each company's systems."
+ sources={{openai:{paper:'Public system cards and technical reports',blog:'openai.com/careers'},anthropic:{paper:'Constitutional AI; public safety research',blog:'anthropic.com/careers'},deepmind:{paper:'Public research publications',blog:'deepmind.google/careers'},meta:{paper:'Llama technical reports',blog:'ai.meta.com'},xai:{paper:'Public Grok technical documentation',blog:'x.ai/careers'},deepseek:{paper:'DeepSeek-V3 and DeepSeekMath',blog:'github.com/deepseek-ai'},qwen:{paper:'Qwen technical reports',blog:'qwenlm.github.io'}}}
+ caseStudy="A self-score of 82/100 still fails the release gate when the evaluation leaks future labels. The rubric prioritizes trustworthy evidence over visual polish or a high aggregate score."
+ interviewAngle={{openai:'Defend a product/research trade-off from your artifact.',anthropic:'Explain one failure mode you deliberately prevented.',deepmind:'Propose a falsifying experiment for your strongest claim.',meta:'Reproduce your result from a clean environment.',xai:'Debug a failing path live without hiding uncertainty.',deepseek:'Explain where compute was spent and what was not measured.',qwen:'Describe a slice where the average metric misleads.'}}
+/>
+<ReferenceProject path="capstone" name="capstone rubrics and deliverable contract" hours="40 hrs">Choose one track rubric, build your own implementation and attach evidence to every score. No completed learner project is supplied.</ReferenceProject>
+<Assignments>
+- **Warmup (30 min):** write a one-paragraph question, baseline, metric and non-goals.
+- **Build (2–3 hrs):** create the skeleton and one failing acceptance test before adding features.
+- **Challenge (3+ hrs):** have a peer or a fresh environment reproduce the claim and record every failure.
+</Assignments>
+<InterviewDrill role="research-eng" time="30 min">
+**“Walk through your project, then tell me why its headline result might be wrong.”**
+
+Baseline: explain inputs, method and output. Senior: defend baselines, splits and tests. Staff: discuss uncertainty, limitations, operational risks and the next discriminating experiment. Worked rubric: `capstone/README.md` and your chosen track's `RUBRIC.md`.
+</InterviewDrill>
+<FurtherReading>
+- [Technical writing guide](/tech-writing) — organize design decisions and postmortems.
+- [Evaluation and MLOps](/weeks/week-20-evals-mlops-pipeline) — provenance, paired comparisons and release gates.
+- [Safety and alignment](/weeks/week-21-alignment-lab) — bounded safety and interpretability claims.
+- **Designing Data-Intensive Applications, 2E — Martin Kleppmann and Chris Riccomini.** Systems trade-offs behind production artifacts.
+</FurtherReading>
+<KeyTakeaways>
+- Choose one role and one falsifiable problem.
+- Link every claim to reproducible evidence.
+- Hard correctness and safety gates override an aggregate score.
+- Budget real time for evaluation and writeup.
+- A capstone demonstrates judgment, not a guaranteed hiring outcome.
+</KeyTakeaways>
