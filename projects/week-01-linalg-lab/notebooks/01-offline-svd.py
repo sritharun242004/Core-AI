@@ -2,6 +2,8 @@
 # Offline companion to the optional image notebook: synthesize a grayscale matrix.
 # No image download is needed to test the rank/reconstruction relationship.
 # %%
+from itertools import pairwise
+
 import numpy as np
 from linalg_lab.svd_compress import svd_reconstruct
 
@@ -13,5 +15,5 @@ for rank in (0, 1, 2, 3):
     error = float(np.linalg.norm(image - approximation))
     errors.append(error)
     print({"rank": rank, "frobenius_error": error})
-assert all(a >= b for a, b in zip(errors, errors[1:], strict=False))
+assert all(a >= b for a, b in pairwise(errors))
 assert errors[-1] < 1e-10

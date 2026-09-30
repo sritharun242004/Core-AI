@@ -14,7 +14,10 @@ __pycache__
 .ruff_cache
 .ipynb_checkpoints
 .DS_Store
-uv.lock
+# Reproducible notebook outputs, not source artifacts.
+projects/week-03-prob-lab/binary_entropy.png
+projects/*/artifacts/
+projects/*/outputs/
 package-lock.json
 yarn.lock
 npm-shrinkwrap.json

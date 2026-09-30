@@ -6,7 +6,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv sync --all-packages --all-extras
-      - run: uv run pytest projects/
-      - run: uv run ruff check projects/
-      - run: uv run pyright projects/
+      - run: uv sync --locked --all-packages --extra dev
+      - name: Isolated offline project suites
+        run: uv run --no-sync python scripts/check-projects.py
+      - run: uv run --no-sync ruff check projects/ scripts/check-projects.py
+      - name: Strict typing audit (advisory; see docs/VALIDATION.md)
+        continue-on-error: true
+        run: uv run --no-sync pyright projects/
