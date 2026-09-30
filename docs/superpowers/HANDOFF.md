@@ -1,7 +1,7 @@
 # Core AI — Development Handoff
 
 **For:** any AI operator (Claude, GPT, or similar) resuming development on this repo.
-**From:** the operator completing Plans 7–8 after the foundation/platform and Weeks 1–17.
+**From:** the operator that completed all eight curriculum plans through `v1.0.0`.
 **Date:** 2026-09-30.
 **Repo:** https://github.com/sritharun242004/Core-AI (private) · main working branch: `plan-1-foundation`.
 
@@ -13,7 +13,7 @@ Read this file top-to-bottom before touching anything. Skimming will bite you.
 
 An open-source, self-driven 25-week AI curriculum for full-stack engineers targeting frontier-lab roles.
 
-The deliverable is a static site (`apps/book/`) that renders 25 weekly articles + 7 company profiles + interactive dashboards, backed by 25 cloneable Python reference projects under `projects/`. It is a book, not a webapp — no backend, no user auth, no per-user server state.
+The deliverable is a book (`apps/book/`) with **29 lesson routes, 27 Python reference projects, seven company profiles, three capstone rubrics and interview workbooks**. The 25-week roadmap has six alternative specialization lessons; learners choose two tracks. W15a/15b replace W16. Four specialization weeks and a 40-hour capstone mean roughly 28+ calendar weeks at 20 hours/week. There is no backend/auth/per-user server state; `/companies/compare` remains SSR.
 
 **Design spec:** `docs/superpowers/specs/2026-09-22-core-ai-book-design.md` — this is the binding authority. Every decision in the codebase should trace back to a spec section. If the spec is ambiguous, prefer the interpretation that ships something readable, then flag the ambiguity in your handoff note.
 
@@ -27,36 +27,38 @@ The deliverable is a static site (`apps/book/`) that renders 25 weekly articles 
 
 - Plan 7 (§8 below) — Weeks 18–21 (systems + safety), four reference projects. Shipped as `v0.7.0-week21`.
 
-**Plans remaining:**
-- Plan 8 — Weeks 22–25 (all six specialization lessons/projects, capstone rubrics and interview prep) — see §9 and `plans/2026-09-30-core-ai-completion.md`.
+- Plan 8 — all six specialization lessons/projects, capstone rubrics and interview prep, shipped as `v1.0.0`. See §9 and `plans/2026-09-30-core-ai-completion.md`.
+
+**Plans remaining: none.** Optional cloud experiments, learner-built capstones and deployment are not executed on the learner's behalf. Strict Python typing remains technical debt, explicitly separated from curriculum completion and runtime validation.
 
 ---
 
-## 2. Current state (as of Plan 7 completion, tag `v0.7.0-week21`)
+## 2. Current state (complete curriculum, tag `v1.0.0`)
 
 ### 2.1 Test snapshot
-- Viz vitest: **3/3**
-- Book vitest: **8/8**
-- Playwright: **78/78 + 2 fixme'd** (motion-reduce SSR/hydration edge, deferred — see §12.1)
-- Python pytest (per-project): **11 + 6 + 11 + 9 + 10 + 23 + 4 + 11 + 11 + 14 + 11 + 23 + 48 + 11 + 54 + 61 + 37 = 355/355**
+- Viz Vitest: **3/3**
+- Book Vitest: **22/22**
+- Playwright: **102/102**, no skips; former motion fixmes are now real passing tests.
+- Python pytest: **676/676 across all 27 packages**, zero failures/errors/skips, using `scripts/check-projects.py`.
+- All **27 percent-format notebooks** executed offline, including a new Week 1 synthetic SVD companion.
+- Repository Biome and Python Ruff checks pass. Astro/Pagefind builds **46 indexed static pages**.
+- Link checker passes **60 unique external URLs**; all emitted local links validated. The verified OpenAI SWE-bench article is explicitly exempted from bot-blocked HEAD requests after a successful readable GET.
 
-- Plan 7 Python: **70 + 51 + 16 + 27 = 164/164** freshly validated, bringing the cumulative Python inventory to **519**.
-
-**Total inventory: 608 passing automated tests** (355 prior Python tests retained from Plan 6, plus the fresh Plan 7/site checks; 2 deferred Playwright fixmes).
+**Total: 803 passing automated tests.** Dependency synchronization succeeded with `uv sync --all-packages --extra dev`; numerical/data/model tests require no network. Cold dependency/font builds and external link validation do need network. **Strict Pyright is not clean** and remains a visible advisory CI audit; see `docs/VALIDATION.md`.
 
 ### 2.2 What ships in the built book
-- 38 prerendered static pages (`dist/client/`) + 1 SSR route (`/companies/compare`)
+- 46 prerendered static pages (`dist/client/`) + `/companies/compare` and the `/motion-probe` test vehicle as server routes
 - Pagefind client-side search (⌘K), index freshness pinned by test
-- 21 weekly articles (W1–W15a, W15b, W17–W21; no W16), each with full lesson anatomy and 7-company CompanyLens
+- 29 lessons, including all L/P/R α/β options and W24/W25, each with lesson anatomy and seven-company CompanyLens; no W16
 - 7 company profiles (`/companies/[slug]`), all attribution-clean per spec §5.3
-- 7×25 CompanyLens matrix at `/companies` — 21/25 roadmap columns now have lesson routes
+- 7×25 CompanyLens matrix: all 175 comparison cells populated, all six track links preserved in W22/W23 columns
 - `/interview` dashboard + `/interview/coding-set` (20 problems) + weak-spot heatmap
 - 5 companion routes: `/how-to-study`, `/glossary`, `/math-primer`, `/paper-reading-protocol`, `/tech-writing`
 - Interactive islands: MicroRecall, WeeklyQuiz, InterviewDashboard, WeakSpotHeatmap, ThemeToggle, SearchDialog — all Preact + Signals
 
 ### 2.3 What's local-only (not yet deployed)
 - Not deployed to Vercel. The user will handle this under their own Vercel account. Do not run `vercel --prod` unless explicitly asked.
-- GitHub remote exists (`origin` → https://github.com/sritharun242004/Core-AI); `plan-1-foundation` and 6 milestone tags are pushed after each completed plan.
+- GitHub remote exists (`origin` → https://github.com/sritharun242004/Core-AI); `plan-1-foundation` and all eight milestone tags through `v1.0.0` are pushed after completed plans.
 
 ---
 
@@ -100,7 +102,7 @@ Core-AI/
 │   ├── src/
 │   │   ├── content.config.ts    (Zod schemas for weeks/companies/extras)
 │   │   ├── content/
-│   │   │   ├── weeks/*.mdx      (25 target, 17 done; W16 intentionally absent)
+│   │   │   ├── weeks/*.mdx      (29 complete routes; W16 intentionally absent)
 │   │   │   ├── companies/*.mdx  (7 profiles, all done)
 │   │   │   └── extras/*.mdx     (5 companion pages, all done)
 │   │   ├── lib/
@@ -125,7 +127,7 @@ Core-AI/
 ├── packages/viz/                (@core-ai/viz workspace pkg — Preact SVG primitives)
 │   ├── src/{index,shared,VectorPlayground,MatrixMul}.tsx
 │   └── tests/viz.spec.tsx
-├── projects/                    (25 target Python packages; 17 done; W16 intentionally absent)
+├── projects/                    (27 complete Python packages; W16 intentionally absent)
 │   ├── week-01-linalg-lab/
 │   ├── week-02-micrograd/
 │   ├── week-03-prob-lab/
@@ -280,6 +282,12 @@ W18/W19 cloud extensions are red-tier; all shipped correctness tests and noteboo
 
 ## 9. Plan 8 — Weeks 22-25 (specialization + capstone + interview prep)
 
+**Status: complete in `v1.0.0`.** Six full track lessons/packages ship: L α/β (33/46 Python tests), P α/β (18/27), R α/β (11/22 after independent-review regressions). W24 supplies three complete 100-point rubrics, and W25 supplies the seven-day protocol plus eight timed rehearsals. No fallback/pending track is used.
+
+Research fixtures explicitly distinguish mechanism parity from full WMT/TinyStories/Chinchilla replication. MCP is a documented 2024-11-05 teaching subset; the A2A lifecycle is explicitly a noncompliant local subset; optional real ADK wiring is fake-tested only. No model/data downloads or cloud experiment was executed.
+
+Final platform work repairs track navigation, persistent quiz schedules/IDs, malformed progress records, reduced-motion/no-JS rendering, local Pagefind search, repo links, prerequisites and mobile overflow. CI now runs pytest in isolated project processes and excludes generated caches from source linting. The inherited strict-typing backlog is documented rather than misrepresented as passing.
+
 **Weeks 22-23 = 4 weeks total, learner picks 2 of 3 tracks:**
 
 Track L — LLM Product / Agentic (2 weeks):
@@ -293,7 +301,7 @@ Track P — Applied ML (2 weeks):
 Track R — Research (2 weeks):
 - Weeks α+β · Paper-reading protocol, reproduce 3 seminal papers (Transformer, **mini-Chinchilla — 3 model sizes on TinyStories fitting exponents**, DPO), reading lists per company
 
-**Design decision:** ship ALL 6 track-week MDX articles + reference projects. Learners pick 2 of the 3 tracks by choice; you build 3 tracks so the choice exists. If token budget is tight, ship 2 tracks fully and mark the third as `<-- track-R-content-pending -->` with issue link.
+**Design decision:** all six track-week MDX articles and reference projects ship. Learners pick two of the three tracks; every choice is available. The historical fallback for an incomplete research track was not used.
 
 ### 9.1 W24 Capstone
 Spec §8 lists 3 capstone tracks (Research Engineering, Applied ML, LLM Product / Agentic). Each has multiple options. Ship: rubric templates in `capstone/track-{research,applied-ml,llm-product}/RUBRIC.md`, no full projects (the learner builds these).
@@ -535,31 +543,30 @@ Astro will refuse to run under Node 20 with the message: `Node.js v20.19.5 is no
 
 ## 12. Known issues + deferred items
 
-### 12.1 motion-reduce E2E is `.fixme`d
-`apps/book/tests/motion-reduce.spec.ts` — the two tests are wrapped in `test.describe.fixme(...)`. Motion v13 + preact/compat + client:load hydration leaves the SSR'd motion.div initial transform on the DOM under emulated `prefers-reduced-motion`. The reduce-branch code (`apps/book/src/components/motion/ScrollReveal.tsx:32-38`) is correct by inspection — returns a plain `<div style={{opacity:1}}>` under `useReducedMotionSafe() === true`. The E2E vehicle is what's wrong.
+### 12.1 Reduced motion — fixed
+`ScrollReveal` now progressively enhances visible SSR content with a small IntersectionObserver/CSS transition. Reduced-motion changes disconnect the observer and remove transforms; no-JavaScript content stays readable. Three real browser tests replace the deferred fixmes.
 
-**How to fix:** replace the E2E with a vitest unit test that stubs `matchMedia` and asserts the branch. Or set up a visual-regression harness (Playwright screenshots against `reducedMotion:'reduce'`). Not blocking; do this in Plan 4 or later.
-
-### 12.2 WeeklyQuiz SM-2 is display-only
-`apps/book/src/components/interactive/WeeklyQuiz.tsx:27-30` constructs a fresh `Sm2State` per question rather than reading from the progress store. The "next due in N days" summary always displays the same numbers regardless of the learner's history. To fix properly requires adding `{reps, ease, interval, dueDate}` per question ID to `lib/progress.ts`. Deferred from Plan 2 review as scope creep.
-
-**How to fix:** extend `Progress.answers[id]` to `AnswerStats & Partial<Sm2State>`. Migrate `getProgress`'s `safeParse` to cope with either shape. Then `WeeklyQuiz` reads + writes SM-2 state via `progress.ts` helpers.
+### 12.2 WeeklyQuiz persistence — fixed
+Actual globally unique question IDs key persisted `{reps,ease,interval,dueDate}` alongside answer statistics. Legacy valid records remain readable; malformed rows are discarded. Final-question feedback is visible before the summary. LocalStorage remains browser-local and may be unavailable in private/quota-limited contexts.
 
 ### 12.3 /companies/compare outside Pagefind
-SSR routes aren't part of the static Pagefind index. The `/companies` matrix links to it, so it's still discoverable, but ⌘K search won't find it. To fix, add a link to it from every company profile page.
+SSR routes intentionally remain outside the static Pagefind index. Every company profile now links to `/companies/compare`, as do the matrix/sidebar. Search discovers the static profiles rather than indexing arbitrary query-dependent comparisons.
 
-### 12.4 astro dev doesn't serve `/pagefind`
-Playwright uses `astro dev` (see §10.6). The pagefind bundle lives at `dist/client/pagefind/` after `pagefind --site dist/client`. Dev doesn't serve `dist/client/`. So there's no E2E test that actually opens the SearchDialog and searches. Vercel serves it in production. Deferred.
+### 12.4 Development search — fixed
+`apps/book/pagefind-dev.mjs` serves only the existing built index under `/pagefind`, with path traversal protection. Build before running dev search. Browser tests cover actual index results and unavailable-index recovery. The native dialog handles focus/Escape, and stale asynchronous results are rejected.
 
 ### 12.5 15 Minor findings from Plan 2 review
 Listed exhaustively in the final message of the Plan 2 execution session. Highlights:
 - Anthropic and Qwen share 🟠 emoji (M1)
 - Meta emoji 🟢 doesn't match its blue tint (M2)
 - Anthropic's "Machines of Loving Grace" listed under `books:` — it's an essay (M3)
-- `assertAll7` doesn't catch `undefined` values (M4)
+- `assertAll7` now rejects null/undefined and inherited entries (M4 fixed).
 - Some Playwright tests do only filesystem I/O — should move to vitest (M5, M15)
 
-Not blocking. Sweep in a "polish" plan whenever.
+The remaining emoji/reading-category cosmetics and test-runner organization are nonblocking maintenance, not missing curriculum.
+
+### 12.6 Strict Python typing — still open
+The full strict Pyright audit reported thousands of diagnostics; it is not passing. Strict mode remains configured and runs as a visibly advisory CI step. Runtime pytest and Ruff are required gates. Annotate/stub packages incrementally and restore a blocking strict baseline after proving it clean. See `docs/VALIDATION.md`; do not report all static typing as green.
 
 ---
 
@@ -577,7 +584,7 @@ Ledgered rulings from Plans 2 + 3 that future operators should understand rather
 | SearchDialog uses `new URL(...).href` at runtime | Rollup can't resolve `/pagefind/pagefind.js` at build | TypeScript can't statically check module shape |
 | Playwright uses `astro dev` (not `astro preview`) | Vercel adapter blocks `astro preview` | None — dev SSR is same code |
 | Playwright `workers: 1` | HMR races between workers on shared dev server | ~30% slower suite runtime |
-| motion-reduce tests `.fixme`d | motion v13 hydration edge, not a logic bug | Silent reduced-motion regression risk |
+| Historical motion fixmes replaced in Plan 8 | Visible-by-default SSR plus an observer avoids hidden reduced-motion content | Three browser regressions now cover reduction, preference changes and no-JS |
 | Refined attribution regexes to exclude negated disclaimers | Original patterns flagged correct disclaiming text | A "not-Y" style wrong attribution slips through |
 | Node 24 via nvm PATH-prepend when needed | Session default is Node 20; astro needs ≥22 | Dev-loop friction; CI already runs Node 24 |
 | Duplicate DeepSeek `week: 15` seededAngles merged into one entry | Object-key collision in `CompanyMatrix.astro` dropped one silently | Users see fewer angles in matrix |
@@ -594,7 +601,7 @@ Ledgered rulings from Plans 2 + 3 that future operators should understand rather
 | Week 12 includes Q-learning, REINFORCE, and a tested PPO-Clip objective without generative models | The spec places the RL primer in W12 and moves VAE/GAN/diffusion to W17 | PPO is explicitly conceptual here; a complete PPO trainer remains future scope |
 | Plan 6 uses offline toy fixtures and optional integrations for LLM/post-training/multimodal work | CI must be deterministic and cloud credentials/model downloads are unavailable; toy tests still expose tensor, objective, retrieval, and checkpoint contracts | Toy metrics cannot support production quality, scaling, or company-internal architecture claims |
 | W13/W14/W17 difficulty values are capped at schema maximum 5 | The content scope is advanced, but `content.config.ts` intentionally restricts the display scale to 1–5 | The lessons communicate advanced scope through topic/compute labels without breaking the schema |
-| W15a and W15b titles carry explicit track labels | Both lessons are week 15 while the matrix intentionally has one W15 column; navigation needs to distinguish the two routes | One week number remains in the roadmap while the route titles remove ambiguity |
+| W15a/W15b and L/P/R routes have explicit navigation labels | Numeric week IDs are not unique lesson IDs; last-write-wins maps lose alternatives | 25 roadmap columns retain distinct 15a/15b and all track links |
 | W14 checkpoint stores model configuration and tokenizer metadata; W15a DPO and W15b GRPO-like updates remain toy objectives | Tokenizer/model compatibility and attribution boundaries are correctness contracts, not optional prose | More metadata and caveats, but safer continuation by future operators |
 | W15b received the standard `ReferenceProject` component after the first build | The initial MDX had the project prose but omitted the rendered project card, caught by the new route smoke test | One small content fix; full lesson anatomy is now present |
 | Correctness review expanded W13/W15a/W15b tests and fixed objective/state/router bugs | Initial worker tests proved the happy path but missed causal target shifts, reference-policy mutation, grouped precision, and top-1 router gradients | More local tests and clearer toy boundaries; no production-scale claim |
@@ -657,7 +664,7 @@ Anything else — including "the plan says X but Y is clearly better" — is a r
 - **Prior operator:** Claude Opus 4.7 (Anthropic), 2026-09-27 → 2026-09-28.
 - **Preferred cadence:** the user asks for autonomy ("go", "continue", "in sequence"). Take it, ship, report. Ask only for the 4 stop conditions in §15.
 - **Deferred deployment:** user is setting up a new Vercel account. Do not deploy under existing accounts.
-- **Deferred: motion-reduce E2E replacement, WeeklyQuiz true SM-2 persistence, Compare-in-Pagefind, dev-time search testing.** All in §12.
+- **Remaining maintenance:** strict Python typing audit, optional external/GPU integration validation, routine source freshness and cosmetic profile cleanup. Motion, quiz persistence and dev-search regressions are fixed; compare remains SSR with discoverable profile links. See §12 and `docs/VALIDATION.md`.
 
 ---
 
