@@ -1,0 +1,217 @@
+---
+week: 13
+part: 4
+slug: "week-13-nano-gpt-ssm"
+title: "Causal attention and state-space models — two ways to carry context"
+hook: "How can a language model read the past, and when is rereading it different from carrying a state?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-12-rl-gridworld"]
+referenceProject: "projects/week-13-nano-gpt-ssm"
+accentVar: "--accent-p4"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>How can a language model read the past, and when is rereading it different from carrying a state?</Hook>
+
+<Intuition>
+A causal language model predicts the next token using only the prefix. A Transformer does this by letting each position form a weighted lookup over earlier positions. A state-space model (SSM) instead updates a state as the sequence arrives and predicts from that state. Both can be causal; they differ in what information is available and how computation is organized.
+
+<IntuitionCallout>Attention is a content-addressed read: “which earlier keys look relevant to this query?” An SSM is a controlled write and read: “how should this input update the state I carry?” The Week 13 project makes both operations small enough to inspect without a corpus, checkpoint, or accelerator.</IntuitionCallout>
+
+This week has five moves: derive scaled dot-product attention from queries, keys, and values; enforce causality with a triangular mask; assemble position information, residual blocks, and an MLP into a decoder-only Transformer; write a tiny explicit state recurrence; and compare the two without turning a toy loss curve into a systems benchmark.
+
+<MicroRecall questions={[{
+  id: 'week13-recall-causal',
+  prompt: 'What does the causal attention mask do at query position t?',
+  choices: ['It removes the current token from every row', 'It allows the query to assign probability only to keys at positions <= t', 'It normalizes probabilities across the batch', 'It changes the vocabulary size'],
+  correct: 1,
+  explain: 'A decoder-only language model must not read future targets. The lower-triangular mask keeps the current and earlier keys and gives future keys effectively zero probability.'
+}, {
+  id: 'week13-recall-state',
+  prompt: 'What is the key contrast in this lesson between attention and the toy SSM?',
+  choices: ['Attention has no parameters, while the SSM has parameters', 'Attention rereads a set of earlier values with content-dependent weights, while the SSM carries a recurrent state', 'The SSM is automatically bidirectional', 'Only attention can be trained with cross-entropy'],
+  correct: 1,
+  explain: 'Both implementations here are causal and trainable with next-token cross-entropy. Their teaching contrast is a content-addressed attention read versus an explicit state update.'
+}]} client:visible />
+</Intuition>
+
+## The anatomy of a causal language model
+
+Let `B` be batch size, `T` context length, `V` vocabulary size, and `d` model width. Integer token ids have shape `(B,T)`. An embedding lookup produces `(B,T,d)`. The model returns one unnormalized vocabulary score vector per position, `(B,T,V)`, and cross-entropy compares the score at position `t` with the target token `x_(t+1)`.
+
+The reference project uses a deterministic character fixture rather than a web corpus:
+
+```text
+input  = text[i : i + T]
+target = text[i + 1 : i + T + 1]
+```
+
+This target shift is an interface contract. A model that copies the input or accidentally sees the target is not learning the stated task. The fixture is useful for shape, mask, gradient, and loss tests; it is not evidence of language quality.
+
+### 1. Why attention needs three projections
+
+For one position, a query asks what it needs, a key advertises what each position contains, and a value supplies the information to read. Given hidden states `X`, learned matrices form:
+
+<MathBlock latex="Q=XW_Q,\qquad K=XW_K,\qquad V= XW_V" />
+
+The dot product `q_t · k_s` is a compatibility score between query position `t` and key position `s`. Scores are scaled by the square root of the head width because an unscaled dot product grows in magnitude as the number of summed feature products grows. The softmax converts the row of scores into weights:
+
+<MathBlock latex="A=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{d_h}}+M\right),\qquad \operatorname{head}(X)=AV" />
+
+`M` is zero for an allowed pair and effectively negative infinity for a forbidden pair. Softmax is over the key axis `s`, so each query gets a distribution over source positions. The implementation has multiple heads, each with width `d_h=d/h`, concatenates their outputs, and applies one output projection.
+
+### 2. Causality is a data-flow property
+
+For next-token prediction, query `t` may read positions `0` through `t`, but not `t+1` onward. The mask is lower triangular:
+
+<MathBlock latex="M_{t,s}=\begin{cases}0,&s\le t\\-\infty,&s>t\end{cases}" />
+
+The score at a masked location is replaced by a very negative finite value in the PyTorch implementation. After softmax, its probability is zero up to numerical precision. A useful test changes only future token ids and checks that prefix logits do not move. This is stronger than merely checking the mask tensor: it checks the entire attention path.
+
+<Gotcha>Normalizing attention across the batch or feature dimensions is not a harmless axis choice. The row must sum over candidate key positions. A row sum of one is necessary, not sufficient: you also need to check that forbidden future positions carry no mass.</Gotcha>
+
+### 3. Position information without a learned lookup
+
+Self-attention alone is permutation-equivariant: it sees a set of token vectors, not an order, unless position information is added. The reference uses the fixed sinusoidal encoding described in the original Transformer paper:
+
+<MathBlock latex="p_{t,2i}=\sin\left(t/10000^{2i/d}\right),\qquad p_{t,2i+1}=\cos\left(t/10000^{2i/d}\right),\qquad X_t=E(x_t)+p_t" />
+
+The code registers the table as a non-parameter buffer. A learned positional embedding would also be valid, but is a distinct parameterization and has a configured maximum length. Neither choice makes a decoder causal by itself; the mask still matters.
+
+### 4. From attention to a decoder block
+
+A compact pre-normalized block is:
+
+<MathBlock latex="U=X+\operatorname{MHA}(\operatorname{LN}(X)),\qquad Y=U+\operatorname{MLP}(\operatorname{LN}(U))" />
+
+The MLP is applied independently at each position with shared weights:
+
+<MathBlock latex="\operatorname{MLP}(z)=W_2\,\operatorname{GELU}(W_1z+b_1)+b_2" />
+
+Residual paths give the input a direct route through each sublayer. Layer normalization operates over features at a position, so it does not mix future time steps. The reference `NanoGPT` stacks these blocks, applies a final layer norm, and projects to vocabulary logits. It ties the output projection weight to the token embedding as a transparent parameter-sharing choice.
+
+### 5. The original Transformer derivation, scoped carefully
+
+*Attention Is All You Need* (Vaswani et al., 2017) introduced the Transformer as an architecture built around attention rather than recurrent or convolutional sequence transformations. The derivation above is its scaled dot-product attention primitive: queries and keys produce compatibility scores, values are mixed by the normalized scores, and multi-head attention runs several learned subspaces in parallel. Additive residual paths, normalization, position information, and a position-wise feed-forward network complete the block-level anatomy.
+
+A decoder-only language model uses masked self-attention so its training computation respects the autoregressive factorization:
+
+<MathBlock latex="p(x_1,\ldots,x_T)=\prod_{t=1}^{T}p(x_t\mid x_{<t}),\qquad \mathcal{L}=-\sum_t\log p_\theta(x_t\mid x_{<t})" />
+
+The Week 13 implementation is intentionally a small decoder-only teaching model, not a claim to reproduce the original paper's full encoder-decoder translation setup, training recipe, benchmark scores, or later GPT systems. Its tests target the causal, shape, and optimization contracts that can be established locally.
+
+## State-space models: a second causal computation
+
+A simple recurrent state update can be written:
+
+<MathBlock latex="s_t=f(A s_{t-1}+B x_t),\qquad z_t=C s_t+D x_t" />
+
+The baseline exposes this loop directly. Its selective variant makes diagonal coefficients depend on the current input:
+
+<MathBlock latex="s_t=A_t\odot s_{t-1}+B_t\odot x_t,\qquad z_t=C_t\odot s_t+D\odot x_t" />
+
+This can be read as a controlled memory: `A_t` determines retention, `B_t` determines writing, and `C_t` determines reading. The state has a fixed width, while attention creates a score matrix over the context. Those are architectural shape differences, not automatic runtime claims. A Python loop can be slow; a fused scan can be fast; benchmark results depend on implementation, sequence length, batch shape, and hardware.
+
+The project calls this `SelectiveSSM` and `TinySSMLanguageModel`. It is **SSM/Mamba-style only in the broad educational sense of an input-dependent recurrent state**. It is not Mamba, Jamba, or Griffin, and it omits named implementations' exact equations, discretization, kernels, initialization, and system optimizations.
+
+## After the original Transformer: what can and cannot be compared
+
+### Mamba
+
+Public Mamba work describes a selective state-space approach in which input-dependent parameters help decide what to propagate or forget, alongside efficient scan-oriented implementation. That motivates the baseline's input-dependent diagonal coefficients. It does not justify claiming that the few-line Python scan reproduces Mamba or its measured long-context results.
+
+### Jamba
+
+Public Jamba materials describe a hybrid model family combining Transformer and state-space layers with additional architectural and engineering choices. A pure attention model and a pure toy SSM are useful endpoints for a lesson; alternating these two local modules would still be a teaching hybrid, not a Jamba reproduction. Check the named release for details rather than inferring undocumented internals.
+
+### Griffin
+
+Public Google research describes Griffin as a recurrent/hybrid direction with gated linear recurrence and local attention components. The comparison is conceptual: both attention and recurrent state can be arranged in a causal sequence model. This project does not implement Griffin's equations or claim its quality, throughput, or context behavior.
+
+### Practical comparison protocol
+
+To compare the two local models, keep vocabulary, fixture, shifted targets, seed set, optimizer, token/update budget, context length, and evaluation windows fixed. Report parameter counts and device. A lower loss on a short repeated string establishes only that one particular parameterization fit that fixture under that budget. It does not establish a general ranking of attention, SSMs, Mamba, Jamba, or Griffin.
+
+<CompanyLens
+  topic="causal Transformers, state-space sequence models, and long-context trade-offs"
+  tldr={{
+    openai: "Public OpenAI papers and release notes provide evidence for selected autoregressive models and research methods, but they do not expose every current architecture, kernel, data mixture, or serving decision. This local NanoGPT is a fundamentals exercise, not a reconstruction.",
+    anthropic: "Public Anthropic research and model documentation support bounded discussion of model behavior, evaluation, and alignment. They do not establish that a particular current Claude release uses this Transformer/SSM split or disclose private implementation details.",
+    deepmind: "Public Google DeepMind papers, including work relevant to recurrent and hybrid sequence modeling, establish only the named paper's scope. Do not turn Griffin-related public descriptions into a claim about every current Google system.",
+    meta: "Public Meta/FAIR papers and open tooling support reproducible discussion of attention, efficient inference, and sequence modeling. They do not reveal every deployed architecture, training corpus, kernel, or product constraint.",
+    xai: "Public xAI announcements and technical materials are release-specific and comparatively limited for exact sequence-model internals. The transferable lesson is how to test causality and recurrence locally, not what a private xAI stack uses.",
+    deepseek: "Public DeepSeek technical reports document selected named releases and their reported methods. They do not establish that this toy attention/SSM comparison matches a private or later DeepSeek architecture, data pipeline, or serving kernel.",
+    qwen: "Public Qwen release reports and repositories provide evidence for named versions and open artifacts. They do not establish undocumented positional, attention, SSM, training, or inference choices across the broader Qwen family."
+  }}
+  whyDiffer="The lesson separates a public method description from an analogy prompt. A paper can establish equations and reported experiments for a named release; it does not establish a company's entire current stack, private data, kernels, hardware schedule, evaluation suite, or deployment constraints. All seven entries therefore carry a public-evidence caveat. The reference project establishes only local causal masking, normalized attention, explicit state recurrence, finite gradients, and fixed-fixture loss reduction."
+  sources={{
+    openai: { paper: "Public OpenAI technical reports and research pages — inspect the named release before attributing architecture details", blog: "openai.com/research — public research index, not evidence of undocumented internals" },
+    anthropic: { paper: "Public Anthropic model/system documentation — release-specific evidence only; exact current architecture is not asserted", blog: "anthropic.com/research — public research index with scope and date caveats" },
+    deepmind: { paper: "Griffin: Mixing Gated Linear Recurrences with Local Attention for Efficient Language Models — public named-work evidence; do not generalize beyond its scope", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "FAIR publications and open sequence-model tooling — public research/tooling evidence, not a deployment inventory", blog: "ai.meta.com/research — public FAIR research index" },
+    xai: { paper: "Public Grok technical materials — inspect the specific version; no exact private sequence architecture is asserted", blog: "x.ai/blog — public announcements with release-specific boundaries" },
+    deepseek: { paper: "DeepSeek technical reports — public release-specific evidence; do not infer undocumented SSM or Transformer internals", blog: "deepseek.com/research — public research index" },
+    qwen: { paper: "Qwen technical reports and repositories — public named-release evidence; private training and serving choices remain unknown", blog: "qwenlm.github.io/blog — public release posts with version boundaries" }
+  }}
+  caseStudy="The case study is one deterministic character fixture. NanoGPT and TinySSM receive the same shifted next-token pairs, run offline, and are checked for output shape, causality, finite gradients, and short fixed-batch loss reduction. This cannot establish long-context quality, model scaling laws, production throughput, safety, data provenance, or any company's current architecture. Report seed, context, model width/layers/state size, optimizer, token budget, device, and the exact named public source before making a comparison."
+  interviewAngle={{
+    openai: "Derive the masked scaled-dot-product attention row and state which public, release-specific facts would be needed before attributing a particular current sequence architecture to OpenAI.",
+    anthropic: "Explain why a local causal-mask test is a model-behavior contract rather than evidence about a private Claude implementation. Propose a fair attention-vs-state ablation.",
+    deepmind: "Compare a causal attention read with a gated recurrence, then separate what a public Griffin paper establishes from what cannot be inferred about other Google systems.",
+    meta: "Design a parameter- and token-matched attention/SSM experiment and explain why open tooling or a paper does not reveal every production kernel or serving constraint.",
+    xai: "When public evidence is sparse, explain the difference between the general fact that causal models cannot read future tokens and an unsupported claim about xAI's current architecture.",
+    deepseek: "Read one named public technical report, identify its exact scope, and list the data, kernel, context, and evaluation details that would remain unspecified for a broader architecture claim.",
+    qwen: "Use a named public Qwen release only as context for a reproducible local comparison; record version boundaries and what remains unknown about private sequence-model choices."
+  }}
+/>
+
+<ReferenceProject path="projects/week-13-nano-gpt-ssm" name="nano-gpt-ssm" hours="6-8 hrs">
+An offline PyTorch lab with a deterministic character fixture, causal multi-head attention, sinusoidal positions, residual MLP blocks, a training step, and an explicit input-dependent SSM baseline. The 48 CPU tests check masks, probabilities, output shapes, gradients, loss reduction, generation, and recurrence algebra without downloads or pretrained weights.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30-45 min):** derive a two-token scaled-dot-product attention row, draw all `(B,T,d)` and `(B,h,T,T)` shapes, verify the lower-triangular mask, and explain why softmax is over keys. Start with a failing causality assertion.
+- **Build (2-3 hrs):** run the notebook, train NanoGPT and TinySSM for the same token budget, count parameters, compare fixed-fixture losses, and write an experiment note with seed, context, optimizer, device, and the limitation that a repeated toy string is not a language benchmark.
+- **Challenge (3+ hrs):** add a learned-position ablation, held-out deterministic text split, chunked scan, or clearly labeled hybrid. Add tests first; report parameter count and multiple-seed spread; do not call a toy hybrid Mamba, Jamba, or Griffin.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="20 min">
+**“Your attention model wins on a short fixture, but the SSM uses less activation memory at a longer context. What can you conclude?”**
+
+Rubric:
+- **Baseline signal:** checks token shift, vocabulary, causal mask, shape contracts, parameter count, context length, optimizer, and whether both models saw the same token/update budget.
+- **Senior signal:** distinguishes score-matrix shape from end-to-end runtime, fixed-state compression from content-addressed rereading, Python-loop overhead from fused scans, and toy fitting from held-out language quality.
+- **Staff signal:** proposes a pre-registered multi-seed, multi-context protocol with memory and wall-clock measurement on the named device, failure slices, checkpoint provenance, and public-evidence caveats rather than a claim about a company's private architecture.
+
+Worked solution: `projects/week-13-nano-gpt-ssm/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Attention Is All You Need** — Vaswani et al. (2017); scaled dot-product attention, multi-head attention, positional encodings, residual blocks, and the original encoder-decoder Transformer scope.
+- **Efficiently Modeling Long Sequences with Structured State Spaces** — Gu et al. (2022); structured state-space sequence modeling and its public mathematical scope.
+- **Mamba: Linear-Time Sequence Modeling with Selective State Spaces** — Gu and Dao (2023); selective state-space motivation and scan-oriented implementation context.
+- **Griffin: Mixing Gated Linear Recurrences with Local Attention for Efficient Language Models** — De et al. (2024); public hybrid/recurrent comparison, scoped to the named work.
+- **Jamba: A Hybrid Transformer-Mamba Language Model** — Lieber et al. (2024); public named hybrid-model description; not a claim about private systems.
+</FurtherReading>
+
+<KeyTakeaways>
+- Scaled dot-product attention turns query-key compatibility into a value-weighted read; causal masking makes the read prefix-only.
+- Position encodings supply order, while residual pre-norm blocks and a position-wise MLP provide the decoder block's transformation and optimization paths.
+- A next-token training step needs a shifted target, vocabulary logits, cross-entropy, finite gradients, and an explicit optimizer update.
+- An SSM carries a recurrent state and can make its write/read/retention coefficients input-dependent; the toy baseline is not a named production architecture.
+- Compare attention and SSMs with matched tokens, budgets, seeds, parameter counts, and device measurements, and separate public evidence from claims about private systems.
+</KeyTakeaways>
