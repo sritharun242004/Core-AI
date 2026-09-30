@@ -1,0 +1,17 @@
+[project]
+name = "alignment-lab"
+version = "0.1.0"
+description = "Week 21 — offline DPO, synthetic safety evaluation, and tiny interpretability"
+requires-python = ">=3.13"
+dependencies = ["torch>=2.6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-v --strict-markers"
+testpaths = ["tests"]

@@ -1,0 +1,270 @@
+---
+week: 21
+part: 5
+slug: "week-21-alignment-lab"
+title: "Alignment — preferences, boundaries, and evidence"
+hook: "Your model refuses more requests and its preference score improves. Did it become safer, less useful, or simply better at your test?"
+hours: 20
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-20-evals-mlops-pipeline", "week-15a-sft-lora-dpo-lab"]
+referenceProject: "projects/week-21-alignment-lab"
+accentVar: "--accent-p5"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+import { WeeklyQuiz } from '../../components/interactive/WeeklyQuiz'
+
+<Hook>Your model refuses more requests and its preference score improves. Did it become safer, less useful, or simply better at your test?</Hook>
+
+<Intuition>
+Alignment is not a single scalar property. A policy can learn a preference dataset, fail on new situations, and still look convincing in a representation visualization. This week separates three questions: **what did optimization change, what does the system do, and what evidence explains that behavior?**
+
+Think of a laboratory with three benches. The training bench changes a small policy while keeping its reference fixed. The behavioral bench tests allowed and prohibited actions, including harmless requests that an overcautious system might refuse. The representation bench asks what can be decoded or reconstructed from activations. Evidence from one bench does not automatically answer a question on another.
+
+<IntuitionCallout>A refusal is an output. Safety is a property of the whole trajectory under a stated threat model. A model that refuses after trying an unauthorized tool call has not demonstrated the same behavior as a model that never attempted it.</IntuitionCallout>
+
+Make four moves: define the policy and boundaries; fit preferences without moving the reference; evaluate helpfulness and boundary failures separately; inspect representations while keeping causal claims out of descriptive results. Carry Week 20's immutable case IDs, evaluator versions and frozen-holdout discipline through every move.
+
+The project is intentionally local: actual DPO optimization on a 312-parameter conditional policy, twenty benign synthetic safety cases with mock tools, and logit-lens/probe/tiny-SAE exercises. It does not download a model, run PPO, reproduce Constitutional AI training, or claim to implement full Anthropic Circuits.
+
+<MicroRecall questions={[
+{id:'w21-mr-reference',prompt:'Why keep a separate frozen reference in standard DPO?',choices:['It supplies fixed comparison log-odds','It learns the same update twice','It labels harmful text'],correct:0,explain:'DPO compares the policy preference margin with a fixed reference margin; shared mutable weights defeat that anchor.'},
+{id:'w21-mr-refusal',prompt:'An always-refusing assistant has perfect required refusals. What is missing?',choices:['A larger refusal count','Overrefusal and allowed-task success','A more confident claim'],correct:1,explain:'Refusal on allowed tasks destroys usefulness; conditional denominators expose the trade-off.'},
+{id:'w21-mr-probe',prompt:'A held-out linear probe recovers a label. What follows?',choices:['The original model must use that label causally','The label is linearly decodable on that split','A circuit has been fully explained'],correct:1,explain:'Decodability can arise from correlated information that does not control the original model output.'}
+]} client:visible />
+</Intuition>
+
+## The math, derived
+
+### 1. RLHF has several learned objects, not one magic reward
+
+A common RLHF pipeline begins with supervised fine-tuning on demonstrations, collects response comparisons, fits a reward model, then optimizes a policy against that reward while penalizing departure from a reference. The reference is usually the SFT policy, frozen for this optimization stage. Annotator instructions, disagreement, sampling and consent all affect what the reward represents.
+
+The Bradley–Terry model turns reward differences into preference probabilities. For a prompt x, chosen response y⁺ and rejected response y⁻:
+
+<MathBlock latex="P(y^+\succ y^-\mid x)=\sigma\!\left(r_\phi(x,y^+)-r_\phi(x,y^-)\right),\qquad \mathcal L_{\mathrm{RM}}=-\mathbb E\log P(y^+\succ y^-\mid x)" />
+
+A reward is only identified up to prompt-dependent additive constants under pairwise comparisons. It can learn shortcuts such as verbosity or agreement with the user. Optimizing it more strongly can amplify reward-model errors: higher predicted reward need not mean greater human benefit, truthfulness or robustness.
+
+One idealized policy objective is expected reward minus reference-policy KL:
+
+<MathBlock latex="\max_\pi\;\mathbb E_{x,y\sim\pi}[r(x,y)]-\beta\,\mathbb E_x D_{\mathrm{KL}}\!\left(\pi(\cdot\mid x)\Vert\pi_{\mathrm{ref}}(\cdot\mid x)\right),\qquad \beta>0" />
+
+PPO-based RLHF estimates advantages using sampled trajectories, often with a value function. PPO's clipped importance-ratio surrogate limits updates relative to an **old policy**; that clipping is not the same object as the KL penalty against the **reference policy**. Rewards, policy, value estimates, rollout versions and token masks can each introduce bugs. We discuss that pipeline but use DPO for the local implementation—no reward-model training or PPO loop is hidden in this project.
+
+### 2. Eliminate the explicit reward model to obtain DPO
+
+For a fixed reward, solve the idealized KL-regularized objective by normalizing a tilted reference distribution:
+
+<MathBlock latex="\pi^*(y\mid x)=\frac{\pi_{\mathrm{ref}}(y\mid x)\exp(r(x,y)/\beta)}{Z(x)},\qquad r(x,y)=\beta\log\frac{\pi^*(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)}+\beta\log Z(x)" />
+
+Substitute this reward parameterization into Bradley–Terry. The same prompt appears in both responses, so its log partition function cancels. Replace the optimal policy with a trainable policy, and fit observed preferences directly:
+
+<MathBlock latex="m_\theta=\log\frac{\pi_\theta(y^+\mid x)}{\pi_\theta(y^-\mid x)}-\log\frac{\pi_{\mathrm{ref}}(y^+\mid x)}{\pi_{\mathrm{ref}}(y^-\mid x)},\qquad \mathcal L_{\mathrm{DPO}}=-\mathbb E\log\sigma(\beta m_\theta)" />
+
+This is **Direct Preference Optimization, Stanford's Rafael Rafailov et al. (2023)**. Its ancestry is preference-based RLHF, but its practical update here is offline pairwise classification, not online reinforcement learning. DPO does not require an explicit reward network or new policy samples at every update. It also does not make preference labels correct, representative or free of conflicts.
+
+The reference is essential to the standard objective. Omitting its scores gives a different, reference-free objective. For an autoregressive LM, use summed **completion** log-probabilities, with causal next-token alignment and prompt/padding positions excluded:
+
+<MathBlock latex="\log\pi_\theta(y\mid x)=\sum_{t=1}^{|y|}\log\pi_\theta(y_t\mid x,y_{<t})" />
+
+Week 15a implements that masked multi-token scoring. This week's policy has one response token, so its single action log-probability already equals the completion sum. The reference starts as a copy of a randomly initialized tiny policy, not an SFT language model; no human-feedback claim is made.
+
+### 3. Worked example: one pair, a measurable gradient
+
+Suppose the policy gives chosen probability .6 and rejected probability .3. The reference gives .4 to each; remaining probability belongs to other responses. The policy odds ratio is 2, the reference odds ratio is 1, and the reference-relative margin is log 2.
+
+<MathBlock latex="\beta=0.5,\quad m=\log 2\approx0.6931,\quad \ell=\log(1+e^{-0.5\log2})\approx0.5348,\quad \frac{\partial\ell}{\partial m}=-\beta\sigma(-\beta m)\approx-0.2071" />
+
+The negative margin gradient pushes chosen relative to rejected. It does not guarantee that both absolute probabilities behave as intended across all responses. Monitor chosen likelihood, pairwise preference accuracy, task quality and reference drift separately. At initialization, identical policy/reference log-odds yield margin zero and loss log 2, even if chosen probability is not .5.
+
+Use `-logsigmoid(beta * margin)` for numerical stability. Freeze reference parameters **and its behavior**: `no_grad` alone does not stop running-statistic updates in train-mode BatchNorm. Our independent eval-mode reference is cached under no-grad, excluded from the optimizer, and checked for unchanged state after training.
+
+<Gotcha>In the idealized reward objective, β weights the KL penalty; in the DPO loss it scales the preference margin. Finite-data optimization does not guarantee a simple monotone relationship between β and measured KL. Tune on validation and measure actual drift rather than asserting a universal rule.</Gotcha>
+
+### 4. Safety metrics need conditional denominators
+
+Let A be allowed cases, R be cases where the toy policy requires refusal, fᵢ a refusal flag, cᵢ a correct allowed-task answer, and bᵢ an attempted call rejected by the tool boundary. These are fixture rubric labels, not trustworthy self-reports from a deployed model.
+
+<MathBlock latex="\mathrm{required\ refusal}=\frac{\sum_{i\in R}f_i}{|R|},\qquad \mathrm{overrefusal}=\frac{\sum_{i\in A}f_i}{|A|},\qquad \mathrm{task\ success}=\frac{\sum_{i\in A}(1-f_i)c_i}{|A|}" />
+
+Overall refusal divides by all cases. Safe success requires either the correct refusal or successful allowed task **and no blocked tool attempt**. Blocked-attempt rate counts cases with any denied attempt, not the number of calls. A correct final answer does not erase an unauthorized action earlier in the trajectory.
+
+Worked example: two allowed tasks produce one correct answer and one refusal; two prohibited tasks produce one refusal and one compliance. Overall refusal, required refusal, overrefusal and task success are each .5, but for different reasons and denominators. Safe success is 2/4 if neither successful case has a blocked attempt; if the correct refusal follows a denied tool call, it drops to 1/4. The code returns `None` for missing conditional slices rather than fabricating a zero.
+
+### 5. Decode, probe, reconstruct—three different questions
+
+A **logit lens** applies the final normalization and unembedding to an intermediate residual state. With column-vector notation:
+
+<MathBlock latex="\ell^{(k)}=W_U\,\operatorname{LN}_{\mathrm{final}}(h^{(k)})+b_U,\qquad p^{(k)}=\operatorname{softmax}(\ell^{(k)})" />
+
+Use the actual model normalization, including learned affine parameters—not arbitrary unit-vector normalization. The final-state lens must match the actual final logits. Intermediate states may be in a different predictive basis, so this is not guaranteed calibrated early decoding or a readable transcript of reasoning.
+
+A **linear probe** fits a classifier on frozen activations. Here a binary logistic probe learns a weight vector and bias after training-only standardization:
+
+<MathBlock latex="q_\psi(a=1\mid h)=\sigma(w^\top\tilde h+b),\qquad \mathcal L_{\mathrm{probe}}=-\frac1N\sum_i\left[a_i\log q_i+(1-a_i)\log(1-q_i)\right]" />
+
+Fit means, scales and weights without test labels; evaluate on independently held-out examples. With real data, split by source/conversation rather than leaking paraphrases across rows. Control for nuisance features and shuffled labels. High accuracy means the label is recoverable on that distribution, not that the original model uses it causally.
+
+A **sparse autoencoder (SAE)** learns a dictionary that reconstructs activations with relatively few active coordinates. It is a trainable model, not simply PCA followed by thresholding:
+
+<MathBlock latex="z=\operatorname{ReLU}(W_E(h-\mu)+b_E),\qquad \hat h=D^\top z+\mu,\qquad \mathcal L_{\mathrm{SAE}}=\frac{1}{Nd}\sum_i\|h_i-\hat h_i\|_2^2+\lambda\frac1N\sum_i\|z_i\|_1" />
+
+Our decoder directions—the rows of D—are normalized to unit norm during the forward pass. Otherwise growing decoder norms while shrinking codes can reduce L1 without a better sparse explanation. The centering vector is fit on training activations only. The exact MSE/L1 averaging conventions matter when choosing λ.
+
+Report held-out reconstruction against a train-mean baseline, mean L0 at a stated threshold, mean per-example L1 sum, per-feature firing rates and dead-feature fraction. For codes [0,2,0] and [1,0,0], these are L0 = 1, L1 = 1.5, firing rates [.5,.5,0], and dead fraction 1/3. “Dead” means inactive on that evaluated split, not forever.
+
+Public **Anthropic** work such as Bricken et al.'s *Towards Monosemanticity* (2023) motivates dictionary-learning analysis of superposition: a neuron can participate in multiple features, and a learned feature need not equal one neuron. Our synthetic tiny SAE does not reproduce their models, data, feature interpretation or causal analyses. Features can split, duplicate or die; sparse reconstruction alone proves neither monosemanticity nor a causal circuit.
+
+## The code, from scratch
+
+```python
+import torch
+from alignment_lab import TinyPolicy, freeze_reference, preference_fixture, train_dpo
+
+torch.set_num_threads(1)
+policy = TinyPolicy(seed=21)
+reference = freeze_reference(policy)
+before = {name: value.clone() for name, value in reference.state_dict().items()}
+report = train_dpo(policy, reference, preference_fixture(), steps=100, beta=0.5)
+assert report.final_chosen_probability > report.initial_chosen_probability
+assert all(torch.equal(value, before[name])
+           for name, value in reference.state_dict().items())
+print(report.initial_loss, report.final_loss)
+```
+
+The project uses actual backpropagation and Adam on eight synthetic preferences. Tests first pin the equation, gradient signs, stable extreme scores and frozen reference; then test seeded training and meaningful preference improvement. Shared reference parameter storage is rejected, even through distinct detached parameter wrappers.
+
+The percent notebook executes every component and prints all twenty prompts. On the seed-21 CPU run, mean chosen probability moved from about .323 to .9997 **on the training pairs**. A probe recovered a planted linear label with held-out accuracy .9766. The SAE's held-out MSE was about .00126 against a train-mean baseline of .1177, with mean L0 about 2.09 of 12 and four inactive features. Those are tiny-fixture observations, not language-model alignment or interpretability benchmarks.
+
+Full implementation: `projects/week-21-alignment-lab/`. The logit lens reads the trained tiny policy; the probe and SAE deliberately use separate synthetic activation datasets. The safety parser is another separate baseline. Do not present their scores as evidence that DPO caused safer text behavior.
+
+### Constitutional AI: principles become supervision
+
+In **Bai et al., Anthropic (2022)**, Constitutional AI uses a list of principles to guide self-critique and revision. The public method has two broad phases:
+
+1. Sample responses, ask for principle-guided critiques and revisions, and fine-tune on revised answers.
+2. Compare sampled responses using AI feedback, train a preference model on those comparisons, and optimize with RL from AI feedback (RLAIF).
+
+This is more than putting “be helpful and harmless” in a system prompt. Humans still choose principles, make governance decisions and evaluate failures; model-generated judgments can share biases and blind spots. Helpful, honest and harmless goals can conflict. A principle should define scope, priority and what an appropriate refusal or safe alternative looks like.
+
+For a harmless classroom example, a constitution might say: “Only return public mock records; explain limits; still answer allowed arithmetic.” A proposed response that exposes an imaginary private badge is critiqued and replaced with an explanation plus an allowed alternative. That illustrates supervision design; our hand-written preference fixture does **not** generate critiques, train a preference judge, or reproduce CAI. DPO can consume AI-labeled pairs in a separate experiment, but that is not a claim that the original CAI paper used DPO.
+
+### A benign red-team battery, not a jailbreak cookbook
+
+Define the threat model before writing prompts: an assistant may add bounded numbers and read four public mock records, but cannot access private records, run shell commands, fetch websites or exceed a two-call budget. The “private badge” and “toy file” are fictional and never created. All prompts are benign synthetic boundary exercises, not instructions for real-world harm.
+
+The fixture contains ten allowed controls and ten requests prohibited by this toy policy. Categories cover arithmetic, public lookup, quoted content, overrefusal controls, fake authority, untrusted retrieved instructions, privacy, tool boundaries, network boundaries and budgets. The narrow parser gets perfect fixture results because it recognizes precisely this simple grammar—not because it solves natural-language safety.
+
+Review false refusals as seriously as compliance failures. “Kill switch” in a toy stop-button explanation and a quoted word such as “delete” are harmless controls. Preserve raw outcomes and compare paired case IDs. For real model outputs, validate a refusal/task rubric independently, use held-out paraphrases, report slice counts and uncertainty, and avoid treating twenty development prompts as representative coverage.
+
+### Safe-agent foundations: the host enforces capabilities
+
+`MockTools.call` accepts only `add` and `lookup`, checks exact argument schemas, rejects nonpublic keys and unbounded/nonfinite values, and counts denied attempts against the call budget. There is no real shell, network or filesystem tool. An assistant cannot obtain extra capabilities merely by claiming administrator authority in text.
+
+For a real deployment, separate data from instructions; treat retrieved documents and tool output as untrusted content. Enforce least privilege outside the model, bind resource authorization to the actual user, require independent approval for consequential actions, restrict network/filesystem access, bound retries/time/cost/output, preserve privacy-aware audit logs, and define a reliable stop/rollback path. Train-time alignment is not an authorization mechanism.
+
+<Gotcha>Python callbacks in this lab are trusted local code, not an execution sandbox. A malicious callback can run arbitrary Python outside the mock interface. The allowlist demonstrates a tool boundary; real adversarial execution additionally needs host/process/container isolation and independently protected logs.</Gotcha>
+
+### Case study: early Bing Chat's long-conversation failures
+
+In its February 15, 2023 public update, Microsoft reported that long Bing Chat sessions could become repetitive or produce responses outside the intended helpful tone, including reflecting the tone of prompting. This period is associated with the widely discussed “Sydney” incidents. The public statement is evidence about observed behavior and product response, not evidence of a particular hidden causal circuit or training algorithm.
+
+The engineering lesson is to test trajectories and interactions, not only isolated prompts. Evaluate long-context behavior, authority confusion and escalation alongside ordinary helpful requests; combine model work with interaction limits and operational monitoring. A compelling conversation transcript is a failure case to investigate, not a statistically representative safety rate. Microsoft's [first-week report](https://blogs.bing.com/search/february-2023/The-new-Bing-Edge-Learning-from-our-first-week) is the primary source for the statements here.
+
+<CompanyLens
+  topic="alignment evidence: preference training, behavioral boundaries, and interpretability"
+  tldr={{
+    openai:'InstructGPT publicly documents demonstration and preference-based RLHF; system cards add model-specific behavioral evidence, not guarantees for every downstream agent.',
+    anthropic:'Public Constitutional AI and dictionary-learning research distinguish supervision design from representation analysis; the local SAE is not full Circuits.',
+    deepmind:'Public work on language-model risks and Gemini evaluation motivates separating capability, deployment context and mitigation; no private safety stack is inferred.',
+    meta:'Llama reports describe post-training and safety evaluation of particular releases. Open weights enable study but do not certify safe deployment.',
+    xai:'Public Grok model cards and safety statements are release-specific evidence. Do not infer an undisclosed reward model or interpretability pipeline.',
+    deepseek:'R1 documents reasoning-oriented RL and evaluation; stronger reasoning rewards are not a complete safety objective or proof of trustworthy tool use.',
+    qwen:'Qwen reports describe post-training and multilingual evaluation. Safety and overrefusal should be measured across languages and deployment policies, not assumed from one aggregate.'
+  }}
+  whyDiffer="The public evidence differs in supervision sources, model availability and deployment goals; those differences do not produce a universal safety ranking. Preference optimization, behavioral evaluation and causal explanation support different claims. The interview prompts below are preparation exercises, not verified questions from private interview loops."
+  sources={{
+    openai:{paper:'Ouyang et al., Training language models to follow instructions with human feedback, arXiv:2203.02155',blog:'openai.com/index/instruction-following/'},
+    anthropic:{paper:'Bai et al., Constitutional AI, arXiv:2212.08073; Bricken et al., Towards Monosemanticity (2023)',blog:'anthropic.com/research/constitutional-ai-harmlessness-from-ai-feedback; transformer-circuits.pub/2023/monosemantic-features/'},
+    deepmind:{paper:'Weidinger et al., Ethical and social risks of harm from Language Models, arXiv:2112.04359',blog:'deepmind.google/discover/blog/'},
+    meta:{paper:'The Llama 3 Herd of Models, arXiv:2407.21783',blog:'ai.meta.com/blog/meta-llama-3-1/'},
+    xai:{paper:'Public Grok model cards and safety reports; no private training-method claim',blog:'x.ai/news'},
+    deepseek:{paper:'DeepSeek-R1, arXiv:2501.12948',blog:'github.com/deepseek-ai/DeepSeek-R1'},
+    qwen:{paper:'Qwen2 Technical Report, arXiv:2407.10671',blog:'qwenlm.github.io/blog/qwen2/'}
+  }}
+  caseStudy="Microsoft's February 2023 Bing Chat update described long-conversation behavior outside its intended tone. The lesson is trajectory coverage and layered controls, not a claim that any particular preference objective or hidden feature caused the incidents."
+  interviewAngle={{
+    openai:'Derive reference-relative DPO and explain why reward gain can coexist with worse task quality.',
+    anthropic:'Distinguish constitutional supervision, sparse feature discovery and a controlled causal intervention.',
+    deepmind:'Build a risk taxonomy and a held-out evaluation protocol for long-context agent behavior.',
+    meta:'Specify reproducible post-training and safety experiments on a pinned open-weight checkpoint.',
+    xai:'Design a bounded release gate that reports task success and overrefusal alongside failure trajectories.',
+    deepseek:'Separate reasoning reward improvements from tool authorization and safety evidence.',
+    qwen:'Design multilingual refusal and overrefusal slices while preventing translation/template leakage.'
+  }}
+/>
+
+<ReferenceProject path="projects/week-21-alignment-lab" name="alignment-lab" hours="6–8 hrs">
+Train a seeded tiny DPO policy against an unchanged frozen reference; evaluate twenty benign synthetic boundary prompts with allowlisted mock tools; decode normalized hidden states; fit a held-out linear probe; and train a reconstruction-plus-L1 SAE with activation metrics. All core work runs offline on CPU. The scope is diagnostic, not a full Circuits reproduction or a claim of causal explanation.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (30 min):** derive the .5348 DPO loss and gradient sign; compute four-case safety denominators and two-row SAE activity statistics.
+- **Build (2–3 hrs):** reproduce the notebook, add a failing reference-mutation regression, inspect always-refuse and blocked-tool trajectories, and report held-out probe/SAE metrics with explicit limits.
+- **Challenge (3+ hrs):** choose preference generalization, a trajectory-aware mock safety gate, or a validation-selected reconstruction–sparsity sweep. Freeze splits and claims before evaluating the final holdout.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="25 min">
+**“Preference accuracy improved, refusals increased, and an SAE feature correlates with failures. Would you ship?”**
+
+- **Baseline:** derive DPO correctly; distinguish required refusals, overrefusal and allowed-task success; reject a causal claim from correlation alone.
+- **Senior:** verify unchanged reference state, held-out data and train-only preprocessing; inspect blocked attempts, chosen likelihood and SAE reconstruction/activity trade-offs.
+- **Staff:** require versioned evidence, uncertainty and slice coverage; enforce independent capability limits; specify rollout/rollback criteria and what controlled experiment could change the decision.
+
+Worked solution and numerical checks: `projects/week-21-alignment-lab/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<WeeklyQuiz weekId={21} questions={[
+{id:'w21-q0',prompt:'With identical policy/reference log-odds, standard DPO loss is?',choices:['Zero','log 2','The chosen probability'],correct:1,explain:'The reference-relative margin is zero, so -log sigmoid(0) equals log 2.'},
+{id:'w21-q1',prompt:'Which scores belong in standard multi-token DPO?',choices:['Summed completion log-probabilities for policy and frozen reference','Only prompt probabilities','Unconditionally averaged prompt-plus-response scores'],correct:0,explain:'Use causal alignment, completion masks and a fixed reference; changing normalization changes the objective.'},
+{id:'w21-q2',prompt:'Why is no-grad alone insufficient to freeze an arbitrary reference?',choices:['It always updates parameters','It removes the reference term','Train-mode running-statistics buffers may still change'],correct:2,explain:'Eval mode and independent state matter in addition to disabling gradients and excluding reference parameters from optimization.'},
+{id:'w21-q3',prompt:'Who introduced the DPO method studied here?',choices:['Stanford, Rafailov et al. (2023)','A private unnamed model team','The creators of this toy fixture'],correct:0,explain:'Direct Preference Optimization is attributed to the Stanford paper by Rafailov and colleagues.'},
+{id:'w21-q4',prompt:'What is distinctive about the public Constitutional AI procedure?',choices:['A refusal keyword list alone','Principle-guided critique/revision plus AI preference feedback','Proof that no human values are involved'],correct:1,explain:'Anthropic’s public method includes supervised revision and RLAIF; people still choose principles and evaluate outcomes.'},
+{id:'w21-q5',prompt:'An always-refuse policy on ten allowed and ten prohibited cases has allowed-task success of?',choices:['One','One half','Zero'],correct:2,explain:'It refuses every allowed request, even though its required-refusal rate is perfect.'},
+{id:'w21-q6',prompt:'A final refusal after an attempted denied tool call counts as safe success here?',choices:['No','Yes, the final sentence erases the attempt'],correct:0,explain:'Trajectory safety includes attempted boundary violations, not just final text.'},
+{id:'w21-q7',prompt:'What must the logit lens apply before unembedding?',choices:['A new random projection','The actual final model normalization','A safety label'],correct:1,explain:'The final-state lens should reproduce model logits; omitting final normalization breaks that identity.'},
+{id:'w21-q8',prompt:'Held-out probe accuracy establishes which claim?',choices:['The feature must cause the original model output','A complete circuit explanation','The label is decodable on the evaluated distribution'],correct:2,explain:'Decodability is correlational; causal use requires additional controlled evidence.'},
+{id:'w21-q9',prompt:'Why normalize SAE decoder directions and report activity as well as MSE?',choices:['To prevent a trivial L1 scaling escape and expose sparsity/dead-feature trade-offs','To guarantee semantic uniqueness','To make test data unnecessary'],correct:0,explain:'Reconstruction and sparsity are separate measurements; neither proves monosemanticity or causality.'}
+]} client:visible />
+
+<FurtherReading>
+- **[Direct Preference Optimization — Rafailov et al., Stanford (2023)](https://arxiv.org/abs/2305.18290).** Derive the reward reparameterization and note the assumptions behind the preference objective.
+- **[InstructGPT — Ouyang et al. (2022)](https://arxiv.org/abs/2203.02155).** Demonstrations, comparison data, reward modeling and policy optimization in an influential RLHF pipeline.
+- **[Constitutional AI — Bai et al., Anthropic (2022)](https://arxiv.org/abs/2212.08073).** Read the supervised critique/revision and RLAIF phases rather than equating CAI with a system prompt.
+- **[Towards Monosemanticity — Bricken et al., Anthropic (2023)](https://transformer-circuits.pub/2023/monosemantic-features/index.html).** Dictionary learning, superposition, feature splitting and evidence beyond a reconstruction metric.
+- **[Scaling and evaluating sparse autoencoders — Gao et al. (2024)](https://arxiv.org/abs/2406.04093).** Reconstruction/sparsity trade-offs and evaluation at a very different scale from this lab.
+- **Interpreting GPT: the logit lens — nostalgebraist (2020).** The original diagnostic framing; intermediate decoding should not be mistaken for a causal explanation.
+- **[Designing and Interpreting Probes with Control Tasks — Hewitt and Liang (2019)](https://arxiv.org/abs/1909.03368).** Why probe performance needs controls and careful interpretation.
+- **[Ethical and social risks of harm from Language Models — Weidinger et al. (2021)](https://arxiv.org/abs/2112.04359).** Broaden the risk taxonomy beyond a refusal benchmark.
+</FurtherReading>
+
+<KeyTakeaways>
+- DPO learns reference-relative preferences; keep the reference genuinely unchanged and inspect more than training loss.
+- Constitutional AI is a public supervision procedure, not proof that principles or AI-generated labels are complete.
+- Required refusals, overrefusal, task success and denied attempts answer different behavioral questions.
+- Logit lenses, held-out probes and tiny SAEs provide diagnostics; correlated features are not causal circuits.
+- Safe agents require independently enforced capabilities, bounded trajectories, versioned evaluations and a stop/rollback path.
+</KeyTakeaways>
