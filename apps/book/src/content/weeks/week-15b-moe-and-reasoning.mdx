@@ -1,0 +1,294 @@
+---
+week: 15
+part: 4
+slug: "week-15b-moe-and-reasoning"
+title: "Week 15b — Sparse experts and verifiable reasoning"
+hook: "What if a model could own many specialists but activate only a few, then spend extra inference compute only when verification says it is useful?"
+hours: 20
+computeTier: "red"
+difficulty: 5
+prereqSlugs: ["week-15a-sft-lora-dpo-lab"]
+referenceProject: "projects/week-15b-moe-and-reasoning"
+accentVar: "--accent-p4"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>What if a model could own many specialists but activate only a few, then spend extra inference compute only when verification says it is useful?</Hook>
+
+<Intuition>
+A dense feed-forward layer applies the same learned transformation to every token. A mixture-of-experts (MoE) layer keeps several transformations and asks a router to choose a small set for each token. The total parameter count can grow while the parameters touched by one token remain bounded. That trade is useful only if routing, capacity, communication, and specialization are measured honestly.
+
+The second half is a different conditional-compute question. A model can sample several candidate solutions, apply a verifier when correctness is checkable, and aggregate or optimize from the resulting rewards. More samples can buy reliability, but only with extra latency and only when the verifier is trustworthy. The tiny project turns both ideas into inspectable tensors: top-k routing with capacity and auxiliary loss, then arithmetic rewards, grouped relative advantages, one policy update, and majority vote.
+
+<IntuitionCallout>MoE is conditional parameter access; test-time reasoning is conditional inference budget. Neither is magic sparsity: the router can collapse, dropped tokens can hide failure, and a weak verifier can reward the wrong behavior.</IntuitionCallout>
+
+This lesson has six moves: map model families and scaling laws; derive a sparse expert layer; separate the public DeepSeek-V3 report from our toy implementation; define verifiers, RLVR, and GRPO; reason about test-time compute and distributed execution; and run a small offline lab without a GSM8K download.
+
+<MicroRecall questions={[{
+  id: 'week15b-recall-routing',
+  prompt: 'For N tokens, E experts, and top-k K, what does capacity limit?',
+  choices: ['The vocabulary size', 'The number of token-to-expert assignments each expert can accept', 'The number of hidden dimensions in every expert', 'The number of reward samples per prompt'],
+  correct: 1,
+  explain: 'A capacity budget is a token-slot budget per expert. Assignments beyond it need an explicit policy, such as dropping or rerouting; silently counting them as processed makes utilization and loss reports misleading.'
+}]} client:visible />
+
+<MicroRecall questions={[{
+  id: 'week15b-recall-advantage',
+  prompt: 'Why center rewards within a sampled prompt group?',
+  choices: ['To make every answer correct', 'To create a relative baseline so only better-than-group candidates receive positive signal', 'To remove the need for a verifier', 'To increase the model vocabulary'],
+  correct: 1,
+  explain: 'A group-relative advantage subtracts the group mean (and often divides by its spread). A constant-reward group therefore has no directional preference and should produce zero advantages.'
+}]} client:visible />
+</Intuition>
+
+## The model-family map
+
+The word “scaling” describes several axes, not one leaderboard curve. Keep these families distinct:
+
+| Family | Parameters touched by one token | Main promise | Main failure mode to test |
+| --- | ---: | --- | --- |
+| Dense decoder | nearly all layer parameters | simple routing and mature kernels | cost and memory grow with width/depth |
+| Sparse MoE decoder | a small expert subset plus shared layers | more total capacity at bounded activated compute | routing collapse, all-to-all traffic, capacity drops |
+| Retrieval-augmented system | external index and selected context | add changing or private knowledge without putting it all in weights | retrieval misses, stale evidence, citation errors |
+| Reasoning/post-trained model | policy plus a reward/evaluation loop | improve solvable tasks and allocate more inference work | reward hacking, verbosity, distribution shift |
+| Distilled/small model | fewer parameters, often inherited traces | lower latency and deployment cost | teacher errors and lost breadth |
+
+This week focuses on the second and fourth rows. An MoE layer is an architectural choice inside a model; GRPO/RLVR is a post-training and inference strategy. They can be combined, but one does not imply the other.
+
+### Scaling laws are budget models, not laws of nature
+
+A useful first approximation says that loss decreases predictably as model size, data, and training compute increase over a regime. Kaplan et al. reported empirical power-law trends; Hoffmann et al. (Chinchilla) emphasized that a compute-optimal allocation must scale training tokens with model size rather than making a model enormous and data-starved. These results are priors for experiment design, not guarantees outside the measured regime.
+
+For a dense model, a rough training-compute proxy is:
+
+<MathBlock latex="C_{train} \propto N_{tokens} \times N_{active\ parameters} \times N_{passes}" />
+
+For a sparse model, total stored parameters can exceed active parameters:
+
+<MathBlock latex="N_{total}=N_{shared}+E\,N_{expert},\qquad N_{active}=N_{shared}+K\,N_{expert}" />
+
+The symbols hide important costs. Router logits, dispatch/combine, optimizer state, activation memory, inter-device traffic, padding, and dropped capacity can dominate a toy FLOP calculation. Report both total and active parameters, token/update budget, sequence length, batch shape, precision, device, and wall-clock measurement. Do not claim that “37B active” means a 37B dense model with identical quality or latency.
+
+### What a family comparison can establish
+
+A fair comparison fixes the data, tokenizer, training tokens, evaluation slices, seeds, optimizer family, and quality target. If an MoE wins at equal active FLOPs but requires expensive all-to-all communication, the result is not a free win. If majority vote wins at equal pass@1, it spent more samples. If a model fits the toy separator, it established only that gradients connect to labels.
+
+<Gotcha>Parameter count is not a sufficient cost metric. A sparse model can have lower per-token matrix multiplication and higher network cost; a test-time sampler can improve accuracy and multiply generation cost; a verifier can be cheap to call yet expensive to build and maintain.</Gotcha>
+
+## Anatomy of a tiny mixture-of-experts layer
+
+Let `X` have shape `(B,T,d)`. Flatten positions to `N=B*T` tokens. Each expert is a position-wise MLP:
+
+<MathBlock latex="E_i(x)=W_{2,i}\,\sigma(W_{1,i}x+b_{1,i})+b_{2,i}" />
+
+A router produces one logit per expert and a probability distribution:
+
+<MathBlock latex="s(x)=W_rx,\qquad p_i(x)=\operatorname{softmax}(s(x))_i" />
+
+Top-k routing chooses indices `I(x)`. The selected probabilities are renormalized over the selected set, so a token's successful expert mixture is:
+
+<MathBlock latex="g_i(x)=\frac{p_i(x)}{\sum_{j\in I(x)}p_j(x)}\,\mathbf{1}[i\in I(x)],\qquad y=\sum_{i\in I(x)}g_i(x)E_i(x)" />
+
+The project uses router logits for `topk`, then a softmax over the selected logits for `K > 1`. For top-1 routing, it retains the selected all-expert probability instead of applying a one-element softmax, so task loss can train the router. This makes the local contract easy to test: rows with `K > 1` have selected weights summing to one and selected indices are unique. It is not the only production router parameterization.
+
+### Capacity is a systems contract
+
+With capacity factor `c`, `E` experts, `K` selected slots per token, and `N` tokens, the toy capacity is:
+
+<MathBlock latex="capacity=\max\left(1,\left\lceil\frac{cNK}{E}\right\rceil\right)" />
+
+A dispatch mask records which assignments fit. The reference uses a transparent deterministic first-come policy. The output for a dropped assignment is absent; a token whose every assignment drops receives a zero expert branch output. That behavior is deliberately visible rather than padded over.
+
+There are two useful counters:
+
+- `selected_loads`: how many top-k assignments requested each expert before capacity. This is the signal used by the auxiliary balance term.
+- `expert_loads`: how many assignments actually fit after capacity. This is the compute that ran.
+
+These counters need not match. A capacity sweep should report both, plus the dropped-assignment fraction.
+
+### Load-balancing auxiliary loss
+
+A common teaching form multiplies mean router importance by selected assignment fraction:
+
+<MathBlock latex="\mathcal{L}_{balance}=E\sum_{i=1}^{E}\operatorname{mean}_{x}[p_i(x)]\;\frac{\operatorname{count}(i\;\text{selected})}{NK}" />
+
+It is finite and differentiable through the router probabilities, while the top-k indicator itself is discrete. A positive coefficient adds it to task loss:
+
+<MathBlock latex="\mathcal{L}=\mathcal{L}_{task}+\lambda_{balance}\mathcal{L}_{balance}" />
+
+This is a pressure toward utilization, not a proof of semantic specialization. Too much pressure can fight useful specialization; too little can produce a hot expert and an overloaded communication path. The toy test intentionally forces collapse and checks that the pre-capacity auxiliary signal still sees it.
+
+## Public DeepSeek-V3 mechanics, and the boundary of the toy
+
+The public **DeepSeek-V3 Technical Report** (DeepSeek-AI, arXiv:2412.19437, 2024/2025 revision) describes a 671B-total-parameter, 37B-activated MoE language model. The following are claims about that named report, not every DeepSeek release or private implementation:
+
+1. **Transformer and MLA:** the report places DeepSeek-V3 in a Transformer framework and describes Multi-head Latent Attention (MLA), including compressed key/value representations for a smaller inference cache.
+2. **DeepSeekMoE:** it describes shared experts plus fine-grained routed experts. The reported configuration uses one shared expert, 256 routed experts, and eight routed experts activated per token in the main model hyperparameters.
+3. **Balancing:** the report describes an auxiliary-loss-free bias adjustment for routing decisions, alongside a small sequence-wise balance loss to avoid extreme per-sequence imbalance. This is different from the toy's plain auxiliary loss.
+4. **Capacity:** the report states that DeepSeek-V3 does not drop tokens during training or inference, in contrast to the toy's explicit capacity-drop exercise. Do not transfer that production claim to a toy or infer its system behavior from our first-come mask.
+5. **Node-limited routing:** the report describes limiting a token's destinations to at most four nodes to manage communication. That is a distributed systems mechanism, not implemented by this single-process project.
+6. **Multi-token prediction:** the report describes an additional prediction objective and says the extra modules can be discarded at inference or used for speculative decoding. The reference project does not implement MTP.
+7. **Precision and infrastructure:** the report discusses FP8 mixed-precision training, expert parallelism, pipeline parallelism, and communication kernels on its named cluster. The notebook uses ordinary local PyTorch and makes no performance claim about those kernels.
+
+These details are public-source evidence with release and version boundaries. The tiny implementation teaches top-k selection, selected-weight handling (normalization for `K > 1` and selected probability for top-1), explicit capacity, a balance diagnostic, and supervised optimization. It is not DeepSeekMoE, MLA, DeepSeek-V3, or a reproduction of their scale, kernels, tokenizer, data, quality, deployment, or cost.
+
+### DualPipe in the public report
+
+DeepSeek-V3's report also describes **DualPipe**, a bidirectional pipeline schedule designed to reduce pipeline bubbles and overlap forward/backward work with pipeline and MoE communication. The engineering intuition is simple: if expert dispatch waits serially for every matrix operation, cross-node communication can erase sparse-compute savings. A schedule can overlap independent communication and computation, but only when dependencies, memory, and topology permit it.
+
+The notebook cannot demonstrate DualPipe. The correct local exercise is to draw a timeline with attention, dispatch, expert MLP, combine, and backward components; mark dependencies; then explain what a benchmark would need to measure. Calling a Python for-loop “DualPipe” would be unsupported.
+
+## Reasoning as a verifiable compute loop
+
+### Chain of thought, outcome reward, and RLVR
+
+A language model generates a trajectory `o` conditioned on question `q`. A reward function maps it to a scalar:
+
+<MathBlock latex="r=R(q,o)" />
+
+**RL with verifiable rewards (RLVR)** uses an automated correctness signal where rules or tools can check the outcome: exact arithmetic, unit tests, a proof assistant, or a compiler test suite. A binary arithmetic verifier is a useful lesson boundary because expected answers are deterministic. It does not verify every intermediate thought and does not generalize to open-ended writing, factuality, or safety.
+
+The project parser accepts only a complete `What is a op b?` grammar and checks the final number. It rejects embedded expressions, ambiguous multiple answers, division by zero, and arbitrary code. This narrowness is a feature: a reward is only as trustworthy as its specification. A permissive evaluator can be gamed by formatting or by emitting a lucky final number.
+
+A model-based reward can judge less formal outputs, but it introduces calibration, bias, distribution shift, and reward-hacking questions. A process reward model scores intermediate steps; an outcome reward scores the result. Both require validation against held-out tasks and adversarial responses.
+
+### Group Relative Policy Optimization (GRPO)
+
+**GRPO was introduced in DeepSeekMath (Shao et al., 2024, “DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models,” arXiv:2402.03300), not invented by R1.** DeepSeek-R1, DeepSeek-AI, “DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning,” arXiv:2501.12948 (2025), later adopted GRPO for its reasoning RL. R1's public paper describes sampling a group of outputs for a question, estimating a baseline from group rewards instead of adding a same-size critic, and optimizing a clipped relative-advantage objective with a reference-policy KL term.
+
+For rewards `r_1,...,r_G`, the paper gives the group-relative shape:
+
+<MathBlock latex="A_i=\frac{r_i-\operatorname{mean}(r_{1:G})}{\operatorname{std}(r_{1:G})}" />
+
+A simplified policy objective uses the old-policy ratio:
+
+<MathBlock latex="\mathcal{L}_{toy}=-\operatorname{mean}_i\left[\min(\rho_iA_i,\operatorname{clip}(\rho_i,1-\epsilon,1+\epsilon)A_i)\right],\qquad\rho_i=\exp(\ell_i-\ell_i^{old})" />
+
+The reference implementation follows this teaching shape with binary arithmetic rewards, detached advantages, optional clipping, and an optional simple squared log-probability reference penalty; that penalty is not the paper's full token-level KL implementation. It samples answer IDs rather than token sequences, and it does not implement DeepSeek-R1's model, prompt template, data pipeline, multi-stage cold start/SFT/RL process, reward mixture, scale, or reported evaluations. “GRPO-like” is the accurate label for the lab.
+
+An all-equal reward group gets zero advantages in this implementation. That prevents an arbitrary update when the verifier gives no preference. A production algorithm must also decide how to normalize variable-length sequence log-probabilities, mask tokens, handle reference KL, batch prompts, and prevent stale old-policy data. Those choices are deliberately kept visible for an assignment rather than hidden behind a trainer.
+
+### Test-time compute and majority vote
+
+Training can change a policy; inference can spend more compute without changing its weights. For a stochastic sampler with candidate answers `o_1,...,o_m`, majority vote chooses the most frequent verified answer. This resembles self-consistency: independent-ish samples can reduce variance when correct solutions are more common than any particular wrong solution.
+
+If each sample is independently correct with probability `p>0.5`, the probability that a simple majority is correct is:
+
+<MathBlock latex="P_{majority}=\sum_{j=\lceil(m+1)/2\rceil}^{m}\binom{m}{j}p^j(1-p)^{m-j}" />
+
+Real model samples are correlated, prompts can be ambiguous, and ties need a policy. Majority vote also multiplies generation and verification calls. Report sample count, temperature/top-p or equivalent sampler, seed, verifier-call count, latency, and cost. A majority of confidently wrong or reward-hacked answers is still wrong.
+
+The public DeepSeek-R1 paper reports majority-vote/consensus measurements for its named evaluations; that does not make this arithmetic demo evidence for R1's performance. Our notebook's noisy sampler is intentionally deterministic under a seed and exists to make the compute/accuracy trade visible.
+
+## One offline lab, end to end
+
+`projects/week-15b-moe-and-reasoning` contains:
+
+- `TopKRouter`: all-expert probabilities, top-k indices and weights, deterministic capacity mask, pre-capacity selected loads, dispatched loads, and finite balance loss.
+- `ExpertMLP` and `TinyMoE`: expert output shapes and weighted combine with zero output for fully dropped tokens.
+- `TinyMoEClassifier` and `train_supervised_moe`: a fixed in-memory separator, task loss plus balance loss, and a reduction smoke test.
+- `verify_arithmetic` and `arithmetic_reward`: a deliberately narrow rule-based verifier with no evaluator or network call.
+- `group_relative_advantages`, `grpo_loss`, and `grpo_step`: a minimum grouped update over categorical answer IDs.
+- `sample_grouped_answers` and `test_time_majority_vote`: seeded grouped sampling and explicit vote cost.
+
+Run the checks from the project directory:
+
+```bash
+PYTHONPATH=src ../../.venv/bin/python -m pytest
+../../.venv/bin/ruff check src tests
+PYTHONPATH=src ../../.venv/bin/python notebooks/01-moe-reasoning.py
+```
+
+Do not download GSM8K for this lesson. The project uses deterministic arithmetic fixtures and a synthetic supervised batch so the routing, verifier, advantage, finite-gradient, and loss-reduction contracts are testable offline. A challenge assignment may add a supplied local fixture, but a network corpus is outside the default path.
+
+## Company Lens: public evidence versus practice analogy
+
+<CompanyLens
+  topic="sparse experts, reasoning post-training, and test-time compute"
+  tldr={{
+    openai: "Public OpenAI releases and research support discussion of inference-time reasoning and evaluation for named systems, but do not establish this MoE router, a current private architecture, or undocumented training details.",
+    anthropic: "Public Anthropic research and model documentation support release-specific discussion of model behavior and evaluation; they do not establish a Claude MoE layout, GRPO use, or private test-time scheduler.",
+    deepmind: "Public Google DeepMind work supports discussion of scaling, verification, search, and named model research. It does not establish that every current Gemini system uses the toy MoE or this RL loop.",
+    meta: "Public Meta/FAIR papers and open model cards provide evidence for named dense and sparse releases. They do not reveal every production router, capacity policy, reward pipeline, or serving topology.",
+    xai: "Public xAI announcements and technical materials are release-specific and limited for exact internals. The transferable analogy is how to measure active compute and verifier boundaries, not what a private Grok stack uses.",
+    deepseek: "DeepSeek-V3 and DeepSeek-R1 reports are the central public sources for the named MoE, DualPipe, GRPO, RLVR, and majority-vote discussion. Their scope does not make this tiny lab a reproduction or reveal later private changes.",
+    qwen: "Public Qwen reports, repositories, and release posts support named-version comparisons and distillation context. They do not establish Qwen's full current architecture, reward loop, or serving decisions."
+  }}
+  whyDiffer="A paper or model card establishes what its authors report for a named release, configuration, and evaluation. It does not establish a company's entire current stack, private data, routing telemetry, hardware schedule, reward implementation, or inference policy. The toy project establishes only local tensor contracts: top-k weights, capacity accounting, finite balance loss, a narrow arithmetic verifier, zero-mean group advantages, and a decreasing synthetic loss. Every entry below is therefore a caveated evidence boundary, not a claim that the company uses this code."
+  sources={{
+    openai: { paper: "OpenAI public reasoning and model reports — named-release evidence only", blog: "openai.com/research — public index; not evidence of undocumented internals" },
+    anthropic: { paper: "Anthropic public model/system documentation — release-specific scope", blog: "anthropic.com/research — public research index with date boundaries" },
+    deepmind: { paper: "Public Google DeepMind scaling, verification, and model papers — named-work scope", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "Meta/FAIR model reports and open model cards — public artifact scope", blog: "ai.meta.com/research — public FAIR index, not a deployment inventory" },
+    xai: { paper: "Public xAI/Grok technical material — inspect the exact version", blog: "x.ai/blog — public announcements, not private architecture evidence" },
+    deepseek: { paper: "DeepSeek-V3 arXiv:2412.19437 and DeepSeek-R1 arXiv:2501.12948 — named reports", blog: "deepseek.com/research — public release and research index" },
+    qwen: { paper: "Qwen technical reports and repositories — named release evidence", blog: "qwenlm.github.io/blog — public release posts with version boundaries" }
+  }}
+  caseStudy="The case study is one fixed local experiment: a top-k MLP MoE receives a synthetic two-class batch; a parser verifies binary arithmetic; a categorical policy samples answer IDs; grouped rewards produce relative advantages; and a seeded majority vote aggregates noisy outputs. It cannot establish language quality, reasoning generalization, expert semantics, production throughput, scaling laws, safety, or any company's current architecture. A credible report records seed, device, model dimensions, top-k, capacity factor, dropped assignments, optimizer, group size, verifier grammar, sample count, and cost."
+  interviewAngle={{
+    openai: "Separate the general idea of test-time compute from a claim about a private OpenAI implementation. Design an evaluation that reports pass@1, majority vote, latency, and verifier calls at matched budgets.",
+    anthropic: "Explain why a local verifier test is a reward-contract test rather than evidence about a Claude architecture. Propose adversarial cases for reward hacking and ambiguous answers.",
+    deepmind: "Derive the active-versus-total parameter accounting for an MoE and contrast a public named research result with an unsupported claim about all current Google systems.",
+    meta: "Design a dense-versus-sparse ablation that matches active FLOPs and reports dispatch time, dropped tokens, expert loads, and quality rather than parameter count alone.",
+    xai: "When public internals are sparse, state what can be measured locally—router balance, verifier accuracy, and vote cost—and what cannot be inferred about a private serving stack.",
+    deepseek: "Explain which details are attributed to the public DeepSeek-V3 report and which GRPO details are attributed to DeepSeek-R1 arXiv:2501.12948. State why the toy is only GRPO-like and why DualPipe is not implemented.",
+    qwen: "Compare an MoE total/active-parameter budget with a dense baseline and separate public Qwen release evidence from speculation about its current reward or routing pipeline."
+  }}
+/>
+
+<ReferenceProject path="projects/week-15b-moe-and-reasoning" name="moe-and-reasoning" hours="6-8 hrs">
+A deterministic tiny MoE and reasoning lab: top-k routing, capacity accounting, load balancing, an arithmetic verifier, grouped relative advantages, a GRPO-like update, and test-time majority vote. It is a transparent toy, not a DeepSeek reproduction.
+</ReferenceProject>
+
+## Assignments
+
+<Assignments>
+- **Warmup (45–60 min):** derive the top-k output and capacity shapes for `N=12`, `E=4`, `K=2`; hand-compute one balance-loss term; draw a dense, sparse, and test-time-compute budget; and predict the advantages for an all-equal reward group. Begin with failing routing-sum and zero-mean assertions.
+- **Build (3–4 hrs):** run the notebook offline, inspect pre-capacity versus dispatched loads at three capacity factors, train the synthetic MoE, verify positive/negative arithmetic cases, run one grouped update, and compare one sample with 3/5/9-way majority vote. Record seed, device, dimensions, loss terms, verifier grammar, and all dropped assignments.
+- **Challenge (3+ hrs):** add a dense matched-parameter baseline, score noisy arithmetic across at least five seeds, implement a documented score-priority capacity policy, or add a reference-policy penalty. Test first and report confidence intervals, verifier failures, latency/cost, and the distinction between public DeepSeek mechanics and local design.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="25 min">
+**“Your MoE has fewer active parameters and your majority vote is more accurate. Is it cheaper and better?”**
+
+Rubric:
+- **Baseline signal:** derives top-k and capacity shapes, distinguishes total from active parameters, checks finite gradients and task/balance losses, and names the verifier, sample count, seed, and device.
+- **Senior signal:** discusses router collapse, dropped-token policy, all-to-all dispatch/combine, expert specialization versus forced balance, correlated samples, verifier reliability, and quality at matched latency or cost.
+- **Staff signal:** proposes a pre-registered dense/sparse and pass@1/consensus matrix with held-out tasks, multiple seeds, peak memory, wall-clock, communication telemetry, reward-hacking tests, and public-source/version boundaries. Explicitly refuses to infer private company internals or call the toy implementation DeepSeek-V3/R1.
+
+Worked solution: `projects/week-15b-moe-and-reasoning/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **DeepSeek-V3 Technical Report**, DeepSeek-AI, arXiv:2412.19437 — public named-release source for MLA, DeepSeekMoE, auxiliary-loss-free balancing, MTP, FP8, node-limited routing, and DualPipe. Treat its configuration and claims as release-scoped.
+- **DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models**, Shao et al. (2024), arXiv:2402.03300 — primary source introducing GRPO.
+- **DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning**, DeepSeek-AI, arXiv:2501.12948 — later use of GRPO for R1 reasoning RL, plus this lesson's RLVR/R1 discussion, reasoning stages, and reported consensus measurements.
+- **DeepSeekMoE: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models**, Dai et al. (2024), arXiv:2401.06066 — fine-grained experts and shared/routed specialization in the named work.
+- **Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity**, Fedus et al. (2021) — sparse routing and capacity/load-balancing context.
+- **Scaling Laws for Neural Language Models**, Kaplan et al. (2020) — empirical power-law framing; do not extrapolate beyond its regime without an experiment.
+- **Training Compute-Optimal Large Language Models**, Hoffmann et al. (2022, Chinchilla) — compute/data allocation evidence and its assumptions.
+- **Scaling LLM Test-Time Compute Optimally Can Be More Effective Than Scaling Model Parameters**, Snell et al. (2024) — public test-time compute framing; separate the named study from this toy vote.
+- **Self-Consistency Improves Chain of Thought Reasoning in Language Models**, Wang et al. (2022) — sampling and aggregation context for majority vote.
+- **Let’s Verify Step by Step**, Lightman et al. (2023) — process verification context and the cost of judging intermediate steps.
+</FurtherReading>
+
+<KeyTakeaways>
+- Dense, sparse MoE, retrieval, and reasoning systems spend capacity in different places; report the budget that actually ran, not only total parameters.
+- A top-k MoE needs explicit selected-weight semantics (normalized selected weights for `K > 1`, a trainable selected probability for top-1), capacity semantics, pre-capacity and post-capacity load metrics, and a finite balance signal.
+- DeepSeek-V3's public report describes named mechanics including DeepSeekMoE, auxiliary-loss-free balancing, no token dropping in its report, node limits, MTP, FP8, and DualPipe; the offline project is a transparent toy and implements none of its distributed infrastructure.
+- RLVR is strongest where correctness is mechanically checkable. A verifier is part of the model specification and must be tested against ambiguity and reward hacking.
+- This lesson attributes GRPO to DeepSeek-Math and teaches its use in DeepSeek-R1 arXiv:2501.12948. The local grouped clipped update is deliberately GRPO-like, not DeepSeek-R1.
+- Test-time sampling and majority vote can trade extra calls for reliability, but correlated candidates, weak verifiers, latency, and cost bound the conclusion.
+</KeyTakeaways>
