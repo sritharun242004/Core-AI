@@ -1,6 +1,7 @@
 """Bayes: Beta-Binomial conjugate posterior + Bayes factors."""
 
 from __future__ import annotations
+
 import math
 
 
@@ -14,14 +15,18 @@ def posterior_mean(prior_a: float, prior_b: float, heads: int, tails: int) -> fl
 
 
 def log_bayes_factor(
-    likelihood_a: float, likelihood_b: float,
-    prior_a: float, prior_b: float,
+    likelihood_a: float,
+    likelihood_b: float,
+    prior_a: float,
+    prior_b: float,
 ) -> float:
     """log P(D|A)/P(D|B) — a log-scale ratio of how well each hypothesis explains D.
     Priors let the caller compute log-posterior-odds.
 
     Guards against log(0) with a floor at -1e300.
     """
+
     def _log(x: float) -> float:
         return math.log(x) if x > 0 else -1e300
+
     return _log(likelihood_a) - _log(likelihood_b) + _log(prior_a) - _log(prior_b)

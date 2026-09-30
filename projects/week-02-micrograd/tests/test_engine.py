@@ -2,12 +2,13 @@
 covering Review Focus #2 (gradient consistency)."""
 
 from __future__ import annotations
-import math
+
 import pytest
 
 
 def test_forward_pass_arithmetic():
     from micrograd import Value
+
     a = Value(2.0)
     b = Value(-3.0)
     c = a * b + b.relu()
@@ -16,6 +17,7 @@ def test_forward_pass_arithmetic():
 
 def test_backward_gradient_shapes():
     from micrograd import Value
+
     a = Value(2.0)
     b = Value(-3.0)
     c = a * b
@@ -26,6 +28,7 @@ def test_backward_gradient_shapes():
 
 def test_relu_gradient():
     from micrograd import Value
+
     a = Value(-1.0)
     b = a.relu()
     b.backward()
@@ -35,6 +38,7 @@ def test_relu_gradient():
 
 def test_exp_and_log():
     from micrograd import Value
+
     x = Value(1.5)
     y = x.exp().log()
     y.backward()

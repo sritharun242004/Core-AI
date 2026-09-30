@@ -1,9 +1,13 @@
+from .bayes import log_bayes_factor, posterior_mean
+from .entropy import cross_entropy, entropy, kl_divergence
 from .monte_carlo import estimate_pi, expectation
-from .bayes import posterior_mean, log_bayes_factor
-from .entropy import entropy, kl_divergence, cross_entropy
 
 __all__ = [
-    "estimate_pi", "expectation",
-    "posterior_mean", "log_bayes_factor",
-    "entropy", "kl_divergence", "cross_entropy",
+    "cross_entropy",
+    "entropy",
+    "estimate_pi",
+    "expectation",
+    "kl_divergence",
+    "log_bayes_factor",
+    "posterior_mean",
 ]

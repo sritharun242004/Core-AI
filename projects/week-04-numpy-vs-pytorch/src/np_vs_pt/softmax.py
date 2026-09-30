@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import math
+
 import numpy as np
 
 
@@ -18,4 +20,5 @@ def softmax_numpy(x: np.ndarray) -> np.ndarray:
 
 def softmax_torch(x):
     import torch
+
     return torch.softmax(x, dim=-1)

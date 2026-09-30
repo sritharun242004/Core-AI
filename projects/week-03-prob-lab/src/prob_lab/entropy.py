@@ -1,6 +1,7 @@
 """Shannon entropy, KL divergence, cross-entropy — all in nats, zero-safe."""
 
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -18,7 +19,7 @@ def kl_divergence(p: np.ndarray, q: np.ndarray) -> float:
     q = np.asarray(q, dtype=float)
     assert p.shape == q.shape, "distributions must share shape"
     mask = p > 0
-    if np.any((q[mask] <= 0)):
+    if np.any(q[mask] <= 0):
         return float("inf")
     return float((p[mask] * (np.log(p[mask]) - np.log(q[mask]))).sum())
 
@@ -28,6 +29,6 @@ def cross_entropy(p: np.ndarray, q: np.ndarray) -> float:
     p = np.asarray(p, dtype=float)
     q = np.asarray(q, dtype=float)
     mask = p > 0
-    if np.any((q[mask] <= 0)):
+    if np.any(q[mask] <= 0):
         return float("inf")
     return float(-(p[mask] * np.log(q[mask])).sum())

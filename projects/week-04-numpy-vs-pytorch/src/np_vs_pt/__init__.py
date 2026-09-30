@@ -1,2 +1,3 @@
-from . import matmul, softmax, crossentropy, kmeans, topk
-__all__ = ["matmul", "softmax", "crossentropy", "kmeans", "topk"]
+from . import crossentropy, kmeans, matmul, softmax, topk
+
+__all__ = ["crossentropy", "kmeans", "matmul", "softmax", "topk"]

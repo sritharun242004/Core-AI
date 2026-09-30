@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -12,5 +13,6 @@ def topk_numpy(x: np.ndarray, k: int) -> np.ndarray:
 
 def topk_torch(x, k: int):
     import torch
+
     _, idx = torch.topk(x, k)
     return idx

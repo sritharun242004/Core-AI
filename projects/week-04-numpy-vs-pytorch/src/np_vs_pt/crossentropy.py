@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -12,4 +13,5 @@ def cross_entropy_numpy(logits: np.ndarray, labels: np.ndarray) -> float:
 
 def cross_entropy_torch(logits, labels):
     import torch
+
     return torch.nn.functional.cross_entropy(logits, labels)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -17,5 +18,4 @@ def matmul_numpy(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def matmul_torch(a, b):
-    import torch  # local import so numpy-only users don't need torch
     return a @ b

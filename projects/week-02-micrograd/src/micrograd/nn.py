@@ -1,7 +1,9 @@
 """Tiny NN layer on top of Value — Neurons, Layers, and a stacked MLP."""
 
 from __future__ import annotations
+
 import random
+
 from .engine import Value
 
 
@@ -13,11 +15,11 @@ class Neuron:
 
     def __call__(self, x: list[Value]) -> Value:
         assert len(x) == len(self.w), f"input dim {len(x)} != weight dim {len(self.w)}"
-        act = sum((wi * xi for wi, xi in zip(self.w, x)), start=self.b)
+        act = sum((wi * xi for wi, xi in zip(self.w, x, strict=True)), start=self.b)
         return act.relu() if self.nonlin else act
 
     def parameters(self) -> list[Value]:
-        return self.w + [self.b]
+        return [*self.w, self.b]
 
 
 class Layer:
@@ -34,20 +36,20 @@ class Layer:
 
 class MLP:
     def __init__(self, nin: int, nouts: list[int]):
-        sizes = [nin] + list(nouts)
+        sizes = [nin, *nouts]
         self.layers = [
-            Layer(sizes[i], sizes[i + 1], nonlin=(i != len(nouts) - 1))
-            for i in range(len(nouts))
+            Layer(sizes[i], sizes[i + 1], nonlin=(i != len(nouts) - 1)) for i in range(len(nouts))
         ]
 
     def __call__(self, x: list[Value]):
         for layer in self.layers:
             x = layer(x)
-            if not isinstance(x, list): x = [x]
+            if not isinstance(x, list):
+                x = [x]
         return x
 
     def parameters(self) -> list[Value]:
         return [p for layer in self.layers for p in layer.parameters()]
 
 
-__all__ = ["Neuron", "Layer", "MLP"]
+__all__ = ["MLP", "Layer", "Neuron"]
