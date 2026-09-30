@@ -1,0 +1,442 @@
+---
+week: 17
+part: 4
+slug: "week-17-mini-rag-multimodal"
+title: "Multimodal systems and retrieval — connect pixels, voices, and evidence"
+hook: "How do we connect a visual or spoken question to evidence without pretending a toy pipeline is a production model?"
+hours: 24
+computeTier: "yellow"
+difficulty: 5
+prereqSlugs: ["week-15b-moe-and-reasoning"]
+referenceProject: "projects/week-17-mini-rag-multimodal"
+accentVar: "--accent-p4"
+---
+
+import Hook from '../../components/content/Hook.astro'
+import Intuition from '../../components/content/Intuition.astro'
+import MathBlock from '../../components/content/MathBlock.astro'
+import CompanyLens from '../../components/content/CompanyLens.astro'
+import ReferenceProject from '../../components/content/ReferenceProject.astro'
+import Assignments from '../../components/content/Assignments.astro'
+import InterviewDrill from '../../components/content/InterviewDrill.astro'
+import FurtherReading from '../../components/content/FurtherReading.astro'
+import KeyTakeaways from '../../components/content/KeyTakeaways.astro'
+import IntuitionCallout from '../../components/callouts/Intuition.astro'
+import Gotcha from '../../components/callouts/Gotcha.astro'
+import { MicroRecall } from '../../components/interactive/MicroRecall'
+
+<Hook>How do we connect a visual or spoken question to evidence without pretending a toy pipeline is a production model?</Hook>
+
+<Intuition>
+Multimodality is not one magic layer. An image encoder turns patches into vectors; a language encoder turns text into vectors; a voice system moves between audio, text, retrieval, and audio; and a generator learns a distribution over possible outputs. Retrieval adds another discipline: before answering, find evidence, rank it, measure it, and preserve its boundary in the answer. The interfaces between these steps matter as much as the individual models.
+
+<IntuitionCallout>This week's reference project is a microscope, not a product replica. Its eight-document corpus, fixed feature map, rule-based reranker, toy graph, NumPy VAE, one denoising update, and tagged voice bytes make every result inspectable offline. A test can establish deterministic ordering or a finite tensor; it cannot establish image quality, speech recognition, factuality, or a company's private architecture.</IntuitionCallout>
+
+The lesson has eight moves: represent images as patches and align them with language; distinguish VAEs, GANs, diffusion, and temporal/world models; make a voice-native pipeline explicit; build lexical, dense-fixture, hybrid, graph, HyDE, and late-interaction retrieval; rerank candidates; evaluate with Recall, MRR, NDCG, and MAP; and report what the local evidence does and does not support.
+
+<MicroRecall questions={[{
+  id: 'week17-recall-rag',
+  prompt: 'What is the safest interpretation of a retrieval metric such as Recall@k?',
+  choices: ['It proves that every generated answer is factually correct', 'It measures whether labelled relevant documents appear in the first k results', 'It measures how fluent a voice synthesizer sounds', 'It reveals a company\'s private training corpus'],
+  correct: 1,
+  explain: 'Recall@k is a ranking metric against a relevance set. It can establish retrieval behavior on that query/qrel fixture; it does not establish generation truth, audio quality, or undocumented internals.'
+}, {
+  id: 'week17-recall-late',
+  prompt: 'What does a late-interaction max-sim score do for each query token?',
+  choices: ['It averages all document tokens before seeing the query', 'It chooses the highest token-level similarity in the document, then aggregates those maxima', 'It expands the knowledge graph forever', 'It replaces relevance labels with model confidence'],
+  correct: 1,
+  explain: 'The toy ColBERT-like score lets each query token find its best matching document token. Aggregating those maxima preserves some token-level alignment rather than pooling each side into one vector first.'
+}]} client:visible />
+</Intuition>
+
+## The anatomy of a multimodal retrieval system
+
+A useful system diagram is a contract diagram:
+
+```text
+image ──> visual encoder ──┐
+                           ├─> shared or joined representation ──> retrieve/rerank
+text  ──> text encoder ────┘                                      │
+                                                                  v
+spoken audio ─> ASR ─> query ─> evidence ─> answer ─> TTS ─> audio
+```
+
+Each arrow hides a failure mode. A patch tokenizer can lose small objects. A shared
+embedding can retrieve a semantically close but wrong image. ASR can mis-transcribe a
+proper noun. A retriever can miss the right paragraph. A reranker can overfit a lexical
+cue. A generator can ignore a citation. TTS can render a confident but unsupported
+answer. The offline project exposes each seam so an assignment can test one contract at
+a time.
+
+## 1. CLIP: make image and text comparable
+
+An image is a grid of channels, height, and width. A vision encoder can produce one
+vector from the whole image, or a sequence of patch vectors. A text encoder produces a
+sequence and then pools it into a text vector. Contrastive training encourages the
+matching image/text pair to be close and non-matching pairs in the batch to be apart.
+For normalized image vectors `v_i` and text vectors `t_j`, a symmetric contrastive loss
+can be written:
+
+<MathBlock latex="s_{ij}=\frac{v_i^\top t_j}{\tau},\qquad \mathcal{L}_{I\rightarrow T}=-\frac{1}{B}\sum_i\log\frac{\exp(s_{ii})}{\sum_j\exp(s_{ij})}" />
+
+The text-to-image direction swaps the axes, and a common objective averages both
+directions. `\tau` is a temperature, often learned or configured. Normalization means
+the dot product is a cosine similarity; without it, vector norm can dominate the score.
+The batch supplies negative examples, so batch composition is part of the training
+signal.
+
+The Week 17 corpus does **not** train CLIP and does not contain images. Its `dense`
+method is a deliberately listed alias feature map: `utterances` can map to `speech`,
+and `images` to `image`, so a learner can inspect a semantic-ish retrieval contract
+without a checkpoint. A real CLIP-like extension must name its model, tokenizer,
+preprocessing, license, checkpoint, and evaluation set.
+
+<Gotcha>“The image and text vectors are close” is not the same as “the caption is true.” Contrastive alignment is a retrieval signal. It can be sensitive to captions, prompts, resolution, demographic coverage, and the negative set.</Gotcha>
+
+## 2. ViT: turn image patches into tokens
+
+A Vision Transformer (ViT) treats an image as a sequence. For an image with height `H`,
+width `W`, channels `C`, and square patch size `P`, the number of patches is:
+
+<MathBlock latex="N=\frac{H W}{P^2},\qquad x\in\mathbb{R}^{H\times W\times C}\rightarrow X\in\mathbb{R}^{N\times(P^2C)}\rightarrow E\in\mathbb{R}^{N\times d}" />
+
+The patch projection is a learned linear map. Positional information says that the patch
+at the top-left is not interchangeable with the patch at the bottom-right. A class token
+can attend to patch tokens and provide a global representation. A self-attention block
+then has the familiar shape:
+
+<MathBlock latex="\operatorname{Attention}(X)=\operatorname{softmax}\left(\frac{QK^\top}{\sqrt{d_h}}\right)V" />
+
+This is a representation choice, not a guarantee that all spatial details survive. A
+small patch size raises the token count; a large patch loses local detail. Resolution,
+augmentation, positional scheme, and pretraining objective alter the behavior. The
+project's text corpus uses document ids rather than pixels, so its CLIP/ViT discussion
+is an architectural map and its executable multimodal piece is a tiny array demo below.
+
+## 3. VAE and GAN: two ways to model a data distribution
+
+### Variational autoencoder
+
+An autoencoder has an encoder and decoder. A variational autoencoder makes the encoder
+predict a distribution, often diagonal Gaussian parameters `\mu(x)` and
+`\log\sigma^2(x)`, then samples a latent with the reparameterization trick:
+
+<MathBlock latex="q_\phi(z\mid x)=\mathcal{N}(\mu_\phi(x),\operatorname{diag}(\sigma_\phi^2(x))),\qquad z=\mu_\phi(x)+\sigma_\phi(x)\odot\epsilon,\quad\epsilon\sim\mathcal{N}(0,I)" />
+
+The evidence lower bound (ELBO) is commonly optimized as a reconstruction term plus a
+KL term in the loss convention:
+
+<MathBlock latex="\mathcal{L}_{VAE}=\mathbb{E}_{q_\phi(z\mid x)}[-\log p_\theta(x\mid z)]+D_{KL}(q_\phi(z\mid x)\parallel p(z))" />
+
+The KL term keeps the latent close to a prior, which makes prior sampling meaningful,
+while the reconstruction term preserves information needed to decode. A VAE may trade
+sharpness for a smooth and structured latent space. The project reports a sampled
+latent, reconstruction MSE, and a diagonal-Gaussian KL on a tiny grayscale array. It
+does not train an image VAE.
+
+### GAN
+
+A generative adversarial network has a generator `G` and discriminator `D`. In the
+classic minimax framing, the discriminator separates real samples from generated ones
+while the generator tries to make generated samples look real:
+
+<MathBlock latex="\min_G\max_D\;\mathbb{E}_{x\sim p_{data}}[\log D(x)]+\mathbb{E}_{z\sim p(z)}[\log(1-D(G(z)))]" />
+
+The game is not a normal reconstruction objective. Training can be unstable, the
+discriminator can overpower the generator, and mode collapse can reduce diversity. A
+successful GAN sample is also not proof that the training distribution was complete or
+unbiased. Do not conflate GAN adversarial training with VAE variational inference or
+diffusion denoising.
+
+### Diffusion
+
+A forward diffusion process adds noise over steps. In a simplified Gaussian schedule:
+
+<MathBlock latex="q(x_t\mid x_{t-1})=\mathcal{N}(\sqrt{1-\beta_t}\,x_{t-1},\beta_t I)" />
+
+A useful closed form samples a noisy state from the original image:
+
+<MathBlock latex="x_t=\sqrt{\bar\alpha_t}x_0+\sqrt{1-\bar\alpha_t}\epsilon,\qquad \epsilon\sim\mathcal{N}(0,I)" />
+
+A learned denoiser predicts noise, a score, or a related parameterization and runs the
+reverse process. The reference project takes one seeded noisy array and applies a local
+neighbor mean. That is intentionally **diffusion-shaped**, not a trained U-Net, score
+model, or image generator. It gives us a finite step and a tensor to test, not a quality
+claim.
+
+<Gotcha>A single finite denoising operation is not “a diffusion model.” The schedule, parameterization, conditioning, sampler, number of steps, training data, and evaluation all matter.</Gotcha>
+
+## 4. World models and video models
+
+A static image representation does not tell us how a scene changes. A video model must
+represent spatial content and time. One abstraction introduces a latent state `s_t`, an
+action or condition `a_t`, and a transition model:
+
+<MathBlock latex="s_{t+1}\sim p_\theta(s_{t+1}\mid s_t,a_t),\qquad x_t\sim p_\theta(x_t\mid s_t)" />
+
+A world model is often discussed as a model that predicts or simulates future states
+for planning. A video generator may predict the next latent, denoise a whole temporal
+window, or use factorized spatial/temporal attention. These labels overlap in practice,
+but the evaluation question is different: does the model preserve identity, geometry,
+motion, causality, and long-range consistency rather than only produce one plausible
+frame?
+
+The corpus includes a `video` document with explicit links to diffusion and voice. That
+is a knowledge-graph teaching edge, not a video model. It cannot establish temporal
+prediction, physical understanding, or a world model's planning utility. To extend the
+project, add a tiny sequence fixture and test frame shape, time ordering, and a held-out
+transition before measuring perceptual quality.
+
+## 5. Audio and voice-native pipelines
+
+A voice-native assistant is more than “speech in, text out.” A minimal pipeline is:
+
+1. **VAD/ingress:** identify speech segments and accept an audio stream;
+2. **ASR:** transcribe speech to text, with timestamps and uncertainty if available;
+3. **query normalization:** preserve names, units, negation, and language information;
+4. **retrieval:** search and rerank evidence with a bounded candidate budget;
+5. **response policy:** answer, ask a clarification, or explicitly say evidence is missing;
+6. **TTS:** synthesize the response with interruption and streaming behavior;
+7. **telemetry:** record latency, errors, consent, retention, and citation state.
+
+For a voice query `a`, the executable seam is:
+
+```python
+transcript = transcriber.transcribe(a)
+hits = retriever.search(transcript, method="hybrid")
+answer = answer_question(retriever, transcript)
+audio = synthesizer.synthesize(answer.text)
+```
+
+The adapters in the reference project are honest stubs. `OfflineTranscriber` decodes
+UTF-8 fixture bytes; it does not recognize speech. `OfflineSynthesizer` returns bytes
+prefixed with `OFFLINE_AUDIO:`; it does not produce a waveform. Protocols make the seams
+injectable, and tests can verify no API call is required. A real implementation must
+address microphone permissions, speaker interruption, streaming backpressure, PII,
+accent and language coverage, timeout behavior, and the difference between transcript
+confidence and answer confidence.
+
+## 6. Retrieval: lexical, dense, hybrid, and RAG variants
+
+Let a corpus contain documents `d_1,\ldots,d_n` and a query `q`. A retrieval system
+returns a ranked list `\pi(q)`. The answer generator should see only a bounded context
+selected by a retrieval policy, and the final response should preserve document ids or
+citations. “RAG” describes this retrieve-then-generate pattern; it does not guarantee
+grounding.
+
+### TF-IDF and cosine
+
+Term frequency captures occurrences in one document; inverse document frequency reduces
+the influence of ubiquitous terms. One common weight is:
+
+<MathBlock latex="\operatorname{tfidf}(t,d)=(1+\log f_{t,d})\left[\log\frac{1+N}{1+\operatorname{df}(t)}+1\right]" />
+
+With vectors `v_q` and `v_d`, cosine similarity is:
+
+<MathBlock latex="\operatorname{cos}(q,d)=\frac{v_q^\top v_d}{\lVert v_q\rVert_2\lVert v_d\rVert_2}" />
+
+TF-IDF is transparent and strong for exact terms, identifiers, and small corpora. It
+can miss synonyms, spelling variation, and cross-modal meaning. The project includes
+explicit tokenization and an all-zero query contract; it never returns zero-score
+documents as if they were evidence.
+
+### Dense retrieval
+
+A dense retriever maps a query and document to vectors from a trained encoder:
+
+<MathBlock latex="e_q=f_\theta(q),\qquad e_d=g_\phi(d),\qquad s(q,d)=e_q^\top e_d\;\text{or}\;\operatorname{cos}(e_q,e_d)" />
+
+Approximate nearest-neighbor indexes make a large corpus searchable, but introduce
+indexing, freshness, filtering, and recall choices. A dense vector can match meaning
+without literal overlap and can also produce a confident semantic miss. This project's
+`dense` baseline is not trained: a small `ALIASES` table makes the semantic-ish behavior
+inspectable and tests can reproduce it exactly.
+
+### Hybrid retrieval and fusion
+
+Lexical and dense scores have incompatible scales. An unsafe hybrid blindly adds raw
+scores. Alternatives normalize each score distribution, learn a combination, or fuse
+rankings. Reciprocal-rank fusion is simple:
+
+<MathBlock latex="\operatorname{RRF}(d)=\sum_{r\in\text{rankers}}\frac{1}{k_0+\operatorname{rank}_r(d)}" />
+
+The project demonstrates both a transparent score-average hybrid and RRF. Report which
+one you used; “hybrid” is not a sufficient experiment description.
+
+### Reranking
+
+A first-stage retriever may return 20–100 candidates. A reranker reads each query/
+document pair with a more expensive interaction and returns a better order. This is a
+precision/latency trade-off:
+
+```text
+large corpus -> cheap top-N retrieval -> expensive candidate reranking -> top-k context
+```
+
+The lab's reranker uses canonical token coverage and bigram overlap. It is a rule-based
+cross-encoder analogue that never invents a candidate. It is not a trained reranker.
+Candidate preservation is a useful test because a reranker that introduces an unindexed
+document is not merely “more accurate”; it has violated the pipeline contract.
+
+### HyDE
+
+Hypothetical Document Embeddings (HyDE) expands a query by generating a hypothetical
+answer/document and embedding that text for retrieval. The intuition is that a document
+style may match the corpus better than a short question. The risk is equally important:
+the hypothetical text can hallucinate entities or details and pull retrieval toward
+those inventions. The project uses a deterministic `hyde_query` seam that concatenates a
+supplied hypothetical string. It does not call a language model and does not claim that
+the supplied expansion is true.
+
+### GraphRAG and knowledge graphs
+
+A knowledge graph represents entities and typed relations. A simple edge set is
+`(subject, relation, object)`. GraphRAG can retrieve seed documents, expand neighbors,
+then combine graph context with text retrieval. It can improve multi-hop recall, but
+entity resolution, edge provenance, relation direction, fan-out, freshness, and graph
+construction errors become first-class concerns.
+
+The fixture stores links such as `clip → vit` and `vae → diffusion`. `graph_expand`
+walks a bounded number of hops, applies a propagation penalty, and tracks visited nodes.
+This establishes bounded traversal on known links. It is not an enterprise graph, a
+knowledge extraction system, or evidence that any named company uses a particular
+GraphRAG architecture. A serious graph evaluation reports edge provenance and compares
+no-expansion, one-hop, and multi-hop slices.
+
+### ColBERT-style late interaction
+
+A single pooled vector can blur which query term matched which document term. Late
+interaction preserves token-level vectors. For query tokens `q_i` and document tokens
+`d_j`, a toy max-sim score is:
+
+<MathBlock latex="S(q,d)=\frac{1}{|q|}\sum_i\max_j\;\operatorname{sim}(e(q_i),e(d_j))" />
+
+The reference implementation computes this with the fixed feature vectors. It is
+ColBERT-like in the max-sim idea, not a ColBERT checkpoint, tokenizer, index, or
+benchmark. The useful lesson is to inspect the interaction order: each query token
+chooses its best document token before aggregation.
+
+## 7. Evaluate retrieval before celebrating an answer
+
+Let `R_q` be the set of positive documents for query `q` and `rank_q(d)` the position of
+document `d` when it is retrieved. With a cutoff `k`:
+
+<MathBlock latex="\operatorname{Recall}@k=\frac{|R_q\cap\operatorname{top}_k(q)|}{|R_q|}" />
+
+Reciprocal rank uses the first relevant hit:
+
+<MathBlock latex="\operatorname{RR}@k=\begin{cases}1/r,&r=\min\{i:d_i\in R_q\},\ r\le k\\0,&\text{otherwise}\end{cases}" />
+
+Mean reciprocal rank is the average RR over queries. Average precision averages precision
+at every relevant hit and divides by the number of relevant documents. The project uses
+that denominator even when some relevant documents are not retrieved:
+
+<MathBlock latex="\operatorname{AP}@k=\frac{1}{|R_q|}\sum_{i=1}^{k}P@i\,\mathbf{1}[d_i\in R_q]" />
+
+NDCG supports graded relevance. With gain `2^{rel}-1`:
+
+<MathBlock latex="\operatorname{DCG}@k=\sum_{i=1}^{k}\frac{2^{rel_i}-1}{\log_2(i+1)},\qquad \operatorname{NDCG}@k=\frac{\operatorname{DCG}@k}{\operatorname{IDCG}@k}" />
+
+The evaluator macro-averages over the union of query ids, so an absent ranking counts as
+zero rather than disappearing from the report. Edge cases are part of the metric API:
+empty relevance is zero, duplicate ranked ids are rejected, relevance must be finite and
+nonnegative, and `k` must be positive.
+
+Metrics still depend on labels. A qrel made by one annotator, an incomplete graph, or a
+query set that excludes hard cases can make a system look better without making answers
+more trustworthy. Add answer-level citation checks, abstention rates, latency, and
+failure slices for a real application. Do not optimize only the average.
+
+## 8. The offline reference project and its evidence boundary
+
+`projects/week-17-mini-rag-multimodal/` keeps the baseline small enough to inspect:
+
+- `corpus.py` defines deterministic documents, links, aliases, queries, and qrels;
+- `retrieval.py` defines tokenization, TF-IDF, dense fixture, hybrid, RRF, and reranking;
+- `metrics.py` defines Recall, MRR, NDCG, MAP, validation, and macro averaging;
+- `variants.py` defines bounded graph expansion, HyDE seam, and max-sim late interaction;
+- `generation.py` defines the NumPy VAE and one-step denoising fixture;
+- `voice.py` defines transcriber/synthesizer protocols and offline adapters;
+- `pipeline.py` returns extractive evidence with document-id citations;
+- `tests/` starts with ordering, metric arithmetic, edge cases, finite steps, and offline
+  contracts; `notebooks/01-mini-rag-multimodal.py` runs the complete walkthrough.
+
+Run it with `PYTHONPATH=src .venv/bin/pytest -q tests` from the project directory. The
+required path costs $0 and makes no API calls. `COMPUTE.md` describes optional cloud
+extensions, but a hosted encoder or voice API must not replace the baseline tests.
+
+<CompanyLens
+  topic="multimodal encoders, generative image/video/audio models, and retrieval-augmented systems"
+  tldr={{
+    openai: "Public OpenAI research and release materials provide evidence for selected multimodal, generative, and retrieval-related work. They do not expose every current model architecture, training corpus, safety filter, voice pipeline, or serving decision; this offline lab is not an OpenAI reconstruction.",
+    anthropic: "Public Anthropic research and product documentation support bounded discussion of model behavior, evaluation, and alignment. They do not establish a particular current Claude multimodal, retrieval, or voice implementation, so this project makes no such attribution.",
+    deepmind: "Public Google DeepMind papers describe named work in vision, generative modeling, world models, and agents. A named paper is evidence for its own scope, not for every current Google system or an undocumented GraphRAG/voice stack.",
+    meta: "Public Meta/FAIR papers and open releases provide useful evidence for selected vision-language and generative methods. They do not reveal every deployed embedding, retrieval index, data mixture, safety layer, or audio pipeline.",
+    xai: "Public xAI announcements and technical materials are release-specific and limited for exact multimodal and retrieval internals. The transferable lesson is to test an explicit interface, not to infer a private Grok voice or RAG architecture.",
+    deepseek: "Public DeepSeek reports document selected named releases and methods. They do not establish an undocumented multimodal training recipe, product retrieval system, graph, or voice stack; this local corpus is only a reproducible teaching fixture.",
+    qwen: "Public Qwen reports, repositories, and release notes provide evidence for named open artifacts. They do not establish every current Qwen-VL, audio, retrieval, or serving choice, and no private implementation is attributed here."
+  }}
+  whyDiffer="Public evidence can establish an equation, an open checkpoint, a named benchmark, or a release-specific behavior. It cannot by itself establish a company's complete current architecture, proprietary data, model weights, evaluation filters, inference kernels, hardware allocation, moderation policy, or deployment metrics. The seven entries therefore separate public evidence from practice analogy. The reference project establishes only local deterministic ranking, bounded graph traversal, metric arithmetic, finite NumPy operations, and injectable voice contracts. It does not establish multimodal quality, factuality, speech recognition, safety, or any company's internal system."
+  sources={{
+    openai: { paper: "CLIP-like and multimodal evidence should be attributed to the specific public paper or release being discussed; verify scope and date before generalizing", blog: "openai.com/research — public research index, not evidence of undocumented current internals" },
+    anthropic: { paper: "Public Anthropic model and alignment documentation — inspect the named release; exact current multimodal/RAG architecture is not asserted", blog: "anthropic.com/research — public research index with release boundaries" },
+    deepmind: { paper: "A named Google DeepMind vision, diffusion, or world-model paper — use only the equations and experiments it actually reports", blog: "deepmind.google/discover/blog — public research and engineering posts" },
+    meta: { paper: "FAIR publications and open model/tooling releases — public method evidence, not a deployment inventory", blog: "ai.meta.com/research — public FAIR research index" },
+    xai: { paper: "Public Grok technical materials — inspect the specific version; no undocumented multimodal or voice implementation is claimed", blog: "x.ai/blog — public announcements with version boundaries" },
+    deepseek: { paper: "DeepSeek-VL or other named public technical report — release-specific evidence only; do not infer private retrieval or voice internals", blog: "deepseek.com/research — public research index" },
+    qwen: { paper: "A named Qwen-VL/audio technical report or repository — public artifact scope only; private training and serving choices remain unknown", blog: "qwenlm.github.io/blog — public release posts" }
+  }}
+  caseStudy="The concrete case study is the eight-document offline corpus. It can establish that known queries produce deterministic TF-IDF/dense/hybrid rankings, a reranker preserves candidates, graph expansion follows bounded links, HyDE concatenation is repeatable, late interaction returns finite max-sim scores, VAE and denoising arrays stay finite, and voice adapters run without network calls. It cannot establish CLIP or ViT accuracy, image/video quality, audio recognition, factual answer correctness beyond the fixture, production latency, safety, or a company's private stack. A fair extension must report corpus/query versions, qrels, method, k, candidate budget, seed, device, and named public source."
+  interviewAngle={{
+    openai: "Design a multimodal RAG evaluation that separates image-text retrieval, evidence ranking, citation faithfulness, voice latency, and answer quality. State which public release details would be needed before attributing the design to OpenAI.",
+    anthropic: "Explain why an abstaining, cited response can be safer than a fluent answer with weak evidence. Propose a public-evidence boundary for a voice/RAG comparison without attributing private Claude internals.",
+    deepmind: "Compare pooled cosine, late-interaction max-sim, and graph expansion. Identify which named public paper supports each claim and what cannot be inferred about a current Google system.",
+    meta: "Design an ablation of lexical, dense, and hybrid retrieval with fixed qrels and candidate budgets. Explain why public FAIR tooling does not reveal every deployed index or multimodal data pipeline.",
+    xai: "Given sparse public evidence, distinguish the general interface contract of ASR→RAG→TTS from an unsupported claim about xAI's current voice, model, or retrieval stack.",
+    deepseek: "Read one named public multimodal report, reproduce one bounded metric or representation locally, and list the dataset, serving, safety, and retrieval details that remain unspecified.",
+    qwen: "Use a named open Qwen-VL or audio artifact as a versioned comparison point. Report preprocessing, qrels, latency, and failure cases without generalizing to undocumented Qwen deployments."
+  }}
+/>
+
+<ReferenceProject path="projects/week-17-mini-rag-multimodal" name="mini-rag-multimodal" hours="8-10 hrs">
+An offline NumPy lab with a deterministic text corpus, TF-IDF/dense-fixture/hybrid retrieval, candidate-preserving reranking, RRF, Recall/MRR/NDCG/MAP, bounded graph expansion, deterministic HyDE, ColBERT-like max-sim late interaction, a tiny VAE and denoising step, and injectable voice-native adapters. It uses no downloads or required API calls; its generative and multimodal components are explicitly teaching fixtures rather than pretrained models.
+</ReferenceProject>
+
+<Assignments>
+- **Warmup (45-60 min):** inspect the corpus and links, derive one TF-IDF cosine and one NDCG calculation, compare lexical/dense/hybrid rankings, trace a bounded graph hop, and explain token-level max-sim. Start with a failing test for one edge case.
+- **Build (3-4 hrs):** run the notebook, evaluate every query at `k=3`, compare first-stage methods and candidate reranking, add a one-hop versus no-hop graph table, run the VAE/denoising finite-step checks, and inject fake ASR/TTS adapters. Report Recall, MRR, NDCG, MAP, seed, candidate budget, and one no-evidence failure.
+- **Challenge (4+ hrs):** add a local licensed image/text encoder, typed graph edges, a local reranker, a real token-level index, a tiny denoising update, or a documented local voice adapter. Add tests first and report quality, latency, failure slices, provenance, and the boundary between local evidence and public-company analogy.
+</Assignments>
+
+<InterviewDrill role="research-eng" time="25 min">
+**“Your hybrid RAG system improves Recall@5 but users say answers became less trustworthy. How do you debug it?”**
+
+Rubric:
+- **Baseline signal:** checks qrels, duplicate ids, query normalization, candidate count, score calibration, reranker ordering, citation preservation, missing-evidence behavior, and whether the answer used only retrieved context.
+- **Senior signal:** separates retrieval recall from precision, reranker quality, context dilution, graph fan-out, HyDE hallucination, ASR errors, generator faithfulness, latency, and user-visible abstention; adds slices for entity names, negation, voice transcripts, and multi-hop queries.
+- **Staff signal:** proposes a pre-registered multi-seed evaluation with graded qrels, answer-level citation checks, latency/cost budgets, provenance for graph edges and model checkpoints, privacy/retention controls for audio, and public-evidence caveats rather than a claim about a company's private multimodal stack.
+
+Worked solution: `projects/week-17-mini-rag-multimodal/SOLUTION_NOTES.md`.
+</InterviewDrill>
+
+<FurtherReading>
+- **Learning Transferable Visual Models From Natural Language Supervision** — Radford et al.; public CLIP contrastive image-text formulation, scoped to the named work.
+- **An Image is Worth 16x16 Words** — Dosovitskiy et al.; Vision Transformer patch/token representation.
+- **Auto-Encoding Variational Bayes** — Kingma and Welling; variational inference and the reparameterization idea.
+- **Generative Adversarial Nets** — Goodfellow et al.; the adversarial generator/discriminator objective.
+- **Denoising Diffusion Probabilistic Models** — Ho et al.; forward noising and learned reverse denoising, scoped to the paper.
+- **Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks** — Lewis et al.; retrieve-then-generate formulation and its named evaluation scope.
+- **Precise Zero-Shot Dense Retrieval without Relevance Labels** — Gao et al.; HyDE query-expansion motivation, scoped to the named method.
+- **ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT** — Khattab and Zaharia; late-interaction max-sim idea, not a claim that the toy vectors are BERT.
+- **From Local to Global: A Graph RAG Approach to Query-Focused Summarization** — Edge et al.; public GraphRAG approach, scoped to the named work and not a production architecture claim.
+</FurtherReading>
+
+<KeyTakeaways>
+- CLIP aligns image and text representations through a contrastive objective; ViT represents an image as positional patch tokens. Neither alignment nor patch attention guarantees truth or spatial completeness.
+- VAEs optimize a reconstruction-plus-KL ELBO, GANs play a generator/discriminator game, and diffusion learns a reverse denoising process. The tiny NumPy fixtures demonstrate shapes and finite steps, not image quality.
+- World/video models add temporal state, motion, and consistency requirements; a linked `video` document is not a video model.
+- A voice-native system needs explicit ASR, query, retrieval, response, TTS, interruption, privacy, and telemetry contracts. Offline adapters can test the seam without pretending to recognize speech.
+- TF-IDF, dense, hybrid, RRF, reranking, HyDE, GraphRAG, and late interaction answer different retrieval problems. Name the variant, candidate budget, index, and evidence boundary.
+- Recall@k, MRR, MAP, and NDCG measure labelled ranking behavior. Add citation, abstention, latency, and failure-slice evaluations before claiming grounded answers.
+- Public papers support named methods and releases, not undocumented company internals. Keep the seven CompanyLens entries release-specific and distinguish evidence from practice analogy.
+</KeyTakeaways>
