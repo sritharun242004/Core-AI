@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "pnpm --filter book build",
-  "installCommand": "pnpm install --frozen-lockfile",
-  "outputDirectory": "apps/book/.vercel/output"
+  "buildCommand": "pnpm --filter book build && rm -rf .vercel/output && cp -r apps/book/.vercel/output .vercel/output",
+  "installCommand": "pnpm install --frozen-lockfile"
 }

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "postbuild": "pagefind --site dist/client",
+    "postbuild": "pagefind --site dist/client && pagefind --site .vercel/output/static",
     "preview": "astro preview",
     "test": "playwright test",
     "test:unit": "vitest run"
