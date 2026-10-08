@@ -1,3 +1,4 @@
+# pyright: reportUnknownArgumentType=false
 """A tiny deterministic tabular gridworld MDP.
 
 The environment deliberately has no framework or data dependency.  A state is

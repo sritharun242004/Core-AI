@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 # %% [markdown]
 # Week 12 — optimize a policy in a tiny gridworld
 #

@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false
 """Tiny deterministic causal-language-model pretraining helpers."""
 
 from __future__ import annotations

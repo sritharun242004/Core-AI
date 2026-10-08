@@ -39,8 +39,6 @@ def hyde_query(query: str, hypothetical_answer: str, repeats: int = 1) -> str:
     """Concatenate a deterministic hypothetical answer; no language model is called."""
     if repeats < 0:
         raise ValueError("repeats must be nonnegative")
-    if not isinstance(query, str) or not isinstance(hypothetical_answer, str):
-        raise TypeError("query and hypothetical_answer must be strings")
     pieces = [query.strip()] + [hypothetical_answer.strip()] * repeats
     return " ".join(piece for piece in pieces if piece)
 

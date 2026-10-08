@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 import numpy as np
 import pytest
 from rl_gridworld import ACTIONS, Gridworld

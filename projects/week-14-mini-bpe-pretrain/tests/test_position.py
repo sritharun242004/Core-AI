@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 import torch
 from mini_bpe_pretrain import (
     alibi_slopes,

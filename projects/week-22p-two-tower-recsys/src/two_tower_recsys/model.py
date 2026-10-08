@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false
 """Tiny ID towers and one-hop LightGCN-style train-only propagation.
 
 Dense graph and exhaustive negatives are deliberately pedagogical, not scalable.

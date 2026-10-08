@@ -24,17 +24,13 @@ class OfflineTranscriber:
     def transcribe(self, audio: bytes | str) -> str:
         if isinstance(audio, bytes):
             return audio.decode("utf-8").strip()
-        if isinstance(audio, str):
-            return audio.strip()
-        raise TypeError("audio must be UTF-8 bytes or a text fixture")
+        return audio.strip()
 
 
 class OfflineSynthesizer:
     """A fixture adapter: represent speech output as tagged UTF-8 bytes."""
 
     def synthesize(self, text: str) -> bytes:
-        if not isinstance(text, str):
-            raise TypeError("text must be a string")
         return ("OFFLINE_AUDIO:" + text.strip()).encode("utf-8")
 
 

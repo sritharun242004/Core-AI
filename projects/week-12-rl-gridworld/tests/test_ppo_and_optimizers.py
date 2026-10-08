@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportArgumentType=false, reportAttributeAccessIssue=false
 import pytest
 import torch
 from rl_gridworld import (

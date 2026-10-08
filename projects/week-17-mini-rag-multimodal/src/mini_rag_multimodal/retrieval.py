@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownLambdaType=false
 """Transparent TF-IDF, dense-fixture, hybrid, and reranking baselines."""
 
 import itertools

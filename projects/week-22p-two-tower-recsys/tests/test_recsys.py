@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=false, reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportOptionalMemberAccess=false, reportOptionalSubscript=false
 import math
 
 import pytest

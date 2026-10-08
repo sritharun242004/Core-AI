@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false
 """Small mechanism reproductions with explicit identifiability and scale limits."""
 
 import copy

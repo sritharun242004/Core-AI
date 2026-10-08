@@ -1,3 +1,4 @@
+# pyright: reportMissingParameterType=false, reportUnknownParameterType=false, reportUnknownMemberType=false
 import socket
 
 import numpy as np

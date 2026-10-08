@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 """End-to-end retrieve-then-answer seam for the notebook and voice adapter."""
 
 from dataclasses import dataclass

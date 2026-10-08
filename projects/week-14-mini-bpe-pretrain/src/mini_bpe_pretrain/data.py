@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportArgumentType=false
 """Small in-memory TinyStories-shaped fixtures and next-token windows."""
 
 from __future__ import annotations

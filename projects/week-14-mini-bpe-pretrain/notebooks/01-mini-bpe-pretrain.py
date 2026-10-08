@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 # %% [markdown]
 # Week 14 — BPE, position, and a tiny causal LM
 #

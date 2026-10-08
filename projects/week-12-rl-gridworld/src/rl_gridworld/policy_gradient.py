@@ -173,7 +173,7 @@ def train_policy_gradient(
         raise ValueError("episodes must be positive")
     if learning_rate <= 0 or weight_decay < 0 or entropy_coefficient < 0:
         raise ValueError("learning_rate must be positive; penalties cannot be negative")
-    cast(Callable[[int], torch.Generator], torch.manual_seed)(seed)
+    cast(Callable[[int], torch.Generator], torch.manual_seed)(seed)  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
     policy = PolicyNetwork(env.n_states, env.n_actions, hidden_size=hidden_size)
     optimizer = make_optimizer(
         policy.parameters(),

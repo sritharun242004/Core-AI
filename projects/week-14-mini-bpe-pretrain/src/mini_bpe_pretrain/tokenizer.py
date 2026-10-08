@@ -1,3 +1,4 @@
+# pyright: reportUnknownArgumentType=false
 """A deterministic, dependency-free byte-ish character BPE tokenizer."""
 
 from __future__ import annotations
