@@ -85,53 +85,55 @@ const totalHours = weeks.reduce((sum, w) => sum + (w.data.hours ?? 20), 0)
     </p>
   </section>
 
-  {/* --- 6 Month cards — each a toy-block headline + sticker weeks list --- */}
-  <div class="grid gap-6 md:grid-cols-2 mb-16">
+  {/* --- 6 Month cards — toy-block headline + sticker weeks list --- */}
+  <div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3 mb-16">
     {parts.map(({ part, title, caption, accent, color, glyph, weeks }) => (
       <article
-        class="toy-card relative overflow-visible p-6 sm:p-8"
+        class="toy-card relative overflow-visible p-6 sm:p-7 flex flex-col"
         style={`--accent: var(--${color}); --ink-accent: var(--accent-ink-${accent}); --glow: var(--accent-glow-${accent}); background: var(--glow);`}
       >
-        {/* corner block number */}
         <div
-          class="absolute -top-6 -left-3 toy-block"
-          style={`width: 76px; height: 76px; background: var(--${color}); transform: rotate(-6deg);`}
+          class="absolute -top-5 -left-3 toy-block shrink-0"
+          style={`width: 64px; height: 64px; background: var(--${color}); transform: rotate(-6deg);`}
         >
-          <div class="glyph" style={`font-size: 44px; color: ${['yellow','pink'].includes(color) ? 'var(--ink)' : 'var(--paper)'};`}>{glyph}</div>
+          <div class="glyph" style={`font-size: 36px; color: ${['yellow','pink'].includes(color) ? 'var(--ink)' : 'var(--paper)'};`}>{glyph}</div>
         </div>
-        <header class="pl-20 min-h-[76px]">
-          <p class="font-mono text-xs uppercase tracking-widest" style="color: var(--ink-soft); font-weight: 900;">
+        <header class="pl-16 min-h-[64px]">
+          <p class="font-mono text-[11px] uppercase tracking-widest" style="color: var(--ink-soft); font-weight: 900;">
             Month {part} · {weeks.length} weeks
           </p>
-          <h3 class="font-display text-2xl sm:text-3xl mt-1" style="letter-spacing: -0.01em;">
+          <h3
+            class="font-display text-2xl mt-1 leading-tight break-words"
+            style="letter-spacing: -0.01em; text-wrap: balance;"
+          >
             {title}
           </h3>
         </header>
-        <p class="mt-4 text-sm max-w-md" style="color: var(--ink-soft); font-weight: 700;">{caption}</p>
-        <ol class="mt-5 space-y-1.5">
+        <p class="mt-3 text-sm leading-snug" style="color: var(--ink-soft); font-weight: 700;">{caption}</p>
+        <ol class="mt-4 space-y-1 flex-1">
           {weeks.map((w) => (
             <li>
               <a
                 href={`/weeks/${w.data.slug}`}
-                class="group flex items-center gap-3 py-1.5 px-3 -mx-3 rounded-md transition-colors hover:bg-canvas"
+                class="group flex items-start gap-3 py-1.5 px-2.5 -mx-2.5 rounded-md transition-colors hover:bg-canvas"
               >
                 <span
-                  class="font-mono text-xs w-12 shrink-0 font-black"
+                  class="font-mono text-[11px] mt-0.5 w-9 shrink-0 font-black"
                   style="color: var(--ink-accent);"
                 >
                   W{weekLabel(w.data)}
                 </span>
-                <span class="flex-1 font-bold group-hover:translate-x-0.5 transition-transform">
+                <span class="flex-1 min-w-0 text-sm font-bold leading-snug group-hover:translate-x-0.5 transition-transform break-words">
                   {w.data.title}
                 </span>
-                <span class="text-xs font-black shrink-0" style="color: var(--ink-soft);">{w.data.hours}h</span>
+                <span class="text-[11px] font-black shrink-0 mt-0.5" style="color: var(--ink-soft);">{w.data.hours}h</span>
               </a>
             </li>
           ))}
         </ol>
         {part === 6 && (
-          <p class="relative mt-5 text-xs font-bold" style="color: var(--ink-soft);">
-            Pick 2 of 3 tracks (L · P · R). All six α/β lessons are available.
+          <p class="relative mt-4 text-[11px] font-bold" style="color: var(--ink-soft);">
+            Pick 2 of 3 tracks (L · P · R). All six α/β lessons available.
           </p>
         )}
       </article>

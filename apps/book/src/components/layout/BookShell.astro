@@ -35,12 +35,15 @@ const { title, accent = 'var(--accent-p1)' } = Astro.props
     <div class="flex fixed top-3 right-3 z-40 gap-2">
       <SearchOpener client:load />
     </div>
-    <div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px] min-h-screen">
+    <div class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] min-h-screen">
       <Sidebar />
-      <main id="main-content" class="px-4 lg:px-8 pt-20 pb-8 lg:pt-8 mx-auto w-full min-w-0 max-w-prose">
+      <main
+        id="main-content"
+        class="w-full min-w-0 px-4 pt-20 pb-16 sm:px-6 lg:px-10 lg:pt-10 lg:pr-16"
+        style="max-width: 1280px;"
+      >
         <slot />
       </main>
-      <aside class="hidden lg:block px-4 py-8" aria-label="Margin notes"></aside>
     </div>
     <Footer />
     <SearchDialog client:only="preact" />

@@ -2,40 +2,166 @@
 import { getCollection } from 'astro:content'
 import { compareWeeks, weekLabel } from '../../lib/weeks'
 const weeks = (await getCollection('weeks')).sort((a, b) => compareWeeks(a.data, b.data))
----
-<nav aria-label="Chapter navigation" class="hidden lg:block border-r border-border-soft p-6 sticky top-0 h-screen overflow-y-auto">
-  <a href="/" class="font-display text-lg block mb-6">Core AI</a>
 
-  <p class="text-xs uppercase tracking-wide text-fg-muted mt-1 mb-2">Weeks</p>
-  <ol class="space-y-1 text-sm">
+// Map part number → the playroom color used elsewhere in the design system.
+const PART_COLOR: Record<number, string> = {
+  1: 'blue', 2: 'green', 3: 'violet', 4: 'yellow', 5: 'red', 6: 'pink',
+}
+---
+<nav
+  aria-label="Chapter navigation"
+  class="sidebar-nav hidden lg:block sticky top-0 h-screen overflow-y-auto"
+  style="background: var(--paper); border-right: 4px solid var(--ink); padding: 20px 18px 32px;"
+>
+  <a
+    href="/"
+    class="toy-sticker blue block mb-6"
+    style="transform: rotate(-2deg); font-size: 20px; padding: 10px 20px; text-decoration: none;"
+  >
+    Core AI
+  </a>
+
+  <p class="side-head">Weeks</p>
+  <ol class="side-list">
     {weeks.map((w) => (
       <li>
-        <a href={`/weeks/${w.data.slug}`} class="block py-1 hover:text-accent-p1">
-          <span class="text-fg-muted mr-2">W{weekLabel(w.data)}</span>
-          {w.data.title}
+        <a href={`/weeks/${w.data.slug}`} class="side-link" style={`--chip: var(--${PART_COLOR[w.data.part] ?? 'blue'});`}>
+          <span class="side-chip" style="background: var(--chip);">
+            W{weekLabel(w.data)}
+          </span>
+          <span class="side-text">{w.data.title}</span>
         </a>
       </li>
     ))}
   </ol>
 
-  <p class="text-xs uppercase tracking-wide text-fg-muted mt-6 mb-2">Companies</p>
-  <ul class="space-y-1 text-sm">
-    <li><a href="/companies" class="block py-1 hover:text-accent-p1">7 × 25 matrix</a></li>
-    <li><a href="/companies/compare" class="block py-1 hover:text-accent-p1">Compare</a></li>
+  <p class="side-head mt-6">Companies</p>
+  <ul class="side-list">
+    <li>
+      <a href="/companies" class="side-link" style="--chip: var(--violet);">
+        <span class="side-chip" style="background: var(--chip);">7×25</span>
+        <span class="side-text">Matrix</span>
+      </a>
+    </li>
+    <li>
+      <a href="/companies/compare" class="side-link" style="--chip: var(--violet);">
+        <span class="side-chip" style="background: var(--chip);">⇄</span>
+        <span class="side-text">Compare</span>
+      </a>
+    </li>
   </ul>
 
-  <p class="text-xs uppercase tracking-wide text-fg-muted mt-6 mb-2">Interview</p>
-  <ul class="space-y-1 text-sm">
-    <li><a href="/interview" class="block py-1 hover:text-accent-p1">Dashboard</a></li>
-    <li><a href="/interview/coding-set" class="block py-1 hover:text-accent-p1">Coding set</a></li>
+  <p class="side-head mt-6">Interview</p>
+  <ul class="side-list">
+    <li>
+      <a href="/interview" class="side-link" style="--chip: var(--red);">
+        <span class="side-chip" style="background: var(--chip); color: var(--paper);">★</span>
+        <span class="side-text">Dashboard</span>
+      </a>
+    </li>
+    <li>
+      <a href="/interview/coding-set" class="side-link" style="--chip: var(--red);">
+        <span class="side-chip" style="background: var(--chip); color: var(--paper);">{"<>"}</span>
+        <span class="side-text">Coding set</span>
+      </a>
+    </li>
   </ul>
 
-  <p class="text-xs uppercase tracking-wide text-fg-muted mt-6 mb-2">Extras</p>
-  <ul class="space-y-1 text-sm">
-    <li><a href="/how-to-study" class="block py-1 hover:text-accent-p1">How to study</a></li>
-    <li><a href="/math-primer" class="block py-1 hover:text-accent-p1">Math primer</a></li>
-    <li><a href="/paper-reading-protocol" class="block py-1 hover:text-accent-p1">Paper reading</a></li>
-    <li><a href="/tech-writing" class="block py-1 hover:text-accent-p1">Tech writing</a></li>
-    <li><a href="/glossary" class="block py-1 hover:text-accent-p1">Glossary</a></li>
+  <p class="side-head mt-6">Extras</p>
+  <ul class="side-list">
+    <li>
+      <a href="/how-to-study" class="side-link" style="--chip: var(--yellow);">
+        <span class="side-chip" style="background: var(--chip);">?</span>
+        <span class="side-text">How to study</span>
+      </a>
+    </li>
+    <li>
+      <a href="/math-primer" class="side-link" style="--chip: var(--yellow);">
+        <span class="side-chip" style="background: var(--chip);">∑</span>
+        <span class="side-text">Math primer</span>
+      </a>
+    </li>
+    <li>
+      <a href="/paper-reading-protocol" class="side-link" style="--chip: var(--green);">
+        <span class="side-chip" style="background: var(--chip); color: var(--paper);">📜</span>
+        <span class="side-text">Paper reading</span>
+      </a>
+    </li>
+    <li>
+      <a href="/tech-writing" class="side-link" style="--chip: var(--green);">
+        <span class="side-chip" style="background: var(--chip); color: var(--paper);">✎</span>
+        <span class="side-text">Tech writing</span>
+      </a>
+    </li>
+    <li>
+      <a href="/glossary" class="side-link" style="--chip: var(--pink);">
+        <span class="side-chip" style="background: var(--chip);">A-Z</span>
+        <span class="side-text">Glossary</span>
+      </a>
+    </li>
   </ul>
 </nav>
+
+<style is:global>
+  /* Section headings in the sidebar — mini stickers themselves. */
+  .side-head {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--paper);
+    background: var(--ink);
+    padding: 4px 10px;
+    border-radius: 999px;
+    display: inline-block;
+    margin: 0 0 10px;
+  }
+  .side-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .side-link {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    border: 2px solid transparent;
+    text-decoration: none;
+    font-weight: 700;
+    color: var(--ink);
+    transition: background .15s, border-color .15s, transform .15s;
+  }
+  .side-link:hover {
+    background: var(--canvas);
+    border-color: var(--ink);
+    transform: translate(-1px, -1px);
+  }
+  .side-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 24px;
+    padding: 0 6px;
+    border: 2px solid var(--ink);
+    border-radius: 7px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 900;
+    color: var(--ink);
+    box-shadow: 2px 2px 0 var(--ink);
+    flex-shrink: 0;
+    line-height: 1;
+  }
+  .side-text {
+    font-size: 13px;
+    line-height: 1.3;
+    padding-top: 4px;
+  }
+</style>
