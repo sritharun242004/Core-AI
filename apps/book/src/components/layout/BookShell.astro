@@ -1,7 +1,6 @@
 ---
 import { Font } from 'astro:assets'
 import { SearchDialog, SearchOpener } from '../interactive/SearchDialog'
-import { ThemeToggle } from '../interactive/ThemeToggle'
 import Footer from './Footer.astro'
 import ReadingProgressBar from './ReadingProgressBar.astro'
 import Sidebar from './Sidebar.astro'
@@ -18,16 +17,8 @@ const { title, accent = 'var(--accent-p1)' } = Astro.props
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title} · Core AI</title>
     <script is:inline>
-      // Set theme BEFORE first paint — no flash-of-wrong-theme.
-      (function () {
-        try {
-          var t = localStorage.getItem('theme') ||
-            (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-          document.documentElement.dataset.theme = t
-        } catch (_) {
-          document.documentElement.dataset.theme = 'light'
-        }
-      })()
+      // One committed playroom theme — force light regardless of saved preference.
+      document.documentElement.dataset.theme = 'light'
     </script>
     <Font cssVariable="--font-display" preload />
     <Font cssVariable="--font-body" preload />
@@ -43,7 +34,6 @@ const { title, accent = 'var(--accent-p1)' } = Astro.props
     <ReadingProgressBar />
     <div class="flex fixed top-3 right-3 z-40 gap-2">
       <SearchOpener client:load />
-      <ThemeToggle client:load />
     </div>
     <div class="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_240px] min-h-screen">
       <Sidebar />
