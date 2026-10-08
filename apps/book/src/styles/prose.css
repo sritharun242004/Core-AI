@@ -1,11 +1,54 @@
 .prose-book {
-  max-width: 68ch;
+  /* Reading column — comfortable at ~820px, keeps the right rail (TOC + aside)
+     visible on wide screens instead of leaving the whole right half empty. */
+  max-width: 820px;
   font-family: var(--font-body);
   color: var(--fg);
   min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 600;
   line-height: 1.65;
+}
+
+/* Interactive demos, big math blocks, images, code blocks, and anything
+ * wrapped in .full-bleed may extend past the reading-column cap. Reads
+ * much better in the wide main area than being squeezed to 68ch. */
+.prose-book :is(.full-bleed, figure, pre, img, video, svg, table, section),
+.prose-book :is([data-full-bleed]) {
+  max-width: 100%;
+}
+
+/* Preact islands rendered inside prose (MicroRecall, VectorPlayground etc.)
+ * get the full main width — they are visual aids, not reading material. */
+.prose-book > astro-island,
+.prose-book > :is(.toy-card, .toy-card-sm),
+.prose-book > :is(aside, section, article),
+.prose-book astro-island > :is(aside, section, article) {
+  max-width: 100%;
+  width: 100%;
+}
+
+/* Callouts (💡 Intuition, ⚠ Gotcha, 🎯 Interview, 🔬 DeepDive) look a lot
+ * nicer with the devday toy-card treatment than Tailwind's narrow asides. */
+.prose-book aside[role="note"] {
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-left: 8px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  padding: 16px 20px;
+  margin-block: 24px;
+}
+
+/* Vector playgrounds and SVG visualisations fill the container width
+ * instead of their intrinsic 320×320 shrink size. */
+.prose-book svg[aria-label="Vector playground"],
+.prose-book svg[aria-label="Matrix multiplication"] {
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  display: block;
+  margin-inline: auto;
 }
 .prose-book table {
   display: block;

@@ -1,0 +1,103 @@
+---
+/**
+ * A sticky right-rail "On this page" navigator built client-side from the
+ * h2/h3 headings inside the main article. Playful toy-sticker treatment.
+ */
+interface Props { color?: string }
+const { color = 'blue' } = Astro.props
+---
+<aside
+  aria-label="On this page"
+  class="page-toc hidden xl:block"
+  style={`--chip-color: var(--${color});`}
+>
+  <p class="page-toc-head">On this page</p>
+  <nav id="page-toc-nav">
+    <p class="page-toc-empty">(building…)</p>
+  </nav>
+</aside>
+
+<script is:inline>
+  // Build the TOC from the article's h2/h3s after the DOM is parsed.
+  // No framework — this runs once per navigation.
+  (function () {
+    function build() {
+      const nav = document.getElementById('page-toc-nav')
+      if (!nav) return
+      const headings = document.querySelectorAll('article.prose-book :is(h2, h3)')
+      if (!headings.length) { nav.innerHTML = '<p class="page-toc-empty">no sections yet</p>'; return }
+      const items = []
+      headings.forEach((h, i) => {
+        if (!h.id) h.id = 'sec-' + i + '-' + (h.textContent || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        const level = h.tagName === 'H2' ? 2 : 3
+        items.push({ id: h.id, text: h.textContent, level })
+      })
+      nav.innerHTML = '<ol class="page-toc-list">' + items.map(function (i) {
+        return '<li class="page-toc-item page-toc-l' + i.level + '"><a href="#' + i.id + '">' + i.text + '</a></li>'
+      }).join('') + '</ol>'
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build)
+    else build()
+  })()
+</script>
+
+<style is:global>
+  .page-toc {
+    position: sticky;
+    top: 32px;
+    align-self: start;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    padding: 16px;
+    background: var(--paper);
+    border: 3px solid var(--ink);
+    border-radius: 14px;
+    box-shadow: var(--shadow-sm);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .page-toc-head {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 900;
+    color: var(--paper);
+    background: var(--chip-color, var(--blue));
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 2px solid var(--ink);
+    box-shadow: 2px 2px 0 var(--ink);
+    margin: 0 0 12px;
+  }
+  .page-toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .page-toc-item a {
+    display: block;
+    padding: 4px 8px;
+    border-radius: 7px;
+    text-decoration: none;
+    color: var(--ink);
+    line-height: 1.3;
+    transition: background .12s, transform .12s;
+  }
+  .page-toc-item a:hover {
+    background: var(--chip-color, var(--blue));
+    color: var(--paper);
+    transform: translateX(2px);
+  }
+  .page-toc-l3 a { padding-left: 20px; font-weight: 600; opacity: 0.85; }
+  .page-toc-empty {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+</style>

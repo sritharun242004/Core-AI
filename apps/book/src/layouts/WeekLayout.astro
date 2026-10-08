@@ -2,6 +2,7 @@
 import { getCollection } from 'astro:content'
 import ComputeBadge from '../components/content/ComputeBadge.astro'
 import BookShell from '../components/layout/BookShell.astro'
+import PageTOC from '../components/layout/PageTOC.astro'
 import { weekLabel } from '../lib/weeks'
 interface Props {
   frontmatter: {
@@ -92,5 +93,8 @@ const prerequisites = (frontmatter.prereqSlugs ?? [])
       </nav>
     )}
   </header>
-  <article class="prose-book"><slot /></article>
+  <div class="grid xl:grid-cols-[minmax(0,1fr)_240px] gap-10 xl:gap-14 items-start">
+    <article class="prose-book min-w-0"><slot /></article>
+    <PageTOC color={partMeta.color} />
+  </div>
 </BookShell>
