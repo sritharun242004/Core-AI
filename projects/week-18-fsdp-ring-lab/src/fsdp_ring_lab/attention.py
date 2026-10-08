@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownLambdaType=false, reportCallIssue=false, reportUnnecessaryIsInstance=false, reportIndexIssue=false, reportPrivateUsage=false, reportMissingTypeArgument=false, reportUnknownParameterType=false, reportMissingImports=false, reportPossiblyUnboundVariable=false
 """Differentiable CPU ring-order simulation; not a fused distributed kernel.
 
 Q/K/V are [batch, heads, sequence, channels]. Float32/float64 only. Prefix

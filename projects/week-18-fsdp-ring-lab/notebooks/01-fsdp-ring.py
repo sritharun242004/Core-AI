@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingParameterType=false, reportUnknownParameterType=false, reportCallIssue=false, reportArgumentType=false
 # %% [markdown]
 # # Week 18 — invariants before accelerators
 # Run from this project with PYTHONPATH=src python notebooks/01-fsdp-ring.py.

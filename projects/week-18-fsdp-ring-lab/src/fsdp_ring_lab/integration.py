@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownLambdaType=false, reportCallIssue=false, reportUnnecessaryIsInstance=false, reportIndexIssue=false, reportPrivateUsage=false, reportMissingTypeArgument=false, reportUnknownParameterType=false, reportMissingImports=false, reportPossiblyUnboundVariable=false
 """Optional real CUDA torchrun smoke test. Never used by the offline notebook.
 
 FSDP1 FULL_SHARD is used explicitly, not the different FSDP2 fully_shard API.

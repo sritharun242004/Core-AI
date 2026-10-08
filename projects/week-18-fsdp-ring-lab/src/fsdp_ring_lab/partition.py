@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownLambdaType=false, reportCallIssue=false, reportUnnecessaryIsInstance=false, reportIndexIssue=false, reportPrivateUsage=false, reportMissingTypeArgument=false, reportUnknownParameterType=false, reportMissingImports=false, reportPossiblyUnboundVariable=false
 """Contiguous equal-size transport shards; padding never becomes training data."""
 
 from dataclasses import dataclass

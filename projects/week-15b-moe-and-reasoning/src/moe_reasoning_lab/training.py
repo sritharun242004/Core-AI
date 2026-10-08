@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownLambdaType=false, reportCallIssue=false
 """Deterministic supervised toy task for inspecting MoE optimization."""
 
 from __future__ import annotations

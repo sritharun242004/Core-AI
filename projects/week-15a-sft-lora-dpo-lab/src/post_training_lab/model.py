@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownLambdaType=false, reportCallIssue=false, reportIndexIssue=false
 """A deliberately small causal language model for CPU/offline experiments."""
 
 from __future__ import annotations

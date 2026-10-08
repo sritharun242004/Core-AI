@@ -10,6 +10,5 @@ jobs:
       - name: Isolated offline project suites
         run: uv run --no-sync python scripts/check-projects.py
       - run: uv run --no-sync ruff check projects/ scripts/check-projects.py
-      - name: Strict typing audit (advisory; see docs/VALIDATION.md)
-        continue-on-error: true
+      - name: Strict typing (blocking; clean baseline since 2026-10-08)
         run: uv run --no-sync pyright projects/

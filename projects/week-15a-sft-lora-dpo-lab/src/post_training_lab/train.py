@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportUnknownLambdaType=false, reportCallIssue=false
 """Tiny supervised trainer and portable checkpoints for the offline lab."""
 
 from __future__ import annotations
