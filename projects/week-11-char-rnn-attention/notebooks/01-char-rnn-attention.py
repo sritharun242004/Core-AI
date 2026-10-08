@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 # %% [markdown]
 # Week 11 — character LSTM with additive attention
 #

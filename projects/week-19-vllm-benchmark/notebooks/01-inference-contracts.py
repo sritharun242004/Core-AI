@@ -76,7 +76,8 @@ print("Exact-entry hits require the same namespace AND entire supplied prefix.")
 traces = [RequestTrace(0, (0.2, 0.3, 0.4), 0.5), RequestTrace(0.1, (0.6,), 0.8)]
 metrics = aggregate_metrics(traces, window_start_s=0, window_end_s=1)
 assert metrics["output_tokens_per_s"] == 4
-assert np.isclose(metrics["weighted_tpot_s"], 0.1)
+weighted_tpot = metrics["weighted_tpot_s"]
+assert weighted_tpot is not None and np.isclose(weighted_tpot, 0.1)
 print(json.dumps({"evidence": "simulation_not_hardware_measurement", "metrics": metrics}, indent=2))
 
 # %% [markdown]

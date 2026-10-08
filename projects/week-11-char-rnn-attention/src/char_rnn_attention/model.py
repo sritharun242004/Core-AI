@@ -208,7 +208,7 @@ class CharLSTMAttention(nn.Module):
                 ids = torch.cat([ids, next_id], dim=1)
         if was_training:
             self.train()
-        return vocab.decode(ids[0].tolist())
+        return vocab.decode(ids[0].tolist())  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
     def _validate_ids(self, ids: Tensor, name: str) -> None:
         if ids.ndim != 2 or ids.dtype != torch.long:

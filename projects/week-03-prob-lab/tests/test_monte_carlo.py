@@ -26,10 +26,14 @@ def test_expectation_of_identity_is_mean():
 
 @given(st.floats(min_value=-5, max_value=5, allow_nan=False, allow_infinity=False))
 @settings(max_examples=30, deadline=None)
-def test_expectation_survives_constant_samplers(const):
+def test_expectation_survives_constant_samplers(const: float) -> None:
     """Review Focus #1 — zero-variance input; must not divide-by-zero or NaN."""
     from prob_lab.monte_carlo import expectation
 
-    val = expectation(fn=lambda x: x * 2, sampler=lambda size: np.full(size, const), n=100)
+    val = expectation(
+        fn=lambda x: x * 2,
+        sampler=lambda size: np.full(size, const, dtype=float),
+        n=100,
+    )
     assert math.isfinite(val)
     assert abs(val - const * 2) < 1e-10

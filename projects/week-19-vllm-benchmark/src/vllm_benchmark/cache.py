@@ -18,7 +18,7 @@ class PagedKVCache:
         positive_int(page_size, "page_size")
         self.num_pages = cast(int, num_pages)
         self.page_size = cast(int, page_size)
-        self._free = set(range(num_pages))
+        self._free = set(range(self.num_pages))
         self._pages: dict[str, tuple[int, ...]] = {}
         self._tokens: dict[str, int] = {}
 

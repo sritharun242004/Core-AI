@@ -59,7 +59,7 @@ def train_epoch(
         logits, _ = model(source_ids, target_ids)
         loss = sequence_cross_entropy(logits, target_ids)
         # Tensor.backward's optional arguments are untyped in torch's Python wrapper.
-        cast(Callable[[], None], loss.backward)()
+        cast(Callable[[], None], loss.backward)()  # pyright: ignore[reportUnknownMemberType]
         if grad_clip is not None:
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()

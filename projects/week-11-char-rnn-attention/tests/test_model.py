@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 import torch
 from char_rnn_attention.data import make_tiny_dataset
 from char_rnn_attention.model import AdditiveAttention, CharGRUAttention, CharLSTMAttention

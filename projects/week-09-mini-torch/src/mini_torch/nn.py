@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 
 import numpy as np
+from numpy.typing import NDArray
 
-from .engine import Tensor
+from .engine import Array, Tensor
 from .losses import cross_entropy
 
 
@@ -89,11 +90,15 @@ class SGD:
 def accuracy(logits: Tensor | object, targets: object) -> float:
     """Classification accuracy from a batch of class logits."""
 
-    values = logits.data if isinstance(logits, Tensor) else np.asarray(logits, dtype=np.float64)
-    labels = np.asarray(targets, dtype=np.int64).reshape(-1)
+    values: Array = (
+        logits.data if isinstance(logits, Tensor) else np.asarray(logits, dtype=np.float64)
+    )
+    labels: NDArray[np.int64] = np.asarray(targets, dtype=np.int64).reshape(-1)
     if values.ndim != 2 or values.shape[0] != labels.size:
         raise ValueError("logits and targets must describe the same 2D batch")
-    return float(np.mean(np.argmax(values, axis=1) == labels))
+    predictions: NDArray[np.int64] = np.argmax(values, axis=1)
+    correct: NDArray[np.bool_] = predictions == labels
+    return float(np.mean(correct))
 
 
 def train_mlp(

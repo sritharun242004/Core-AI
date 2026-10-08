@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 import torch
 from char_rnn_attention.data import TINY_TEXT, CharVocab, TinyCharDataset, make_tiny_dataset
 

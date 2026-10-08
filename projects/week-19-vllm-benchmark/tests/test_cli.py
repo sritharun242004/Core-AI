@@ -1,3 +1,6 @@
+# pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnnecessaryCast=false, reportPrivateUsage=false, reportAttributeAccessIssue=false, reportOptionalOperand=false
+"""CLI integration tests — construct fake vllm/HF adapter instances via object.__new__
+and attribute injection; typed assignment is intentionally bypassed in test fixtures."""
 import json
 import subprocess
 import sys

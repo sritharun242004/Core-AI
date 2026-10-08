@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 # %% [markdown]
 # # Bayes & entropy tour
 # Coin-bias inference + entropy of common distributions.

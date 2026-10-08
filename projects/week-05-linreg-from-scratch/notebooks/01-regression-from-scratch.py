@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 # %% [markdown]
 # Week 5 — regression from scratch
 #

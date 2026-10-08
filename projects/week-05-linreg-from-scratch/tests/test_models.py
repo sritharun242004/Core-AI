@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from linreg_from_scratch import LinearRegression, LogisticRegression
 
+Estimator = type[LinearRegression] | type[LogisticRegression]
+
 
 def test_closed_form_recovers_linear_coefficients() -> None:
     x = np.array([[0.0, 1.0], [1.0, 0.0], [2.0, 1.0], [3.0, 2.0]])
@@ -68,7 +70,7 @@ def test_rank_deficient_design_has_a_least_squares_solution() -> None:
 
 
 @pytest.mark.parametrize("estimator", [LinearRegression, LogisticRegression])
-def test_rejects_nonfinite_data_and_multitarget_arrays(estimator) -> None:
+def test_rejects_nonfinite_data_and_multitarget_arrays(estimator: Estimator) -> None:
     with pytest.raises(ValueError, match="finite"):
         estimator().fit([[np.nan], [1.0]], [0, 1])
     with pytest.raises(ValueError, match="one-dimensional"):

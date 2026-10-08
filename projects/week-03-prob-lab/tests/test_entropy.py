@@ -44,7 +44,7 @@ def test_cross_entropy_ge_entropy():
 
 @given(st.floats(min_value=1e-6, max_value=1 - 1e-6))
 @settings(max_examples=50, deadline=None)
-def test_binary_kl_bounds(a):
+def test_binary_kl_bounds(a: float) -> None:
     """Binary KL stays finite and non-negative for interior probabilities."""
     from prob_lab.entropy import kl_divergence
 

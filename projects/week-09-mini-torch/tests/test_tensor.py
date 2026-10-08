@@ -1,3 +1,4 @@
+# pyright: reportCallIssue=false, reportArgumentType=false
 """Tensor/autograd contract: write these before the implementation."""
 
 from __future__ import annotations
