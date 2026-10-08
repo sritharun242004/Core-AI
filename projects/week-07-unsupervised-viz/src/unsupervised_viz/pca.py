@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """A small, NumPy-only principal component analysis implementation."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """Narrow call contracts for incomplete sklearn stubs, not estimator replacements.
 
 The pinned stubs leave metadata kwargs unknown and do not specialize the

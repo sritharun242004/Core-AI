@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportOverlappingOverload=false
 """Leakage-safe Titanic-style preprocessing, CV, fitting, and submission helpers."""
 
 from __future__ import annotations

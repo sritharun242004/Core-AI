@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """Precisely scoped boundaries for dataset/optional-extension stub gaps."""
 
 from collections.abc import Callable

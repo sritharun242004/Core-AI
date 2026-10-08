@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """NumPy implementation of Lloyd's k-means algorithm."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """Composable, estimator-agnostic model evaluation helpers.
 
 Each function returns plain dictionaries and NumPy arrays so its output can be

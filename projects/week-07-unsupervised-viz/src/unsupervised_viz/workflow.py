@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """A reproducible, side-by-side comparison of unsupervised projections."""
 
 from __future__ import annotations

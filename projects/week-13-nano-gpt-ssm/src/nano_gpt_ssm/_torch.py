@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """Narrow signatures for unannotated PyTorch seed/autograd entry points."""
 
 from collections.abc import Callable

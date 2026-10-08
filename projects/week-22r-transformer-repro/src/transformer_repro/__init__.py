@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """Mechanism-level Transformer reproduction; not the WMT paper experiment."""
 
 import math

@@ -1,3 +1,4 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
 """Report schemas and narrow contracts for sklearn's incomplete public stubs.
 
 In particular learning_curve returns THREE arrays when return_times=False, and
