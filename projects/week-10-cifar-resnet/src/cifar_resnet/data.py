@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from importlib import import_module
 from pathlib import Path
+from typing import Protocol, cast
 
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 
 ImageTransform = Callable[..., Tensor]
+
+
+class _CIFARDatasets(Protocol):
+    def CIFAR10(  # noqa: N802
+        self,
+        *,
+        root: Path,
+        train: bool,
+        download: bool,
+        transform: Callable[[object], Tensor],
+    ) -> Dataset[tuple[Tensor, int]]: ...
+
+
+class _VisionFunctional(Protocol):
+    def pil_to_tensor(self, pic: object) -> Tensor: ...
 
 
 class FakeCIFAR10(Dataset[tuple[Tensor, int]]):
@@ -35,17 +52,21 @@ class FakeCIFAR10(Dataset[tuple[Tensor, int]]):
         self.transform = transform
         generator = torch.Generator().manual_seed(seed)
         self.targets = torch.arange(n_samples, dtype=torch.long) % num_classes
-        self.images = torch.rand(
-            n_samples,
-            3,
-            image_size,
-            image_size,
-            generator=generator,
-            dtype=torch.float32,
-        ) * 0.15
+        self.images = (
+            torch.rand(
+                n_samples,
+                3,
+                image_size,
+                image_size,
+                generator=generator,
+                dtype=torch.float32,
+            )
+            * 0.15
+        )
         # Encode a weak, deliberately simple signal: each class gets a channel
         # tint and a translated 4x4 patch. The background remains noisy.
-        for index, label in enumerate(self.targets.tolist()):
+        for index, target in enumerate(self.targets):
+            label = int(target)
             channel = label % 3
             self.images[index, channel] += 0.55
             row = 2 + (label * 3) % max(1, image_size - 5)
@@ -94,7 +115,7 @@ def cifar10_datasets(
     *,
     train_transform: ImageTransform | None = None,
     download: bool = False,
-):
+) -> tuple[Dataset[tuple[Tensor, int]], Dataset[tuple[Tensor, int]]]:
     """Create torchvision CIFAR-10 datasets lazily for the optional real run.
 
     Importing this module and running its tests never imports torchvision or
@@ -103,22 +124,24 @@ def cifar10_datasets(
     """
 
     try:
-        from torchvision import datasets, transforms
+        # Optional torchvision is loaded only on the explicitly requested path.
+        datasets = cast(_CIFARDatasets, import_module("torchvision.datasets"))
+        functional = cast(_VisionFunctional, import_module("torchvision.transforms.functional"))
     except ImportError as error:  # pragma: no cover - optional dependency path
         raise RuntimeError(
             "cifar10_datasets requires optional torchvision; use make_fake_cifar for tests"
         ) from error
     root = Path(root)
 
-    def to_tensor(image):
-        return transforms.functional.pil_to_tensor(image).float().div(255)
+    def to_tensor(image: object) -> Tensor:
+        return functional.pil_to_tensor(image).float().div(255)
 
     real_transform = to_tensor
     if train_transform is not None:
         # torchvision's CIFAR dataset yields PIL images, while our dependency-
         # light transform deliberately works on tensors. Convert only on this
         # explicitly opted-in path; the offline fixture stays torch-only.
-        def real_transform(image):
+        def real_transform(image: object) -> Tensor:
             return train_transform(to_tensor(image))
 
     train = datasets.CIFAR10(root=root, train=True, download=download, transform=real_transform)

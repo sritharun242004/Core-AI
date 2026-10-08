@@ -5,12 +5,29 @@ Method names and task envelopes here are reduced for lifecycle exercises.
 """
 
 from copy import deepcopy
+from typing import NotRequired, TypedDict, cast
 
-from .rpc import JSONRPCServer, ProtocolError, RPCClient
+from .rpc import JSONObject, JSONRPCServer, ProtocolError, RPCClient
 
 SCOPE = "local-a2a-teaching-subset/0.1; no A2A conformance claim"
 TERMINAL = {"completed", "failed", "canceled"}
 STATES = {"submitted", "working"} | TERMINAL
+
+
+class TaskStatus(TypedDict):
+    state: str
+    message: NotRequired[str]
+
+
+class Artifact(TypedDict):
+    text: str
+
+
+class TaskRecord(TypedDict):
+    id: str
+    message: str
+    status: TaskStatus
+    artifacts: list[Artifact]
 
 
 class A2AServer(JSONRPCServer):
@@ -18,9 +35,9 @@ class A2AServer(JSONRPCServer):
         if type(max_tasks) is not int or not 1 <= max_tasks <= 1000:
             raise ValueError("invalid task capacity")
         self.max_tasks = max_tasks
-        self._tasks: dict[str, dict] = {}
+        self._tasks: dict[str, TaskRecord] = {}
 
-    def dispatch(self, method: str, params: dict, *, notification: bool):
+    def dispatch(self, method: str, params: JSONObject, *, notification: bool) -> object:
         if notification:
             return None
         if method == "agent/card":
@@ -33,15 +50,16 @@ class A2AServer(JSONRPCServer):
         if method not in {"tasks/send", "tasks/get", "tasks/cancel", "demo/advance"}:
             raise ProtocolError(-32601, "method not found")
         expected = {"id", "message"} if method == "tasks/send" else {"id"}
+        task_id = params.get("id")
         if (
             params.keys() != expected
-            or not isinstance(params.get("id"), str)
-            or (not 1 <= len(params["id"]) <= 64)
+            or not isinstance(task_id, str)
+            or (not 1 <= len(task_id) <= 64)
         ):
             raise ProtocolError(-32602, "invalid task envelope")
-        ident = params["id"]
+        ident = task_id
         if method == "tasks/send":
-            message = params["message"]
+            message = params.get("message")
             if not isinstance(message, str) or not 1 <= len(message) <= 1024:
                 raise ProtocolError(-32602, "invalid message")
             if ident in self._tasks:
@@ -50,12 +68,12 @@ class A2AServer(JSONRPCServer):
                 return deepcopy(self._tasks[ident])
             if len(self._tasks) >= self.max_tasks:
                 raise ProtocolError(-32011, "task capacity exceeded")
-            self._tasks[ident] = {
-                "id": ident,
-                "message": message,
-                "status": {"state": "submitted"},
-                "artifacts": [],
-            }
+            self._tasks[ident] = TaskRecord(
+                id=ident,
+                message=message,
+                status=TaskStatus(state="submitted"),
+                artifacts=[],
+            )
             return deepcopy(self._tasks[ident])
         if ident not in self._tasks:
             raise ProtocolError(-32004, "task not found")
@@ -78,30 +96,30 @@ class A2AServer(JSONRPCServer):
 
 
 class A2AClient(RPCClient):
-    def _task(self, method: str, params: dict) -> dict:
+    def _task(self, method: str, params: JSONObject) -> TaskRecord:
         task = self.request(method, params)
+        if not isinstance(task, dict) or task.get("id") != params["id"]:
+            raise ProtocolError(-32600, "invalid task result")
+        status = task.get("status")
+        artifacts = task.get("artifacts")
         if (
-            not isinstance(task, dict)
-            or task.get("id") != params["id"]
-            or (
-                not isinstance(task.get("status"), dict)
-                or not isinstance(task["status"].get("state"), str)
-                or task["status"]["state"] not in STATES
-                or not isinstance(task.get("artifacts"), list)
-            )
+            not isinstance(status, dict)
+            or not isinstance(status.get("state"), str)
+            or status["state"] not in STATES
+            or not isinstance(artifacts, list)
         ):
             raise ProtocolError(-32600, "invalid task result")
-        return task
+        return cast(TaskRecord, task)
 
-    def submit(self, task_id: str, message: str) -> dict:
+    def submit(self, task_id: str, message: str) -> TaskRecord:
         return self._task("tasks/send", {"id": task_id, "message": message})
 
-    def get(self, task_id: str) -> dict:
+    def get(self, task_id: str) -> TaskRecord:
         return self._task("tasks/get", {"id": task_id})
 
-    def cancel(self, task_id: str) -> dict:
+    def cancel(self, task_id: str) -> TaskRecord:
         return self._task("tasks/cancel", {"id": task_id})
 
-    def advance(self, task_id: str) -> dict:
+    def advance(self, task_id: str) -> TaskRecord:
         """Test-only explicit scheduler tick, not an A2A standard method."""
         return self._task("demo/advance", {"id": task_id})

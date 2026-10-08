@@ -12,6 +12,8 @@ from torch import Tensor, nn
 class SinusoidalPositionalEncoding(nn.Module):
     """The fixed sine/cosine position code from the original Transformer."""
 
+    encoding: Tensor
+
     def __init__(self, d_model: int, max_seq_len: int = 256) -> None:
         super().__init__()
         if d_model <= 0 or max_seq_len <= 0:
@@ -41,6 +43,8 @@ PositionalEncoding = SinusoidalPositionalEncoding
 
 class CausalSelfAttention(nn.Module):
     """Multi-head self-attention whose query at t can only read positions <= t."""
+
+    causal_mask: Tensor
 
     def __init__(
         self,

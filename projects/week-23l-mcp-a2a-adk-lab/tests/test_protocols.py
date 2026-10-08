@@ -4,6 +4,8 @@ import io
 import json
 import sys
 import types
+from collections.abc import Callable
+from typing import cast
 
 import pytest
 from protocol_lab import (
@@ -16,13 +18,40 @@ from protocol_lab import (
     serve_lines,
 )
 from protocol_lab.adk_sample import build_agent
+from protocol_lab.rpc import JSONObject, decode
 
 
-def request(method, params=None, ident=1):
+def request(method: str, params: JSONObject | None = None, ident: int | str = 1) -> str:
     return json.dumps({"jsonrpc": "2.0", "id": ident, "method": method, "params": params or {}})
 
 
-def mcp_pair():
+def response(wire: str | None) -> JSONObject:
+    if wire is None:
+        raise AssertionError("expected response")
+    value = decode(wire)
+    if not isinstance(value, dict):
+        raise AssertionError("expected JSON object response")
+    return value
+
+
+def error_code(value: JSONObject) -> int:
+    error = value.get("error")
+    if not isinstance(error, dict) or type(error.get("code")) is not int:
+        raise AssertionError("expected error response")
+    return cast(int, error["code"])
+
+
+def text_content(value: JSONObject) -> str:
+    content = value.get("content")
+    if not isinstance(content, list) or not content or not isinstance(content[0], dict):
+        raise AssertionError("expected text content")
+    text = content[0].get("text")
+    if not isinstance(text, str):
+        raise AssertionError("expected text content")
+    return text
+
+
+def mcp_pair() -> tuple[MCPClient, LocalTransport]:
     transport = LocalTransport(MCPServer())
     client = MCPClient(transport)
     client.initialize()
@@ -33,7 +62,9 @@ def test_mcp_initialize_list_and_call_cross_json_transport():
     client, transport = mcp_pair()
     tools = client.list_tools()
     assert [tool["name"] for tool in tools] == ["add", "lookup"]
-    assert tools[0]["inputSchema"]["additionalProperties"] is False
+    schema = tools[0].get("inputSchema")
+    assert isinstance(schema, dict)
+    assert schema.get("additionalProperties") is False
     result = client.call_tool("add", {"a": 2, "b": 3})
     assert result == {"content": [{"type": "text", "text": "5"}], "isError": False}
     assert len(transport.requests) == 4  # initialize, initialized notification, list, call
@@ -50,15 +81,17 @@ def test_mcp_initialize_list_and_call_cross_json_transport():
         (request("tools/list"), -32002),
     ],
 )
-def test_mcp_bad_frames_and_preinitialization(wire, code):
-    result = json.loads(MCPServer().handle(wire))
-    assert result["error"]["code"] == code
+def test_mcp_bad_frames_and_preinitialization(wire: str, code: int) -> None:
+    result = response(MCPServer().handle(wire))
+    assert error_code(result) == code
 
 
 def test_mcp_wrong_version_and_unknown_method():
     server = MCPServer()
-    response = json.loads(server.handle(request("initialize", {"protocolVersion": "2099-01-01"})))
-    assert response["error"]["code"] == -32602
+    response_body = response(
+        server.handle(request("initialize", {"protocolVersion": "2099-01-01"}))
+    )
+    assert error_code(response_body) == -32602
     client, _ = mcp_pair()
     with pytest.raises(ProtocolError) as error:
         client.request("does/not/exist")
@@ -75,7 +108,7 @@ def test_mcp_wrong_version_and_unknown_method():
         {"a": 1001, "b": 1},
     ],
 )
-def test_mcp_schema_errors_are_invalid_params(args):
+def test_mcp_schema_errors_are_invalid_params(args: JSONObject) -> None:
     client, _ = mcp_pair()
     with pytest.raises((ProtocolError, ValueError)):
         client.call_tool("add", args)
@@ -85,7 +118,7 @@ def test_tool_execution_error_is_not_jsonrpc_error():
     client, _ = mcp_pair()
     result = client.call_tool("lookup", {"key": "private"})
     assert result["isError"] is True
-    assert result["content"][0]["text"] == "public record not found"
+    assert text_content(result) == "public record not found"
     with pytest.raises(ProtocolError) as error:
         client.call_tool("shell", {"command": "not executed"})
     assert error.value.code == -32602
@@ -110,8 +143,8 @@ def test_unknown_notifications_never_generate_reply():
 def test_initialized_notification_required_before_tools():
     server = MCPServer()
     server.handle(request("initialize", {"protocolVersion": "2024-11-05"}))
-    reply = json.loads(server.handle(request("tools/list")))
-    assert reply["error"]["code"] == -32002
+    reply = response(server.handle(request("tools/list")))
+    assert error_code(reply) == -32002
 
 
 @pytest.mark.parametrize(
@@ -122,9 +155,9 @@ def test_initialized_notification_required_before_tools():
         {"jsonrpc": "2.0", "id": 1},
     ],
 )
-def test_client_rejects_malformed_or_mismatched_fake_transport(response):
+def test_client_rejects_malformed_or_mismatched_fake_transport(response: JSONObject) -> None:
     class FakeTransport:
-        def exchange(self, wire):
+        def exchange(self, wire: str) -> str:
             return json.dumps(response)
 
     with pytest.raises(ProtocolError):
@@ -133,7 +166,7 @@ def test_client_rejects_malformed_or_mismatched_fake_transport(response):
 
 def test_client_checks_tool_result_contract():
     class FakeTransport:
-        def exchange(self, wire):
+        def exchange(self, wire: str) -> str:
             frame = json.loads(wire)
             return json.dumps({"jsonrpc": "2.0", "id": frame["id"], "result": {"content": 7}})
 
@@ -204,10 +237,10 @@ def test_mcp_repeated_initialization_and_positional_params_rejected():
     with pytest.raises(ProtocolError):
         client.initialize()
     server = MCPServer()
-    reply = json.loads(
+    reply = response(
         server.handle(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": []}))
     )
-    assert reply["error"]["code"] == -32602
+    assert error_code(reply) == -32602
 
 
 def test_a2a_failed_tasks_are_terminal_and_results_are_copied():
@@ -222,9 +255,9 @@ def test_a2a_failed_tasks_are_terminal_and_results_are_copied():
 
 
 @pytest.mark.parametrize("state", [{}, [], "invented"])
-def test_a2a_client_rejects_malformed_status_from_fake_transport(state):
+def test_a2a_client_rejects_malformed_status_from_fake_transport(state: object) -> None:
     class FakeTransport:
-        def exchange(self, wire):
+        def exchange(self, wire: str) -> str:
             frame = json.loads(wire)
             return json.dumps(
                 {
@@ -238,17 +271,31 @@ def test_a2a_client_rejects_malformed_status_from_fake_transport(state):
         A2AClient(FakeTransport()).get("one")
 
 
-def test_adk_import_is_lazy_and_builds_real_api_shape_with_fake_module(monkeypatch):
+def test_adk_import_is_lazy_and_builds_real_api_shape_with_fake_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # No google-adk package is needed for the offline contract test.
-    captured = {}
+    class Captured:
+        model = ""
+
+        def __init__(self) -> None:
+            self.model = ""
+            self.tools: list[Callable[[str], JSONObject]] = []
+
+    captured = Captured()
 
     class Agent:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
+        def __init__(self, **kwargs: object) -> None:
+            model = kwargs.get("model")
+            tools = kwargs.get("tools")
+            if not isinstance(model, str) or not isinstance(tools, list):
+                raise AssertionError("unexpected Agent arguments")
+            captured.model = model
+            captured.tools = cast(list[Callable[[str], JSONObject]], tools)
 
     monkeypatch.setitem(sys.modules, "google.adk.agents", types.SimpleNamespace(Agent=Agent))
     agent = build_agent(model="explicit-test-model")
     assert isinstance(agent, Agent)
-    assert captured["model"] == "explicit-test-model"
-    assert captured["tools"][0]("guide")["status"] == "success"
-    assert captured["tools"][0]("private")["status"] == "error"
+    assert captured.model == "explicit-test-model"
+    assert captured.tools[0]("guide")["status"] == "success"
+    assert captured.tools[0]("private")["status"] == "error"

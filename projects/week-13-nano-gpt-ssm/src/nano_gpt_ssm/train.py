@@ -7,6 +7,8 @@ from collections.abc import Iterable
 import torch
 from torch import Tensor, nn
 
+from ._torch import backward
+
 
 def language_model_loss(
     logits: Tensor,
@@ -46,7 +48,7 @@ def training_step(
     optimizer.zero_grad(set_to_none=True)
     logits = model(input_ids)
     loss = language_model_loss(logits, target_ids)
-    loss.backward()
+    backward(loss)
     if grad_clip is not None:
         nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
     optimizer.step()
@@ -68,7 +70,7 @@ def train_epoch(
         model.train()
         optimizer.zero_grad(set_to_none=True)
         loss = language_model_loss(model(input_ids), target_ids)
-        loss.backward()
+        backward(loss)
         if grad_clip is not None:
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
@@ -92,7 +94,7 @@ def fit(
 
     if epochs <= 0:
         raise ValueError("epochs must be positive")
-    history = {"loss": []}
+    history: dict[str, list[float]] = {"loss": []}
     for _ in range(epochs):
         history["loss"].append(train_epoch(model, loader, optimizer, grad_clip=grad_clip))
     return history

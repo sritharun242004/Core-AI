@@ -1,10 +1,12 @@
 """python -m vllm_benchmark demo | benchmark --engine hf|vllm --model-path ..."""
 
 import argparse
+import importlib
 import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import Protocol, cast
 
 import numpy as np
 
@@ -21,7 +23,26 @@ from .quantization import dequantize, quantize
 from .speculation import acceptance_probability, residual_distribution
 
 
-def offline_demo() -> dict:
+class DeviceProperties(Protocol):
+    total_memory: int
+
+
+class CudaRuntime(Protocol):
+    def get_device_name(self, index: int) -> str: ...
+
+    def get_device_properties(self, index: int) -> DeviceProperties: ...
+
+
+class TorchVersion(Protocol):
+    cuda: str | None
+
+
+class TorchRuntime(Protocol):
+    cuda: CudaRuntime
+    version: TorchVersion
+
+
+def offline_demo() -> dict[str, object]:
     weights = np.array([[-2.0, 0.3, 0.0, 0.8, 7.0]], dtype=np.float32)
     quantized = quantize(weights, bits=4, group_size=2)
     cache = PagedKVCache(3, 4)
@@ -89,13 +110,15 @@ def main(argv: list[str] | None = None) -> int:
                 gpu_memory_utilization=args.gpu_memory_utilization,
                 prefix_cache=args.prefix_cache,
             )
-            prompts = json.loads(args.prompts_file.read_text())
-            if (
-                not isinstance(prompts, list)
-                or not prompts
-                or any(not isinstance(p, str) or not p.strip() for p in prompts)
+            prompts_value = json.loads(args.prompts_file.read_text())
+            if not isinstance(prompts_value, list):
+                raise ValueError("prompts file must contain a nonempty JSON array of strings")
+            prompt_values = cast(list[object], prompts_value)
+            if not prompt_values or any(
+                not isinstance(p, str) or not p.strip() for p in prompt_values
             ):
                 raise ValueError("prompts file must contain a nonempty JSON array of strings")
+            prompts = cast(list[str], prompt_values)
             # Validate workload options before loading expensive weights.
             from .quantization import positive_int
 
@@ -115,13 +138,11 @@ def main(argv: list[str] | None = None) -> int:
             report["environment"] = environment_metadata()
             report["instrumentation"] = adapter.metadata
             if config.device == "cuda":
-                import torch
-
-                report["environment"]["gpu"] = torch.cuda.get_device_name(0)
-                report["environment"]["cuda"] = torch.version.cuda
-                report["environment"]["gpu_total_bytes"] = torch.cuda.get_device_properties(
-                    0
-                ).total_memory
+                torch = cast(TorchRuntime, importlib.import_module("torch"))
+                environment = report["environment"]
+                environment["gpu"] = torch.cuda.get_device_name(0)
+                environment["cuda"] = torch.version.cuda
+                environment["gpu_total_bytes"] = torch.cuda.get_device_properties(0).total_memory
         encoded = json.dumps(report, indent=2, allow_nan=False) + "\n"
         if args.output:
             args.output.write_text(encoded)

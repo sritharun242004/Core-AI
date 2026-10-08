@@ -7,7 +7,7 @@ fixed step penalty makes shorter paths preferable to wandering.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 
@@ -56,7 +56,7 @@ class Gridworld:
         self.steps = 0
         self.done = False
 
-    def _validate_xy(self, xy: tuple[int, int]) -> tuple[int, int]:
+    def _validate_xy(self, xy: Sequence[object]) -> tuple[int, int]:
         if len(xy) != 2:
             raise ValueError("coordinates must contain exactly two integers")
         x, y = xy
@@ -70,7 +70,7 @@ class Gridworld:
         x, y = self._validate_xy(xy)
         return y * self.width + x
 
-    def state_to_xy(self, state: int) -> tuple[int, int]:
+    def state_to_xy(self, state: object) -> tuple[int, int]:
         if not isinstance(state, (int, np.integer)) or not 0 <= state < self.n_states:
             raise ValueError(f"state must be an integer in [0, {self.n_states})")
         return int(state) % self.width, int(state) // self.width
@@ -99,7 +99,7 @@ class Gridworld:
         reward = self.goal_reward if terminated else self.step_reward
         return next_state, reward, terminated, blocked
 
-    def step(self, action: int) -> tuple[int, float, bool, dict[str, bool]]:
+    def step(self, action: object) -> tuple[int, float, bool, dict[str, bool]]:
         """Apply one action and return ``(state, reward, done, info)``."""
 
         if self.done:
@@ -111,11 +111,16 @@ class Gridworld:
         truncated = self.steps >= self.max_steps and not terminated
         self.state = next_state
         self.done = terminated or truncated
-        return next_state, reward, self.done, {
-            "terminated": terminated,
-            "truncated": truncated,
-            "blocked": blocked,
-        }
+        return (
+            next_state,
+            reward,
+            self.done,
+            {
+                "terminated": terminated,
+                "truncated": truncated,
+                "blocked": blocked,
+            },
+        )
 
     def transition_table(self) -> np.ndarray:
         """Return ``(state, action, (next_state, reward, terminal))`` dynamics."""

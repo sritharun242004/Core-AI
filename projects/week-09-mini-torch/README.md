@@ -31,13 +31,16 @@ PYTHONPATH=src jupytext --to notebook notebooks/01-mini-torch.py
 import numpy as np
 from mini_torch import MLP, accuracy, cross_entropy, make_mnist_shaped, train_mlp
 
-x_train, y_train, x_test, y_test = make_mnist_shaped(
-    n_train=500, n_test=100, seed=7
-)
+x_train, y_train, x_test, y_test = make_mnist_shaped(n_train=500, n_test=100, seed=7)
 model = MLP(28 * 28, hidden=(64, 32), out_features=10, seed=7)
 history = train_mlp(
-    model, x_train, y_train, epochs=20, learning_rate=0.1,
-    batch_size=50, seed=7,
+    model,
+    x_train,
+    y_train,
+    epochs=20,
+    learning_rate=0.1,
+    batch_size=50,
+    seed=7,
 )
 print(history["loss"][-1], accuracy(model(x_test), y_test))
 ```

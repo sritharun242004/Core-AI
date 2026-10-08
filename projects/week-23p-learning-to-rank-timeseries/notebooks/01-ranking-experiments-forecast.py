@@ -3,6 +3,8 @@
 # Actual neural optimization on synthetic data; no external models or datasets.
 
 # %%
+from typing import Protocol, cast
+
 import numpy as np
 import torch
 from learning_to_rank_timeseries import (
@@ -18,10 +20,17 @@ from learning_to_rank_timeseries import (
     train_ranker,
 )
 
+
+class _TensorValues(Protocol):
+    def tolist(self) -> list[int]: ...
+
+
 torch.set_num_threads(1)
 x, relevance, groups = ranking_fixture()
 fit, held = group_split(groups)
-assert set(groups[fit].tolist()).isdisjoint(groups[held].tolist())
+fit_groups = cast(_TensorValues, groups[fit]).tolist()
+held_groups = cast(_TensorValues, groups[held]).tolist()
+assert set(fit_groups).isdisjoint(held_groups)
 for method in ("pairwise", "lambda"):
     model = NeuralRanker(x.shape[1])
     history = train_ranker(model, x[fit], relevance[fit], groups[fit], method=method)

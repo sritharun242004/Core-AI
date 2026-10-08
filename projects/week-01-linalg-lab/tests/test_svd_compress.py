@@ -18,7 +18,7 @@ def test_rank_1_reconstruction_has_rank_1():
 def test_error_decreases_monotonically_with_k():
     rng = np.random.default_rng(2)
     a = rng.standard_normal((20, 15))
-    errs = [np.linalg.norm(a - svd_reconstruct(a, k=k), 'fro') for k in range(1, 15)]
+    errs = [np.linalg.norm(a - svd_reconstruct(a, k=k), "fro") for k in range(1, 15)]
     for i in range(len(errs) - 1):
         assert errs[i] >= errs[i + 1] - 1e-9
 

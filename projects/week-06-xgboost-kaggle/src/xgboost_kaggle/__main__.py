@@ -24,8 +24,7 @@ def main() -> None:
     scores = evaluate_models(train, n_splits=args.folds, seed=42)
     print(f"user-provided CSVs: {len(train)} train rows, {len(test)} test rows")
     print(
-        f"roc_auc baseline={scores['baseline'].mean():.4f} "
-        f"xgboost={scores['xgboost'].mean():.4f}"
+        f"roc_auc baseline={scores['baseline'].mean():.4f} xgboost={scores['xgboost'].mean():.4f}"
     )
     model = fit_model(train, model=args.model, seed=42)
     make_submission(model, test, args.output)

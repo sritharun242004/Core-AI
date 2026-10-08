@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Self, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -11,10 +11,12 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 from xgboost import XGBClassifier
+
+from ._sklearn import FloatArray, PipelineFit, PredictProba, cross_val_score
 
 ID_COLUMN = "PassengerId"
 TARGET_COLUMN = "Survived"
@@ -30,7 +32,7 @@ class TitanicFeatures(BaseEstimator, TransformerMixin):
     in every CV training fold.
     """
 
-    def fit(self, x: pd.DataFrame, y: Any = None) -> TitanicFeatures:
+    def fit(self, x: object, y: object = None) -> TitanicFeatures:
         if not isinstance(x, pd.DataFrame):
             raise TypeError("TitanicFeatures expects a pandas DataFrame")
         self.input_columns_ = tuple(x.columns)
@@ -54,7 +56,7 @@ class TitanicFeatures(BaseEstimator, TransformerMixin):
         text = str(cabin).strip()
         return text[0].upper() if text else pd.NA
 
-    def transform(self, x: pd.DataFrame) -> pd.DataFrame:
+    def transform(self, x: object) -> pd.DataFrame:
         if not isinstance(x, pd.DataFrame):
             raise TypeError("TitanicFeatures expects a pandas DataFrame")
         frame = x.copy(deep=True)
@@ -73,7 +75,8 @@ class TitanicFeatures(BaseEstimator, TransformerMixin):
         # IDs and raw high-cardinality text are not model features. Their
         # useful information is represented by the row-local features above.
         drop_columns = [
-            column for column in (ID_COLUMN, TARGET_COLUMN, "Name", "Ticket", "Cabin")
+            column
+            for column in (ID_COLUMN, TARGET_COLUMN, "Name", "Ticket", "Cabin")
             if column in frame
         ]
         frame.drop(columns=drop_columns, inplace=True)
@@ -84,7 +87,7 @@ class TitanicFeatures(BaseEstimator, TransformerMixin):
         return frame
 
 
-def _validate_columns(frame: pd.DataFrame, *, training: bool) -> None:
+def _validate_columns(frame: object, *, training: bool) -> None:
     if not isinstance(frame, pd.DataFrame):
         raise TypeError("CSV data must be loaded into a pandas DataFrame")
     required = (ID_COLUMN, TARGET_COLUMN) if training else (ID_COLUMN,)
@@ -113,6 +116,7 @@ def _validate_columns(frame: pd.DataFrame, *, training: bool) -> None:
             raise ValueError("Survived must contain only 0 or 1")
         if target.nunique() < 2:
             raise ValueError("Survived must contain both classes")
+
 
 def _make_preprocessor(x: pd.DataFrame) -> ColumnTransformer:
     numeric = x.select_dtypes(include=["number", "bool"]).columns.tolist()
@@ -144,7 +148,7 @@ def _make_preprocessor(x: pd.DataFrame) -> ColumnTransformer:
     )
 
 
-def build_pipeline(model: str = "xgboost", seed: int = 0) -> Pipeline:
+def build_pipeline(model: str = "xgboost", seed: int = 0) -> _PipelineWithDynamicPreprocessor:
     """Build a fresh estimator; preprocessing is fitted by Pipeline.fit."""
     if model == "baseline":
         estimator = LogisticRegression(max_iter=1_000, solver="liblinear", random_state=seed)
@@ -185,18 +189,29 @@ class _PipelineWithDynamicPreprocessor(Pipeline):
     retaining the familiar ``named_steps['preprocess']`` inspection surface.
     """
 
-    def fit(
-        self,
-        x: pd.DataFrame,
-        y: Any = None,
-        **fit_params: Any,
-    ) -> _PipelineWithDynamicPreprocessor:
+    @overload
+    def fit(self, X: object, y: object = None, **fit_params: object) -> Self:  # noqa: N803
+        ...
+
+    @overload
+    def fit(self, *, x: pd.DataFrame, y: object = None, **fit_params: object) -> Self: ...
+
+    def fit(self, X: object = None, y: object = None, **fit_params: object) -> Self:  # noqa: N803
+        # sklearn names the input X; retain the original public x= call as well.
+        x = fit_params.pop("x", X)
         if not isinstance(x, pd.DataFrame):
             raise TypeError("pipeline expects a pandas DataFrame")
         features = self.steps[0][1]
         transformed = features.fit_transform(x, y)
         self.steps[1] = ("preprocess", _make_preprocessor(transformed))
-        return super().fit(x, y, **fit_params)
+        cast(PipelineFit, super().fit)(x, y, **fit_params)
+        return self
+
+    def predict_proba(self, X: object, **predict_proba_params: object) -> FloatArray:  # noqa: N803
+        # The parent accepts array-like objects; no new runtime restriction is added.
+        return cast(PredictProba, super().predict_proba)(
+            cast(pd.DataFrame, X), **predict_proba_params
+        )
 
 
 def validate_train(train: pd.DataFrame) -> None:
@@ -221,14 +236,18 @@ def load_titanic(
     return train, test
 
 
-def fit_model(train: pd.DataFrame, model: str = "xgboost", seed: int = 0) -> Pipeline:
+def fit_model(
+    train: pd.DataFrame, model: str = "xgboost", seed: int = 0
+) -> _PipelineWithDynamicPreprocessor:
     validate_train(train)
     estimator = build_pipeline(model, seed=seed)
     estimator.fit(train.drop(columns=TARGET_COLUMN), train[TARGET_COLUMN].astype(int))
     return estimator
 
 
-def evaluate_models(train: pd.DataFrame, n_splits: int = 5, seed: int = 0) -> dict[str, np.ndarray]:
+def evaluate_models(
+    train: pd.DataFrame, n_splits: object = 5, seed: int = 0
+) -> dict[str, FloatArray]:
     validate_train(train)
     if not isinstance(n_splits, int) or n_splits < 2 or n_splits > len(train):
         raise ValueError("n_splits must be an integer between 2 and the number of rows")
@@ -255,7 +274,7 @@ def make_submission(
 ) -> pd.DataFrame:
     """Predict in test-row order and optionally write Kaggle's exact schema."""
     validate_test(test)
-    probabilities = model.predict_proba(test)[:, 1]
+    probabilities = cast(PredictProba, model.predict_proba)(test)[:, 1]
     submission = pd.DataFrame(
         {
             ID_COLUMN: test[ID_COLUMN].to_numpy(),
@@ -295,7 +314,7 @@ def make_synthetic_titanic(
     cabins = np.where(
         rng.random(n_total) < 0.28,
         rng.choice(["C85", "E12", "B20"], n_total),
-        None,
+        np.array(None, dtype=object),
     ).astype(object)
     tickets = np.array(
         [f"T{value:04d}" for value in rng.integers(1000, 9999, n_total)],
@@ -320,20 +339,22 @@ def make_synthetic_titanic(
     probability = 1 / (1 + np.exp(-interaction))
     labels = rng.binomial(1, probability).astype(int)
     ids = np.arange(1, n_total + 1)
-    frame = pd.DataFrame({
-        ID_COLUMN: ids,
-        "Pclass": pclass,
-        "Name": names,
-        "Sex": sex,
-        "Age": age,
-        "SibSp": sibsp,
-        "Parch": parch,
-        "Ticket": tickets,
-        "Fare": fare,
-        "Cabin": cabins,
-        "Embarked": embarked,
-        TARGET_COLUMN: labels,
-    })
+    frame = pd.DataFrame(
+        {
+            ID_COLUMN: ids,
+            "Pclass": pclass,
+            "Name": names,
+            "Sex": sex,
+            "Age": age,
+            "SibSp": sibsp,
+            "Parch": parch,
+            "Ticket": tickets,
+            "Fare": fare,
+            "Cabin": cabins,
+            "Embarked": embarked,
+            TARGET_COLUMN: labels,
+        }
+    )
     train = frame.iloc[:n_train].reset_index(drop=True)
     test = frame.iloc[n_train:].drop(columns=TARGET_COLUMN).reset_index(drop=True)
     return train, test

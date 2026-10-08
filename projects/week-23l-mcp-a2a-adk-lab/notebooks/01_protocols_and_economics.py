@@ -20,13 +20,25 @@ from protocol_lab import (
     repository_fixtures,
     route_model,
 )
+from protocol_lab.rpc import JSONObject
+
+
+def text_content(result: JSONObject) -> str:
+    content = result.get("content")
+    if not isinstance(content, list) or not content or not isinstance(content[0], dict):
+        raise AssertionError("invalid content")
+    text = content[0].get("text")
+    if not isinstance(text, str):
+        raise AssertionError("invalid text")
+    return text
+
 
 wire = LocalTransport(MCPServer())
 client = MCPClient(wire)
 print("initialize:", client.initialize())
 print("tools:", [tool["name"] for tool in client.list_tools()])
 result = client.call_tool("add", {"a": 2, "b": 3})
-assert result["content"][0]["text"] == "5"
+assert text_content(result) == "5"
 assert not result["isError"]
 print("serialized request:", wire.requests[-1])
 print("serialized result:", result)

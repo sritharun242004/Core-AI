@@ -1,9 +1,12 @@
 """Bounded newline JSON-RPC transport primitives, not a general RPC implementation."""
 
 import json
-from typing import Any, Protocol, TextIO
+from typing import Never, Protocol, TextIO, cast
 
 MAX_FRAME = 65_536
+type JSONValue = bool | float | int | str | list["JSONValue"] | dict[str, "JSONValue"] | None
+type JSONObject = dict[str, JSONValue]
+type RequestId = str | int | None
 
 
 class ProtocolError(Exception):
@@ -12,12 +15,12 @@ class ProtocolError(Exception):
         self.code = code
 
 
-def encode(value: Any) -> str:
+def encode(value: object) -> str:
     return json.dumps(value, allow_nan=False, separators=(",", ":"))
 
 
-def decode(wire: str) -> Any:
-    def reject_constant(value):
+def decode(wire: object) -> JSONValue:
+    def reject_constant(value: str) -> Never:
         raise ValueError("nonfinite JSON number")
 
     if not isinstance(wire, str) or len(wire) > MAX_FRAME:
@@ -25,14 +28,14 @@ def decode(wire: str) -> Any:
     return json.loads(wire, parse_constant=reject_constant)
 
 
-def error_frame(ident: Any, code: int, message: str) -> str:
+def error_frame(ident: RequestId, code: int, message: str) -> str:
     return encode({"jsonrpc": "2.0", "id": ident, "error": {"code": code, "message": message}})
 
 
 class JSONRPCServer:
     """Requests only, plus no-response notifications; batch frames are not supported."""
 
-    def dispatch(self, method: str, params: dict[str, Any], *, notification: bool) -> Any:
+    def dispatch(self, method: str, params: JSONObject, *, notification: bool) -> object:
         raise ProtocolError(-32601, "method not found")
 
     def handle(self, wire: str) -> str | None:
@@ -43,23 +46,27 @@ class JSONRPCServer:
         if not isinstance(frame, dict) or frame.get("jsonrpc") != "2.0":
             return error_frame(None, -32600, "invalid request")
         ident = frame.get("id")
-        if not isinstance(frame.get("method"), str) or (
-            "id" in frame and type(ident) not in (int, str)
-        ):
+        method = frame.get("method")
+        if not isinstance(method, str):
             return error_frame(None, -32600, "invalid request")
+        if "id" in frame and type(ident) not in (int, str):
+            return error_frame(None, -32600, "invalid request")
+        request_id = cast(RequestId, ident) if type(ident) in (int, str) else None
         notification = "id" not in frame
         params = frame.get("params", {})
         try:
             if not isinstance(params, dict):
                 raise ProtocolError(-32602, "params must be an object")
-            result = self.dispatch(frame["method"], params, notification=notification)
+            result = self.dispatch(method, params, notification=notification)
             return (
-                None if notification else encode({"jsonrpc": "2.0", "id": ident, "result": result})
+                None
+                if notification
+                else encode({"jsonrpc": "2.0", "id": request_id, "result": result})
             )
         except ProtocolError as error:
-            return None if notification else error_frame(ident, error.code, str(error))
+            return None if notification else error_frame(request_id, error.code, str(error))
         except Exception:
-            return None if notification else error_frame(ident, -32603, "internal error")
+            return None if notification else error_frame(request_id, -32603, "internal error")
 
 
 class Transport(Protocol):
@@ -85,7 +92,7 @@ class RPCClient:
         self.transport = transport
         self._next_id = 0
 
-    def notify(self, method: str, params: dict | None = None) -> None:
+    def notify(self, method: str, params: JSONObject | None = None) -> None:
         response = self.transport.exchange(
             encode(
                 {
@@ -98,12 +105,14 @@ class RPCClient:
         if response is not None:
             raise ProtocolError(-32600, "notification unexpectedly received a reply")
 
-    def request(self, method: str, params: dict | None = None) -> Any:
+    def request(self, method: str, params: JSONObject | None = None) -> JSONValue:
         self._next_id += 1
         wire = encode(
             {"jsonrpc": "2.0", "id": self._next_id, "method": method, "params": params or {}}
         )
         response = self.transport.exchange(wire)
+        if response is None:
+            raise ProtocolError(-32600, "invalid response")
         try:
             frame = decode(response)
         except (ValueError, TypeError, RecursionError) as error:
@@ -117,13 +126,12 @@ class RPCClient:
             raise ProtocolError(-32600, "invalid response envelope or id")
         if "error" in frame:
             error = frame["error"]
-            if (
-                not isinstance(error, dict)
-                or type(error.get("code")) is not int
-                or (not isinstance(error.get("message"), str))
-            ):
+            if not isinstance(error, dict):
                 raise ProtocolError(-32600, "invalid error envelope")
-            raise ProtocolError(error["code"], error["message"])
+            code, message = error.get("code"), error.get("message")
+            if type(code) is not int or not isinstance(message, str):
+                raise ProtocolError(-32600, "invalid error envelope")
+            raise ProtocolError(code, message)
         return frame["result"]
 
 

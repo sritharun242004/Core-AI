@@ -13,6 +13,7 @@ from alignment_lab import (
     sae_loss,
     train_sae,
 )
+from alignment_lab.torch_api import backward
 
 
 def test_logit_lens_uses_final_normalization_and_unembedding():
@@ -50,11 +51,11 @@ def test_sae_objective_is_reconstruction_plus_l1_with_gradients():
     loss = sae_loss(values, reconstruction, codes, l1_coefficient=0.07)
     expected = functional.mse_loss(reconstruction, values) + 0.07 * codes.abs().sum(-1).mean()
     assert torch.allclose(loss, expected)
-    loss.backward()
+    backward(loss)
     assert model.encoder.weight.grad is not None
     assert model.decoder.grad is not None
     assert (codes >= 0).all()
-    assert torch.allclose(model.dictionary.norm(dim=1), torch.ones(6), atol=1e-6)
+    assert torch.allclose(model.dictionary.square().sum(dim=1).sqrt(), torch.ones(6), atol=1e-6)
 
 
 def test_sae_training_improves_heldout_reconstruction_and_reports_activations():

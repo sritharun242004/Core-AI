@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import cast
 
 import torch
 from torch import Tensor, nn
@@ -24,7 +25,8 @@ def choose_device(preference: str = "auto") -> torch.device:
 def seed_everything(seed: int) -> None:
     """Seed torch (and CUDA if present) for comparable small experiments."""
 
-    torch.manual_seed(seed)
+    # torch's seed annotation is incomplete; the public contract accepts an int.
+    cast(Callable[[int], torch.Generator], torch.manual_seed)(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
@@ -114,7 +116,7 @@ def fit(
     optimizer = torch.optim.SGD(
         model.parameters(), lr=learning_rate, momentum=0.9, weight_decay=weight_decay
     )
-    history = {"train_loss": [], "train_accuracy": []}
+    history: dict[str, list[float]] = {"train_loss": [], "train_accuracy": []}
     for _ in range(epochs):
         loss, accuracy = train_epoch(model, loader, optimizer, device=device)
         history["train_loss"].append(loss)

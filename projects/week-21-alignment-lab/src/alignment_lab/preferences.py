@@ -15,13 +15,15 @@ import torch
 import torch.nn.functional as functional
 from torch import Tensor, nn
 
+from .torch_api import backward, fork_rng, manual_seed, optimizer_step
+
 
 def _positive(value: float, name: str) -> None:
     if not math.isfinite(value) or value <= 0:
         raise ValueError(f"{name} must be finite and positive")
 
 
-def _training_settings(steps: int, lr: float) -> None:
+def training_settings(steps: object, lr: float) -> None:
     if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
         raise ValueError("steps must be a positive integer")
     _positive(lr, "lr")
@@ -57,8 +59,8 @@ class TinyPolicy(nn.Module):
         super().__init__()
         if contexts < 1 or width < 2:
             raise ValueError("contexts must be positive and width at least two")
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(seed)
+        with fork_rng(devices=[]):
+            manual_seed(seed)
             self.embedding = nn.Embedding(contexts, width)
             self.residual = nn.Linear(width, width)
             self.final_norm = nn.LayerNorm(width)
@@ -122,7 +124,7 @@ def train_dpo(
     rejected even if wrapped in distinct Parameter objects. No reference mode,
     buffer, parameter or gradient is mutated by this function.
     """
-    _training_settings(steps, lr)
+    training_settings(steps, lr)
     _positive(beta, "beta")
     reference_storage = {p.untyped_storage().data_ptr() for p in reference.parameters()}
     if any(p.untyped_storage().data_ptr() in reference_storage for p in policy.parameters()):
@@ -166,12 +168,12 @@ def train_dpo(
 
     initial = measure()
     optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
-    losses = []
+    losses: list[float] = []
     for _ in range(steps):
         optimizer.zero_grad(set_to_none=True)
         loss = objective(*scores(policy))
-        loss.backward()
-        optimizer.step()
+        backward(loss)
+        optimizer_step(optimizer)
         losses.append(loss.item())
     final = measure()
     return DPOReport(

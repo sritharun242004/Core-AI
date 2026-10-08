@@ -23,9 +23,9 @@ The Python correctness suites and percent notebooks use deterministic local fixt
 
 ## Strict Python typing backlog
 
-`pyproject.toml` still requests **strict** Pyright checking. A full audit during completion reported thousands of diagnostics (5,969 before the final track implementations), including unannotated educational NumPy/PyTorch APIs, dynamic tensor types, test doubles and absent optional-integration stubs. This is **not a passing typecheck** and is not presented as one.
+`pyproject.toml` requests **strict** Pyright checking. The offline hardening pass corrected interpreter selection, added `py.typed` markers to all 27 libraries, added compatible pandas/scikit-learn stubs, and reduced the audit from 6,870 environment-inflated diagnostics to **963 diagnostics across 224 files**. Remaining findings are concentrated in educational NumPy/PyTorch dynamic APIs, tests/notebooks, and optional integration boundaries (especially FSDP/vLLM/ADK). This is **not a passing typecheck** and is not presented as one.
 
-CI retains the strict command as a visibly named advisory step rather than allowing this inherited, unbaselined typing backlog to obscure the mandatory per-project runtime tests and Ruff checks. The strict configuration is not weakened. Future hardening should annotate one package at a time, pin/stub optional interfaces, separate source from test typing where justified, and restore a blocking strict gate after a verified clean baseline. No runtime correctness guarantee follows from deferring these diagnostics.
+CI retains the strict command as a visibly named advisory step rather than allowing this inherited, unbaselined typing backlog to obscure the mandatory per-project runtime tests and Ruff checks. Strict mode and full source/test/notebook coverage are not weakened. Future hardening should annotate one package at a time, pin/stub optional interfaces, separate source from test typing where justified, and restore a blocking strict gate only after a verified clean baseline. No runtime correctness guarantee follows from deferring these diagnostics.
 
 ## Platform fixes in the final release
 
@@ -35,4 +35,4 @@ CI retains the strict command as a visibly named advisory step rather than allow
 - The dev server serves the already-built Pagefind assets. Search distinguishes loading, no results and an unavailable index, rejects stale search responses, and uses a native keyboard-accessible dialog.
 - Generated caches, virtual environments and harness metadata are excluded from linting; owned source remains checked.
 
-No Vercel deployment, paid GPU job, package publication or automated outreach is part of this release.
+Optional local smoke contracts validated without credentials: Week 19 CLI/demo and adapter fakes, Week 23L MCP/A2A/economics/ADK fake-module tests. Real provider/SDK calls were not made. No Vercel deployment, paid GPU job, package publication or automated outreach is part of this release.

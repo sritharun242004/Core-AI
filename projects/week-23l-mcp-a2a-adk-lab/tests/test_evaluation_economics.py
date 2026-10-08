@@ -101,7 +101,7 @@ def test_cost_distinguishes_fresh_cached_write_and_output_tokens():
         {"input_tokens": 3, "cached_tokens": 2, "cache_write_tokens": 2},
     ],
 )
-def test_invalid_token_ledgers(kwargs):
+def test_invalid_token_ledgers(kwargs: dict[str, int | bool]) -> None:
     with pytest.raises(ValueError):
         TokenUsage(**kwargs)
 
@@ -129,7 +129,7 @@ def test_router_selects_cheapest_eligible_model_or_explicitly_fails():
         route_model(options, usage, min_quality=0.95, max_latency_ms=200, max_cost=1)
 
 
-def key(tenant="one", revision="r1"):
+def key(tenant: str = "one", revision: str = "r1") -> CacheKey:
     return CacheKey(tenant, "model-v1", "prompt", revision, "tools-v1", '{"temperature":0}')
 
 
@@ -143,7 +143,10 @@ def test_cache_is_partitioned_versioned_expiring_and_defensively_copied():
     assert cache.get(key("two")) is None
     assert cache.get(key(revision="r2")) is None
     found = cache.get(key())
-    found["answer"].append("mutated again")
+    assert found is not None
+    answer = found.get("answer")
+    assert isinstance(answer, list)
+    answer.append("mutated again")
     assert cache.get(key()) == {"answer": ["public"]}
     clock[0] = 10
     assert cache.get(key()) is None

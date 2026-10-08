@@ -1,6 +1,9 @@
 """Mechanism-level Transformer reproduction; not the WMT paper experiment."""
 
 import math
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+from typing import cast
 
 import torch
 from torch import Tensor, nn
@@ -36,7 +39,9 @@ def attention(q: Tensor, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
 class TinyTransformer(nn.Module):
     """One pre-norm decoder block, learned positions; an explicit paper deviation."""
 
-    def __init__(self, vocab_size: int = 8, width: int = 16, heads: int = 2, context: int = 16):
+    def __init__(
+        self, vocab_size: int = 8, width: int = 16, heads: int = 2, context: int = 16
+    ) -> None:
         super().__init__()
         if min(vocab_size, width, heads, context) < 1 or width % heads:
             raise ValueError("positive dimensions and width divisible by heads required")
@@ -60,7 +65,7 @@ class TinyTransformer(nn.Module):
         hidden = self.embedding(tokens) + self.position(torch.arange(length, device=tokens.device))
         q, k, v = self.qkv(self.norm1(hidden)).chunk(3, dim=-1)
 
-        def heads(value):
+        def heads(value: Tensor) -> Tensor:
             return value.reshape(batch, length, self.heads, self.width // self.heads).transpose(
                 1, 2
             )
@@ -82,17 +87,19 @@ def train_fixture(*, seed: int = 0, steps: int = 30, width: int = 16) -> list[fl
     """Overfit a periodic synthetic corpus; held-out quality is deliberately not claimed."""
     if steps < 1:
         raise ValueError("steps must be positive")
-    with torch.random.fork_rng(devices=[]):
-        torch.random.default_generator.manual_seed(seed)
+    # PyTorch does not fully annotate fork_rng; this is its CPU-only call signature.
+    with cast(Callable[[list[int]], AbstractContextManager[None]], torch.random.fork_rng)([]):
+        torch.random.set_rng_state(torch.Generator().manual_seed(seed).get_state())
         model = TinyTransformer(width=width)
         optimizer = torch.optim.AdamW(model.parameters(), lr=0.02, weight_decay=0)
         x, y = causal_batch(torch.arange(40) % 8)
-        history = []
+        history: list[float] = []
         for _ in range(steps):
             optimizer.zero_grad(set_to_none=True)
             loss = nn.functional.cross_entropy(model(x).reshape(-1, 8), y.reshape(-1))
-            loss.backward()
-            optimizer.step()
+            # These zero-argument PyTorch calls have incompletely typed optional arguments.
+            cast(Callable[[], None], loss.backward)()
+            cast(Callable[[], None], optimizer.step)()
             history.append(float(loss.detach()))
         return history
 

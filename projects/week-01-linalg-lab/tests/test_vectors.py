@@ -35,9 +35,14 @@ def test_project_v_onto_x_axis_zeros_y():
     np.testing.assert_allclose(project(v, x), np.array([3.0, 0.0]))
 
 
-@given(st.integers(min_value=1, max_value=100).flatmap(lambda n:
-    st.tuples(st.lists(st.floats(-10, 10, allow_nan=False), min_size=n, max_size=n),
-              st.lists(st.floats(-10, 10, allow_nan=False), min_size=n, max_size=n))))
+@given(
+    st.integers(min_value=1, max_value=100).flatmap(
+        lambda n: st.tuples(
+            st.lists(st.floats(-10, 10, allow_nan=False), min_size=n, max_size=n),
+            st.lists(st.floats(-10, 10, allow_nan=False), min_size=n, max_size=n),
+        )
+    )
+)
 def test_dot_is_commutative(vs: tuple[list[float], list[float]]) -> None:
     a, b = np.array(vs[0]), np.array(vs[1])
     assert dot(a, b) == pytest.approx(dot(b, a), abs=1e-9)

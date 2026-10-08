@@ -5,6 +5,7 @@ model. These are instrumented concurrency=1 measurements, not serving load tests
 """
 
 import hashlib
+import importlib
 import importlib.metadata
 import json
 import math
@@ -12,12 +13,105 @@ import os
 import platform
 import time
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from .metrics import RequestTrace, aggregate_metrics
 from .quantization import positive_int
+
+
+class TorchTensor(Protocol):
+    def numel(self) -> int: ...
+
+
+class TorchCuda(Protocol):
+    def synchronize(self) -> None: ...
+
+
+class TorchAPI(Protocol):
+    float32: object
+    float16: object
+    cuda: TorchCuda
+
+    def tensor(self, data: list[list[int]], *, device: str) -> TorchTensor: ...
+
+    def ones_like(self, tensor: TorchTensor) -> TorchTensor: ...
+
+    def inference_mode(self) -> AbstractContextManager[object]: ...
+
+
+class TokenStreamer(Protocol):
+    def put(self, values: TorchTensor) -> None: ...
+
+    def end(self) -> None: ...
+
+
+class Tokenizer(Protocol):
+    pad_token_id: int | None
+    eos_token_id: int | None
+
+    def encode(self, prompt: str, *, add_special_tokens: bool) -> list[int]: ...
+
+
+class CausalModel(Protocol):
+    def to(self, device: str) -> "CausalModel": ...
+
+    def eval(self) -> "CausalModel": ...
+
+    def generate(
+        self,
+        *,
+        input_ids: TorchTensor,
+        attention_mask: TorchTensor,
+        max_new_tokens: int,
+        do_sample: bool,
+        num_beams: int,
+        use_cache: bool,
+        streamer: TokenStreamer,
+        pad_token_id: int | None,
+    ) -> object: ...
+
+
+class HFTokenizerFactory(Protocol):
+    def from_pretrained(
+        self, model_path: str, *, local_files_only: bool, trust_remote_code: bool
+    ) -> Tokenizer: ...
+
+
+class HFModelFactory(Protocol):
+    def from_pretrained(
+        self,
+        model_path: str,
+        *,
+        local_files_only: bool,
+        trust_remote_code: bool,
+        torch_dtype: object,
+    ) -> CausalModel: ...
+
+
+class EngineResultOutput(Protocol):
+    token_ids: Sequence[int]
+
+
+class EngineResult(Protocol):
+    request_id: str
+    outputs: Sequence[EngineResultOutput]
+    finished: bool
+
+
+class Engine(Protocol):
+    def add_request(self, request_id: str, prompt: object, params: object) -> None: ...
+
+    def has_unfinished_requests(self) -> bool: ...
+
+    def step(self) -> Sequence[EngineResult]: ...
+
+
+class EngineClass(Protocol):
+    @classmethod
+    def from_engine_args(cls, args: object) -> Engine: ...
 
 
 @dataclass(frozen=True)
@@ -70,19 +164,21 @@ class HFAdapter:
 
     def __init__(self, config: LocalModelConfig):
         _offline_environment()
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        torch = cast(TorchAPI, importlib.import_module("torch"))
+        transformers = importlib.import_module("transformers")
+        model_factory = cast(HFModelFactory, transformers.AutoModelForCausalLM)
+        tokenizer_factory = cast(HFTokenizerFactory, transformers.AutoTokenizer)
 
         if config.prefix_cache:
             raise ValueError("this HF adapter has no cross-request prefix cache")
         self.config = config
-        self.torch = torch
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        self.torch: TorchAPI = torch
+        self.tokenizer: Tokenizer = tokenizer_factory.from_pretrained(
             str(config.model_path), local_files_only=True, trust_remote_code=False
         )
         dtype = torch.float32 if config.device == "cpu" else torch.float16
-        self.model = (
-            AutoModelForCausalLM.from_pretrained(
+        self.model: CausalModel = (
+            model_factory.from_pretrained(
                 str(config.model_path),
                 local_files_only=True,
                 trust_remote_code=False,
@@ -91,7 +187,10 @@ class HFAdapter:
             .to(config.device)
             .eval()
         )
-        self.metadata = {"dtype": str(dtype), "token_observation": "synchronized token-ID streamer"}
+        self.metadata: dict[str, object] = {
+            "dtype": str(dtype),
+            "token_observation": "synchronized token-ID streamer",
+        }
 
     def encode(self, prompt: str) -> list[int]:
         return self.tokenizer.encode(prompt, add_special_tokens=True)
@@ -101,20 +200,20 @@ class HFAdapter:
             self.torch.cuda.synchronize()
 
     def generate(self, token_ids: list[int]) -> RequestTrace:
-        token_times = []
+        token_times: list[float] = []
         sync = self._sync
 
         class TokenClock:
             prompt_pending = True
 
-            def put(self, values):
+            def put(self, values: TorchTensor) -> None:
                 if self.prompt_pending:
                     self.prompt_pending = False
                     return  # generate first passes input IDs, which are NOT output tokens.
                 sync()
                 token_times.extend([time.perf_counter()] * values.numel())
 
-            def end(self):
+            def end(self) -> None:
                 pass
 
         self._sync()
@@ -150,17 +249,21 @@ class VLLMAdapter:
         if config.device != "cuda":
             raise ValueError("this optional vLLM adapter targets a CUDA host; select --device cuda")
         _offline_environment()
-        from transformers import AutoTokenizer
-        from vllm import EngineArgs, LLMEngine, SamplingParams
+        transformers = importlib.import_module("transformers")
+        vllm = importlib.import_module("vllm")
+        tokenizer_factory = cast(HFTokenizerFactory, transformers.AutoTokenizer)
+        engine_args_factory = cast(Callable[..., object], vllm.EngineArgs)
+        engine_class = cast(EngineClass, vllm.LLMEngine)
+        sampling_params_factory = cast(Callable[..., object], vllm.SamplingParams)
 
         self.config = config
-        self.sampling_params = SamplingParams(
+        self.sampling_params = sampling_params_factory(
             temperature=0, max_tokens=config.max_new_tokens, seed=19
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        self.tokenizer: Tokenizer = tokenizer_factory.from_pretrained(
             str(config.model_path), local_files_only=True, trust_remote_code=False
         )
-        args = EngineArgs(
+        args = engine_args_factory(
             model=str(config.model_path),
             tokenizer=str(config.model_path),
             trust_remote_code=False,
@@ -173,9 +276,9 @@ class VLLMAdapter:
             enforce_eager=True,
             seed=19,
         )
-        self.engine = LLMEngine.from_engine_args(args)
+        self.engine: Engine = engine_class.from_engine_args(args)
         self._next_id = 0
-        self.metadata = {
+        self.metadata: dict[str, object] = {
             "dtype": "float16",
             "token_observation": "coalesced engine-step deltas",
             "enforce_eager": True,
@@ -188,7 +291,7 @@ class VLLMAdapter:
     def generate(self, token_ids: list[int]) -> RequestTrace:
         self._next_id += 1
         request_id = str(self._next_id)
-        token_times = []
+        token_times: list[float] = []
         submitted = time.perf_counter()
         self.engine.add_request(request_id, {"prompt_token_ids": token_ids}, self.sampling_params)
         finished = False
@@ -210,15 +313,15 @@ class VLLMAdapter:
 
 
 def run_benchmark(
-    adapter: Adapter,
-    prompts: Sequence[str],
+    adapter: Adapter | None,
+    prompts: Sequence[object],
     *,
     repeats: int = 3,
     warmup: int = 1,
     clock: Callable[[], float] = time.perf_counter,
     max_total_tokens: int | None = None,
     max_new_tokens: int = 32,
-) -> dict:
+) -> dict[str, object]:
     """Pretokenized serial workload; excludes load/tokenization/warmup from wall window.
 
     All errors propagate: never produce a deceptively successful partial summary.
@@ -228,7 +331,10 @@ def run_benchmark(
     positive_int(warmup, "warmup", allow_zero=True)
     if not prompts or any(not isinstance(p, str) or not p.strip() for p in prompts):
         raise ValueError("prompts must be a nonempty list of nonempty strings")
-    encoded = [adapter.encode(prompt) for prompt in prompts]
+    if adapter is None:
+        raise ValueError("adapter is required for a nonempty workload")
+    valid_prompts = cast(list[str], list(prompts))
+    encoded = [adapter.encode(prompt) for prompt in valid_prompts]
     if any(not ids for ids in encoded):
         raise ValueError("a prompt tokenized to zero tokens")
     if max_total_tokens is not None and any(
@@ -264,8 +370,8 @@ def run_benchmark(
     }
 
 
-def environment_metadata() -> dict:
-    versions = {}
+def environment_metadata() -> dict[str, object]:
+    versions: dict[str, str | None] = {}
     for package in ("numpy", "torch", "transformers", "vllm"):
         try:
             versions[package] = importlib.metadata.version(package)

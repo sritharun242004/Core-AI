@@ -1,4 +1,5 @@
 import math
+from typing import Protocol, cast
 
 import pytest
 import torch
@@ -12,7 +13,24 @@ from learning_to_rank_timeseries import (
     train_ranker,
 )
 
+
+class _TensorValues(Protocol):
+    def tolist(self) -> list[float]: ...
+
+
+class _Backward(Protocol):
+    def backward(self) -> None: ...
+
+
 torch.set_num_threads(1)
+
+
+def _backward(loss: torch.Tensor) -> None:
+    cast(_Backward, loss).backward()
+
+
+def _tensor_values(values: torch.Tensor) -> list[float]:
+    return cast(_TensorValues, values).tolist()
 
 
 def test_pairwise_loss_gradient_and_large_margins():
@@ -20,8 +38,10 @@ def test_pairwise_loss_gradient_and_large_margins():
     labels, groups = torch.tensor([1.0, 0.0]), torch.tensor([0, 0])
     loss = pairwise_loss(scores, labels, groups)
     assert float(loss.detach()) == pytest.approx(math.log(2))
-    loss.backward()
-    assert scores.grad.tolist() == pytest.approx([-0.5, 0.5])
+    _backward(loss)
+    gradient = scores.grad
+    assert gradient is not None
+    assert _tensor_values(gradient) == pytest.approx([-0.5, 0.5])
     assert torch.isfinite(pairwise_loss(torch.tensor([-1000.0, 1000.0]), labels, groups))
 
 
@@ -31,8 +51,10 @@ def test_lambda_weights_are_exact_ndcg_swap_change_not_plain_ranknet():
     delta = 1 - 1 / math.log2(3)
     expected = torch.tensor([-0.5 * delta, 0.5 * delta], dtype=torch.float64)
     assert torch.allclose(lambda_gradients(scores, labels, groups, k=2), expected)
-    pairwise_loss(scores, labels, groups, method="lambda", k=2).backward()
-    assert torch.allclose(scores.grad, expected)
+    _backward(pairwise_loss(scores, labels, groups, method="lambda", k=2))
+    gradient = scores.grad
+    assert gradient is not None
+    assert torch.allclose(gradient, expected)
 
 
 def test_lambda_gradient_finite_difference_away_from_ties():
@@ -52,8 +74,10 @@ def test_no_cross_query_pairs_and_tied_labels_have_zero_gradient():
     labels, groups = torch.tensor([2.0, 2.0, 0.0]), torch.tensor([1, 1, 2])
     loss = pairwise_loss(scores, labels, groups)
     assert loss.item() == 0
-    loss.backward()
-    assert torch.equal(scores.grad, torch.zeros(3))
+    _backward(loss)
+    gradient = scores.grad
+    assert gradient is not None
+    assert torch.equal(gradient, torch.zeros(3))
 
 
 def test_macro_metrics_empty_relevance_stable_ties_and_masks():
@@ -72,9 +96,11 @@ def test_macro_loss_includes_zero_pair_groups_and_lambda_normalization():
     relevance, groups = torch.tensor([1.0, 0.0, 0.0, 0.0]), torch.tensor([0, 0, 1, 1])
     assert pairwise_loss(scores, relevance, groups).item() == pytest.approx(math.log(2) / 2)
     loss = pairwise_loss(scores, relevance, groups, method="lambda", k=2)
-    loss.backward()
-    assert torch.allclose(scores.grad, lambda_gradients(scores, relevance, groups, k=2))
-    assert scores.grad[2:].tolist() == [0.0, 0.0]
+    _backward(loss)
+    gradient = scores.grad
+    assert gradient is not None
+    assert torch.allclose(gradient, lambda_gradients(scores, relevance, groups, k=2))
+    assert _tensor_values(gradient[2:]) == [0.0, 0.0]
 
 
 def test_all_masked_queries_and_empty_inputs_have_explicit_denominators():
@@ -92,13 +118,13 @@ def test_all_masked_queries_and_empty_inputs_have_explicit_denominators():
 def test_group_split_is_query_disjoint_and_deterministic():
     _, _, groups = ranking_fixture()
     fit, held = group_split(groups)
-    assert set(groups[fit].tolist()).isdisjoint(groups[held].tolist())
+    assert set(_tensor_values(groups[fit])).isdisjoint(_tensor_values(groups[held]))
     assert torch.equal(fit, group_split(groups)[0])
     assert len(fit) + len(held) == len(groups)
 
 
 @pytest.mark.parametrize("method", ["pairwise", "lambda"])
-def test_neural_reranker_actually_learns_and_generalizes(method):
+def test_neural_reranker_actually_learns_and_generalizes(method: str):
     x, labels, groups = ranking_fixture()
     fit, held = group_split(groups)
     model = NeuralRanker(x.shape[1])
@@ -110,6 +136,6 @@ def test_neural_reranker_actually_learns_and_generalizes(method):
 
 
 @pytest.mark.parametrize("bad", [float("nan"), -1.0])
-def test_invalid_relevance_rejected(bad):
+def test_invalid_relevance_rejected(bad: float):
     with pytest.raises(ValueError):
         pairwise_loss(torch.zeros(2), torch.tensor([1.0, bad]), torch.zeros(2, dtype=torch.long))

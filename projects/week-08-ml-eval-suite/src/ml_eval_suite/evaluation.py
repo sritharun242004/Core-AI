@@ -8,34 +8,43 @@ different definition of cross-validation.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike
-from sklearn.base import clone, is_classifier
+from sklearn.base import BaseEstimator, clone, is_classifier
 from sklearn.calibration import calibration_curve
-from sklearn.inspection import permutation_importance
-from sklearn.model_selection import (
+
+from ._typing import (
+    CalibrationReport,
+    CVReport,
+    EvaluationReport,
+    Features,
+    FitEstimator,
+    FloatArray,
+    ImportanceReport,
+    LeakageReport,
+    LearningCurveReport,
+    UnavailableReport,
     cross_val_predict,
     cross_val_score,
     learning_curve,
+    permutation_importance,
     train_test_split,
 )
 
 
 def cross_validation_metrics(
-    estimator: Any,
-    x: ArrayLike,
+    estimator: BaseEstimator,
+    x: Features,
     y: ArrayLike,
     *,
     cv: int = 5,
     scoring: str = "accuracy",
-) -> dict[str, Any]:
+) -> CVReport:
     """Return each fold's score plus summary statistics."""
 
-    scores = cross_val_score(
-        estimator, x, y, cv=cv, scoring=scoring, n_jobs=1, error_score="raise"
-    )
+    scores = cross_val_score(estimator, x, y, cv=cv, scoring=scoring, n_jobs=1, error_score="raise")
     return {
         "scores": scores,
         "mean": float(np.mean(scores)),
@@ -46,14 +55,14 @@ def cross_validation_metrics(
 
 
 def learning_curve_data(
-    estimator: Any,
-    x: ArrayLike,
+    estimator: BaseEstimator,
+    x: Features,
     y: ArrayLike,
     *,
     cv: int = 5,
     scoring: str = "accuracy",
     train_sizes: ArrayLike | None = None,
-) -> dict[str, Any]:
+) -> LearningCurveReport:
     """Compute mean and standard deviation for train/validation curves."""
 
     if train_sizes is None:
@@ -81,14 +90,14 @@ def learning_curve_data(
 
 
 def calibration_curve_data(
-    estimator: Any,
-    x: ArrayLike,
+    estimator: BaseEstimator,
+    x: Features,
     y: ArrayLike,
     *,
     cv: int = 5,
     n_bins: int = 10,
     strategy: str = "uniform",
-) -> dict[str, Any]:
+) -> CalibrationReport:
     """Return reliability-curve points from out-of-fold probabilities.
 
     Predictions are out-of-fold so the curve does not reward a model for
@@ -98,11 +107,15 @@ def calibration_curve_data(
     labels = np.asarray(y)
     if labels.ndim != 1 or not np.array_equal(np.unique(labels), [0, 1]):
         raise ValueError("calibration requires binary targets with both labels 0 and 1")
-    probabilities = cross_val_predict(
-        estimator, x, y, cv=cv, method="predict_proba", n_jobs=1
-    )[:, 1]
+    probabilities = cross_val_predict(estimator, x, y, cv=cv, method="predict_proba", n_jobs=1)[
+        :, 1
+    ]
     fraction, mean_predicted = calibration_curve(
-        y, probabilities, n_bins=n_bins, strategy=strategy
+        y,
+        probabilities,
+        n_bins=n_bins,
+        # sklearn validates the string at runtime; preserve its error contract.
+        strategy=cast(Literal["uniform", "quantile"], strategy),
     )
     return {
         "fraction_of_positives": fraction,
@@ -113,14 +126,14 @@ def calibration_curve_data(
 
 
 def permutation_importance_data(
-    estimator: Any,
-    x: ArrayLike,
+    estimator: BaseEstimator,
+    x: Features,
     y: ArrayLike,
     *,
     scoring: str = "accuracy",
     n_repeats: int = 10,
     random_state: int = 0,
-) -> dict[str, Any]:
+) -> ImportanceReport:
     """Fit on 75% of rows; measure score decrease on an independent 25%.
 
     The split is stratified for classifiers. This is a validation holdout,
@@ -129,10 +142,13 @@ def permutation_importance_data(
     """
 
     x_train, x_valid, y_train, y_valid = train_test_split(
-        x, y, test_size=0.25, random_state=random_state,
+        x,
+        y,
+        test_size=0.25,
+        random_state=random_state,
         stratify=y if is_classifier(estimator) else None,
     )
-    fitted = clone(estimator).fit(x_train, y_train)
+    fitted = cast(FitEstimator, clone(estimator)).fit(x_train, y_train)
     result = permutation_importance(
         fitted,
         x_valid,
@@ -150,7 +166,7 @@ def permutation_importance_data(
     }
 
 
-def _safe_correlation(feature: np.ndarray, target: np.ndarray) -> float:
+def _safe_correlation(feature: FloatArray, target: FloatArray) -> float:
     if np.std(feature) == 0.0 or np.std(target) == 0.0:
         return 0.0
     value = np.corrcoef(feature, target)[0, 1]
@@ -158,13 +174,13 @@ def _safe_correlation(feature: np.ndarray, target: np.ndarray) -> float:
 
 
 def detect_target_leakage(
-    x_train: ArrayLike,
+    x_train: Features,
     y_train: ArrayLike,
-    x_test: ArrayLike,
+    x_test: Features,
     y_test: ArrayLike,
     *,
     threshold: float = 0.95,
-) -> dict[str, Any]:
+) -> LeakageReport:
     """Flag features almost identical to the target in both data splits.
 
     This is a deliberately conservative smoke detector, not proof that a
@@ -195,9 +211,8 @@ def detect_target_leakage(
     test_correlations = np.array(
         [_safe_correlation(test[:, i], test_target) for i in range(test.shape[1])]
     )
-    leaky = np.flatnonzero(
-        (np.abs(train_correlations) >= threshold)
-        & (np.abs(test_correlations) >= threshold)
+    leaky: list[int] = np.flatnonzero(
+        (np.abs(train_correlations) >= threshold) & (np.abs(test_correlations) >= threshold)
     ).tolist()
     return {
         "is_leakage": bool(leaky),
@@ -209,13 +224,13 @@ def detect_target_leakage(
 
 
 def evaluate_estimator(
-    estimator: Any,
-    x: ArrayLike,
+    estimator: BaseEstimator,
+    x: Features,
     y: ArrayLike,
     *,
     cv: int = 5,
     scoring: str | None = None,
-) -> dict[str, Any]:
+) -> EvaluationReport:
     """Evaluate a sklearn classifier/regressor or complete preprocessing Pipeline.
 
     Calibration is explicitly not applicable without binary 0/1 probabilities.
@@ -229,16 +244,17 @@ def evaluate_estimator(
     x_train, x_valid, y_train, y_valid = train_test_split(
         x, y, test_size=0.25, random_state=0, stratify=y if classifier else None
     )
+    leakage: LeakageReport | UnavailableReport
     try:
         leakage = detect_target_leakage(x_train, y_train, x_valid, y_valid)
     except (TypeError, ValueError) as exc:
         leakage = {"status": "unavailable", "reason": str(exc)}
     calibratable = (
-        classifier and hasattr(estimator, "predict_proba")
-        and np.array_equal(np.unique(y), [0, 1])
+        classifier and hasattr(estimator, "predict_proba") and np.array_equal(np.unique(y), [0, 1])
     )
-    calibration = (
-        calibration_curve_data(estimator, x, y, cv=cv) if calibratable
+    calibration: CalibrationReport | UnavailableReport = (
+        calibration_curve_data(estimator, x, y, cv=cv)
+        if calibratable
         else {"status": "not_applicable", "reason": "requires binary 0/1 probabilities"}
     )
     return {
@@ -246,9 +262,7 @@ def evaluate_estimator(
         "cv": cross_validation_metrics(estimator, x, y, cv=cv, scoring=scoring),
         "learning_curve": learning_curve_data(estimator, x, y, cv=cv, scoring=scoring),
         "calibration": calibration,
-        "permutation_importance": permutation_importance_data(
-            estimator, x, y, scoring=scoring
-        ),
+        "permutation_importance": permutation_importance_data(estimator, x, y, scoring=scoring),
     }
 
 

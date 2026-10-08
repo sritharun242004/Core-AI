@@ -159,9 +159,7 @@ class TinyMoE(nn.Module):
                 continue
             expert_output = expert(flat[token_indices])
             weights = (
-                routing.topk_weights[token_indices, topk_slots]
-                .to(expert_output)
-                .unsqueeze(-1)
+                routing.topk_weights[token_indices, topk_slots].to(expert_output).unsqueeze(-1)
             )
             output.index_add_(0, token_indices, expert_output * weights)
         output = output.reshape(batch, time, self.d_model)

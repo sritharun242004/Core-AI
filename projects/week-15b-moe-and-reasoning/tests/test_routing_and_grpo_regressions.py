@@ -49,8 +49,10 @@ def test_grpo_rejects_empty_prompt_batch() -> None:
 def test_reference_penalty_rejects_invalid_weight(weight: float) -> None:
     with pytest.raises(ValueError, match="kl_weight"):
         grpo_loss(
-            torch.zeros(1, 2), torch.ones(1, 2),
-            reference_log_probs=torch.zeros(1, 2), kl_weight=weight,
+            torch.zeros(1, 2),
+            torch.ones(1, 2),
+            reference_log_probs=torch.zeros(1, 2),
+            kl_weight=weight,
         )
 
 

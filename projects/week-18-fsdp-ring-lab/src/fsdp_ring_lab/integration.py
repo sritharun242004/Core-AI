@@ -18,6 +18,8 @@ import torch
 import torch.distributed as dist
 from torch import nn
 
+from ._torch import backward, manual_seed
+
 
 def check_launch(
     environment: Mapping[str, str], *, cuda_available: bool, nccl_available: bool, device_count: int
@@ -107,7 +109,7 @@ def main() -> None:
 
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
-    torch.manual_seed(18)
+    manual_seed(18)
     torch.backends.cuda.matmul.allow_tf32 = False
     dist.init_process_group("nccl", timeout=timedelta(seconds=120))
     try:
@@ -135,14 +137,14 @@ def main() -> None:
             y_all = torch.cat([batch[1] for batch in batches])
             reference_optimizer.zero_grad(set_to_none=True)
             reference_loss = (reference(x_all) - y_all).square().mean()
-            reference_loss.backward()
+            backward(reference_loss)
             reference_optimizer.step()
             x, target = batches[rank]
             if args.engine == "fsdp":
                 optimizer.zero_grad(set_to_none=True)
             loss = (model(x) - target).square().mean()
             if args.engine == "fsdp":
-                loss.backward()
+                backward(loss)
                 optimizer.step()
                 context = FSDP.summon_full_params(model, writeback=False)
             else:

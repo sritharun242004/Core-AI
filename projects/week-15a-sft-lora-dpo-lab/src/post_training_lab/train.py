@@ -8,6 +8,7 @@ from typing import Any
 import torch
 from torch import Tensor, nn
 
+from ._torch import backward, manual_seed
 from .data import SFTExample
 from .lora import lora_config
 from .objectives import sft_loss
@@ -36,7 +37,7 @@ def train_sft(
     if epochs < 1 or learning_rate <= 0:
         raise ValueError("epochs must be positive and learning_rate must be positive")
     if seed is not None:
-        torch.manual_seed(seed)
+        manual_seed(seed)
     if batch_size is None:
         batch_size = len(examples)
     if batch_size < 1:
@@ -54,7 +55,7 @@ def train_sft(
             inputs, labels = _batch(examples[start : start + batch_size], device)
             optimizer.zero_grad(set_to_none=True)
             loss = sft_loss(model(inputs), labels)
-            loss.backward()
+            backward(loss)
             optimizer.step()
             epoch_losses.append(loss.detach())
         history.append(float(torch.stack(epoch_losses).mean()))

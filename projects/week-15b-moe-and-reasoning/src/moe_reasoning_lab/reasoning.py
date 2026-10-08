@@ -11,6 +11,8 @@ from collections.abc import Callable, Iterable
 import torch
 from torch import Tensor, nn
 
+from ._torch import backward
+
 _NUMBER = r"[-+]?\d+(?:\.\d+)?"
 _EXPRESSION = re.compile(rf"({_NUMBER})\s*([+*\-/])\s*({_NUMBER})")
 _RESPONSE_NUMBER = re.compile(_NUMBER)
@@ -201,7 +203,7 @@ def grpo_step(
     log_probs = expanded.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
     loss = grpo_loss(log_probs, rewards, old_log_probs=old_log_probs)
     optimizer.zero_grad(set_to_none=True)
-    loss.backward()
+    backward(loss)
     optimizer.step()
     return float(loss.detach())
 

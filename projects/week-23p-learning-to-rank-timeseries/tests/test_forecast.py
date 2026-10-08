@@ -1,3 +1,5 @@
+from typing import cast
+
 import numpy as np
 import pytest
 import torch
@@ -10,6 +12,7 @@ from learning_to_rank_timeseries import (
     train_forecaster,
     training_windows,
 )
+from learning_to_rank_timeseries.forecast import ResidualBlock
 
 torch.set_num_threads(1)
 
@@ -40,16 +43,22 @@ def test_actual_residual_blocks_reconstruct_residual_and_sum_forecasts():
     x = torch.randn(4, 8)
     result = model(x)
     residual, forecast = x, torch.zeros(4, 3)
-    for block in model.blocks:
+    blocks = [cast(ResidualBlock, block) for block in model.blocks]
+    for block in blocks:
         backcast, contribution = block(residual)
         residual = residual - backcast
         forecast = forecast + contribution
     assert torch.allclose(result, forecast)
     result.square().mean().backward()
-    assert model.blocks[0].backcast.weight.grad.abs().sum() > 0
-    assert all(b.forecast.weight.grad.abs().sum() > 0 for b in model.blocks)
+    backcast_gradient = blocks[0].backcast.weight.grad
+    assert backcast_gradient is not None
+    assert backcast_gradient.abs().sum() > 0
+    for block in blocks:
+        forecast_gradient = block.forecast.weight.grad
+        assert forecast_gradient is not None
+        assert forecast_gradient.abs().sum() > 0
     # The final backcast has no downstream block and is intentionally unused.
-    assert model.blocks[-1].backcast.weight.grad is None
+    assert blocks[-1].backcast.weight.grad is None
 
 
 def test_nbeats_training_is_real_and_reduces_loss():

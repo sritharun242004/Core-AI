@@ -4,16 +4,23 @@ Dense graph and exhaustive negatives are deliberately pedagogical, not scalable.
 """
 
 from collections import defaultdict
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+from typing import cast
 
 import torch
 from torch import nn
 from torch.nn import functional
 
 from .data import Interaction
-from .metrics import ranking_metrics
+from .metrics import RankingMetrics, positive_integer, ranking_metrics
 
 
-def _validate_rows(rows, n_users, n_items):
+class RetrievalMetrics(RankingMetrics):
+    users: int
+
+
+def _validate_rows(rows: list[Interaction], n_users: int, n_items: int) -> None:
     if any(r.user >= n_users or r.item >= n_items for r in rows):
         raise ValueError("interaction ID outside configured vocabulary")
     if len({(r.user, r.item) for r in rows}) != len(rows):
@@ -23,6 +30,8 @@ def _validate_rows(rows, n_users, n_items):
 class TwoTower(nn.Module):
     """Separate trainable user and item embedding towers; score is inner product."""
 
+    adjacency: torch.Tensor
+
     def __init__(
         self,
         n_users: int,
@@ -31,18 +40,19 @@ class TwoTower(nn.Module):
         *,
         seed: int = 22,
         graph_train: list[Interaction] | None = None,
-    ):
+    ) -> None:
         super().__init__()
         if min(n_users, n_items, dim) < 1:
             raise ValueError("positive embedding dimensions required")
         self.n_users, self.n_items = n_users, n_items
-        with torch.random.fork_rng():
-            torch.manual_seed(seed)
+        # PyTorch leaves these callable signatures partially unannotated.
+        with cast(Callable[[], AbstractContextManager[None]], torch.random.fork_rng)():
+            cast(Callable[[int], torch.Generator], torch.manual_seed)(seed)
             self.user_embedding = nn.Embedding(n_users, dim)
             self.item_embedding = nn.Embedding(n_items, dim)
             nn.init.normal_(self.user_embedding.weight, std=0.1)
             nn.init.normal_(self.item_embedding.weight, std=0.1)
-        self.graph_edges = None
+        self.graph_edges: frozenset[tuple[int, int]] | None = None
         adjacency = torch.empty(0)
         if graph_train is not None:
             _validate_rows(graph_train, n_users, n_items)
@@ -54,14 +64,14 @@ class TwoTower(nn.Module):
             adjacency = inv_degree[:, None] * adjacency * inv_degree[None, :]
         self.register_buffer("adjacency", adjacency)
 
-    def embeddings(self):
+    def embeddings(self) -> tuple[torch.Tensor, torch.Tensor]:
         if self.graph_edges is None:
             return self.user_embedding.weight, self.item_embedding.weight
         raw = torch.cat([self.user_embedding.weight, self.item_embedding.weight])
         propagated = (raw + self.adjacency @ raw) / 2
         return propagated[: self.n_users], propagated[self.n_users :]
 
-    def forward(self, users, items):
+    def forward(self, users: torch.Tensor, items: torch.Tensor) -> torch.Tensor:
         u, i = self.embeddings()
         return (u[users] * i[items]).sum(-1)
 
@@ -73,7 +83,7 @@ def training_pairs(rows: list[Interaction], n_items: int) -> torch.Tensor:
     to this sampler; false negatives remain possible in implicit-feedback data.
     """
     _validate_rows(rows, max((r.user for r in rows), default=0) + 1, n_items)
-    seen = defaultdict(set)
+    seen: defaultdict[int, set[int]] = defaultdict(set)
     for row in rows:
         seen[row.user].add(row.item)
     triples = [
@@ -102,7 +112,7 @@ def train(
     triples = training_pairs(rows, model.n_items).to(model.user_embedding.weight.device)
     user, positive, negative = triples.unbind(1)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    history = []
+    history: list[float] = []
     model.train()
     for step in range(steps + 1):
         u, i = model.embeddings()
@@ -114,41 +124,42 @@ def train(
         if step == steps:
             break
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        cast(Callable[[], None], loss.backward)()
+        cast(Callable[[], None], optimizer.step)()
     return history
 
 
 class Popularity:
     """Training counts only; stable item-ID tie break and seen-item exclusion."""
 
-    def __init__(self, rows: list[Interaction], n_items: int):
+    def __init__(self, rows: list[Interaction], n_items: int) -> None:
         if n_items < 1:
             raise ValueError("catalog must not be empty")
         _validate_rows(rows, max((r.user for r in rows), default=0) + 1, n_items)
         self.n_items = n_items
         self.counts = [0] * n_items
-        self.seen = defaultdict(set)
+        self.seen: defaultdict[int, set[int]] = defaultdict(set)
         for row in rows:
             self.counts[row.item] += 1
             self.seen[row.user].add(row.item)
 
-    def recommend(self, user: int, *, k: int = 10):
-        if not isinstance(k, int) or k < 1:
+    def recommend(self, user: int, *, k: int = 10) -> list[int]:
+        if not positive_integer(k):
             raise ValueError("k must be positive")
         eligible = (i for i in range(self.n_items) if i not in self.seen.get(user, set()))
         return sorted(eligible, key=lambda i: (-self.counts[i], i))[:k]
 
 
 @torch.no_grad()
-def recommend(model: TwoTower, user: int, rows: list[Interaction], *, k: int = 10):
-    if not isinstance(k, int) or k < 1:
+def recommend(model: TwoTower, user: int, rows: list[Interaction], *, k: int = 10) -> list[int]:
+    if not positive_integer(k):
         raise ValueError("k must be positive")
     baseline = Popularity(rows, model.n_items)
     if not 0 <= user < model.n_users or user not in baseline.seen:
         return baseline.recommend(user, k=k)
     u, i = model.embeddings()
-    scores = (i @ u[user]).cpu().tolist()
+    # A matrix-vector product is a 1-D floating tensor, so tolist yields scalar scores.
+    scores = cast(list[float], (i @ u[user]).cpu().tolist())
     if not all(torch.isfinite(torch.tensor(scores))):
         raise ValueError("nonfinite retrieval scores")
     eligible = (item for item in range(model.n_items) if item not in baseline.seen[user])
@@ -157,17 +168,17 @@ def recommend(model: TwoTower, user: int, rows: list[Interaction], *, k: int = 1
 
 def evaluate(
     model: TwoTower | Popularity, fit: list[Interaction], held: list[Interaction], *, k: int = 10
-):
+) -> RetrievalMetrics:
     if k < 1:
         raise ValueError("k must be positive")
     if {(r.user, r.item) for r in fit} & {(r.user, r.item) for r in held}:
         raise ValueError("training and heldout edges overlap")
     if any(r.item >= model.n_items for r in held):
         raise ValueError("heldout item is outside candidate catalog")
-    relevant = defaultdict(dict)
+    relevant: defaultdict[int, dict[int, float]] = defaultdict(dict)
     for row in held:
         relevant[row.user][row.item] = 1.0
-    results = []
+    results: list[RankingMetrics] = []
     for user, labels in relevant.items():
         ranked = (
             model.recommend(user, k=k)
@@ -176,9 +187,7 @@ def evaluate(
         )
         results.append(ranking_metrics(ranked, labels, k=k))
     return {
-        **{
-            name: sum(r[name] for r in results) / len(results) if results else 0.0
-            for name in ("recall", "ndcg")
-        },
+        "recall": sum(r["recall"] for r in results) / len(results) if results else 0.0,
+        "ndcg": sum(r["ndcg"] for r in results) / len(results) if results else 0.0,
         "users": len(results),
     }

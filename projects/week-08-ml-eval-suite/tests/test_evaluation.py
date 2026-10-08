@@ -82,8 +82,13 @@ def test_importance_is_measured_on_a_holdout_not_fit_rows() -> None:
         x, y, test_size=0.25, random_state=3, stratify=y
     )
     expected = permutation_importance(
-        clone(estimator).fit(x_train, y_train), x_test, y_test,
-        n_repeats=10, random_state=3, scoring="accuracy", n_jobs=1,
+        clone(estimator).fit(x_train, y_train),
+        x_test,
+        y_test,
+        n_repeats=10,
+        random_state=3,
+        scoring="accuracy",
+        n_jobs=1,
     )
     result = permutation_importance_data(estimator, x, y, random_state=3)
     np.testing.assert_allclose(result["importances"], expected.importances)
@@ -142,5 +147,9 @@ def test_evaluate_estimator_composes_all_outputs() -> None:
     result = evaluate_estimator(LogisticRegression(max_iter=500), x, y)
 
     assert {
-        "cv", "learning_curve", "calibration", "permutation_importance", "leakage"
+        "cv",
+        "learning_curve",
+        "calibration",
+        "permutation_importance",
+        "leakage",
     } <= result.keys()

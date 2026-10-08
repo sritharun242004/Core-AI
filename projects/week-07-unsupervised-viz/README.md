@@ -48,7 +48,7 @@ clusters = KMeans(n_clusters=3, random_state=42, n_init=10).fit(X)
 print(clusters.labels_, clusters.inertia_)
 
 result = run_comparison(
-    dataset="iris",             # also: "digits"
+    dataset="iris",  # also: "digits"
     random_state=42,
     include_umap=True,
     make_figure=True,

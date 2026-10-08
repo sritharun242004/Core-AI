@@ -62,12 +62,8 @@ def test_dpo_batch_loss_uses_causal_next_token_scores_and_freezes_reference_grad
     rejected = torch.tensor([[1, 2, 5, 4], [2, 3, 1, 5]])
     loss = dpo_batch_loss(policy, reference, chosen, rejected)
     with torch.no_grad():
-        reference_chosen = sequence_logprob(
-            reference(chosen)[:, :-1], chosen[:, 1:]
-        )
-        reference_rejected = sequence_logprob(
-            reference(rejected)[:, :-1], rejected[:, 1:]
-        )
+        reference_chosen = sequence_logprob(reference(chosen)[:, :-1], chosen[:, 1:])
+        reference_rejected = sequence_logprob(reference(rejected)[:, :-1], rejected[:, 1:])
     expected = dpo_loss(
         sequence_logprob(policy(chosen)[:, :-1], chosen[:, 1:]),
         sequence_logprob(policy(rejected)[:, :-1], rejected[:, 1:]),
@@ -153,11 +149,15 @@ def test_kto_detaches_reference_and_baseline_with_correct_gradient() -> None:
     baseline = delta.mean().clamp_min(0.0)
     good_sigmoid = torch.sigmoid(beta * (delta - baseline))
     bad_sigmoid = torch.sigmoid(beta * (baseline - delta))
-    expected_grad = torch.where(
-        desirable,
-        -good_sigmoid * (1 - good_sigmoid),
-        bad_sigmoid * (1 - bad_sigmoid),
-    ) * beta / 2
+    expected_grad = (
+        torch.where(
+            desirable,
+            -good_sigmoid * (1 - good_sigmoid),
+            bad_sigmoid * (1 - bad_sigmoid),
+        )
+        * beta
+        / 2
+    )
     torch.testing.assert_close(policy.grad, expected_grad)
     assert reference.grad is None
 
@@ -171,8 +171,12 @@ def test_kto_clamps_toy_baseline_and_weights_binary_utilities(delta: float) -> N
     ) / 2
     torch.testing.assert_close(
         kto_loss(
-            policy, torch.zeros(2), torch.tensor([True, False]),
-            beta=0.2, desirable_weight=2, undesirable_weight=3,
+            policy,
+            torch.zeros(2),
+            torch.tensor([True, False]),
+            beta=0.2,
+            desirable_weight=2,
+            undesirable_weight=3,
         ),
         expected,
     )
@@ -252,12 +256,18 @@ def test_dpo_batch_shifts_completion_masks_with_targets() -> None:
         return tokens.masked_fill(~mask[:, 1:], 0).sum(-1)
 
     expected = dpo_loss(
-        score(policy, chosen, chosen_mask), score(policy, rejected, rejected_mask),
-        score(reference, chosen, chosen_mask), score(reference, rejected, rejected_mask),
+        score(policy, chosen, chosen_mask),
+        score(policy, rejected, rejected_mask),
+        score(reference, chosen, chosen_mask),
+        score(reference, rejected, rejected_mask),
     )
     actual = dpo_batch_loss(
-        policy, reference, chosen, rejected,
-        chosen_mask=chosen_mask, rejected_mask=rejected_mask,
+        policy,
+        reference,
+        chosen,
+        rejected,
+        chosen_mask=chosen_mask,
+        rejected_mask=rejected_mask,
     )
     torch.testing.assert_close(actual, expected)
 

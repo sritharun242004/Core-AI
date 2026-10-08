@@ -2,6 +2,9 @@
 
 from .experiments import ExperimentResult, estimate_ate, randomize, srm_pvalue
 from .forecast import (
+    ForecastArray,
+    ForecastReport,
+    SeriesArray,
     TinyNBeats,
     forecast_fixture,
     rolling_forecast,
@@ -11,6 +14,7 @@ from .forecast import (
     training_windows,
 )
 from .ranking import (
+    GroupedMetrics,
     NeuralRanker,
     group_split,
     grouped_metrics,
@@ -22,7 +26,11 @@ from .ranking import (
 
 __all__ = [
     "ExperimentResult",
+    "ForecastArray",
+    "ForecastReport",
+    "GroupedMetrics",
     "NeuralRanker",
+    "SeriesArray",
     "TinyNBeats",
     "estimate_ate",
     "forecast_fixture",

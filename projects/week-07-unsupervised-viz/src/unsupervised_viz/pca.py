@@ -40,9 +40,7 @@ class PCA:
         self.n_features_in_ = n_features
         self.mean_ = x_array.mean(axis=0)
         centered = x_array - self.mean_
-        _, singular_values, right_vectors = np.linalg.svd(
-            centered, full_matrices=False
-        )
+        _, singular_values, right_vectors = np.linalg.svd(centered, full_matrices=False)
 
         all_explained = (singular_values**2) / (n_samples - 1)
         total_variance = float(all_explained.sum())
@@ -60,18 +58,14 @@ class PCA:
         if total_variance == 0.0:
             self.explained_variance_ratio_ = np.zeros(n_components, dtype=float)
         else:
-            self.explained_variance_ratio_ = (
-                self.explained_variance_ / total_variance
-            )
+            self.explained_variance_ratio_ = self.explained_variance_ / total_variance
         return self
 
     def transform(self, x: ArrayLike) -> FloatArray:
         self._check_is_fitted()
         x_array = _as_matrix(x)
         if x_array.shape[1] != self.n_features_in_:
-            raise ValueError(
-                f"expected {self.n_features_in_} features, got {x_array.shape[1]}"
-            )
+            raise ValueError(f"expected {self.n_features_in_} features, got {x_array.shape[1]}")
         return (x_array - self.mean_) @ self.components_.T
 
     def fit_transform(self, x: ArrayLike) -> FloatArray:
@@ -81,9 +75,7 @@ class PCA:
         self._check_is_fitted()
         reduced = _as_matrix(x_reduced)
         if reduced.shape[1] != self.n_components_:
-            raise ValueError(
-                f"expected {self.n_components_} components, got {reduced.shape[1]}"
-            )
+            raise ValueError(f"expected {self.n_components_} components, got {reduced.shape[1]}")
         return reduced @ self.components_ + self.mean_
 
     def _check_is_fitted(self) -> None:
@@ -107,7 +99,7 @@ def _as_matrix(x: ArrayLike) -> FloatArray:
 
 
 def _component_count(
-    requested: int | float | None,
+    requested: object,
     available: int,
     explained: FloatArray,
     total_variance: float,
@@ -116,9 +108,7 @@ def _component_count(
         return available
     if isinstance(requested, int):
         if not 1 <= requested <= available:
-            raise ValueError(
-                f"n_components must be between 1 and {available}, got {requested}"
-            )
+            raise ValueError(f"n_components must be between 1 and {available}, got {requested}")
         return requested
     if isinstance(requested, float):
         if not 0.0 < requested <= 1.0:

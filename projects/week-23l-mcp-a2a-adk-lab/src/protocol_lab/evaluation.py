@@ -4,7 +4,7 @@ The fixtures and deterministic validators are classroom tasks, not SWE-Bench dat
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
@@ -30,7 +30,7 @@ class EvaluationAttempt:
     input_tokens: int = 0
     output_tokens: int = 0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         counts = (self.steps, self.calls, self.denied_calls, self.input_tokens, self.output_tokens)
         if any(type(n) is not int or n < 0 for n in counts) or self.denied_calls > self.calls:
             raise ValueError("invalid trajectory counters")
@@ -60,13 +60,15 @@ class EvaluationReport:
     )
 
 
-def apply_replacements(task: RepositoryTask, replacements: dict[str, str]) -> dict[str, str]:
+def apply_replacements(
+    task: RepositoryTask, replacements: Mapping[str, object] | None
+) -> dict[str, str]:
     """A bounded allowlisted whole-file patch, never an executable shell/diff command."""
     if not isinstance(replacements, dict) or len(replacements) > 8:
         raise ValueError("invalid patch")
     files = dict(task.files)
     for path, content in replacements.items():
-        if not isinstance(path, str) or path not in task.editable or path not in files:
+        if path not in task.editable or path not in files:
             raise ValueError("path is not editable")
         parsed = PurePosixPath(path)
         if parsed.is_absolute() or ".." in parsed.parts or "\\" in path:
@@ -78,7 +80,7 @@ def apply_replacements(task: RepositoryTask, replacements: dict[str, str]) -> di
 
 
 def repository_fixtures() -> list[RepositoryTask]:
-    def timeout_check(files):
+    def timeout_check(files: dict[str, str]) -> bool:
         data = json.loads(files["config.json"])
         return (
             data.keys() == {"timeout_seconds"}
@@ -87,7 +89,7 @@ def repository_fixtures() -> list[RepositoryTask]:
             and files["src/client.py"] == 'TIMEOUT_KEY = "timeout_seconds"\n'
         )
 
-    def readme_check(files):
+    def readme_check(files: dict[str, str]) -> bool:
         version = json.loads(files["package.json"])["version"]
         return files["README.md"] == f"# Widget\nVersion: {version}\n"
 
@@ -120,7 +122,7 @@ def evaluate(tasks: list[RepositoryTask], attempts: list[EvaluationAttempt]) -> 
     task_ids = {task.task_id for task in tasks}
     if len(by_id) != len(attempts) or not by_id.keys() <= task_ids:
         raise ValueError("duplicate or unknown attempt")
-    results = []
+    results: list[CaseResult] = []
     for task in tasks:
         attempt = by_id.get(task.task_id)
         if attempt is None:

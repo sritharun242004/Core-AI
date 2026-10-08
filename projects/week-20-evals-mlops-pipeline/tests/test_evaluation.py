@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -18,7 +19,7 @@ from evals_mlops import (
 )
 
 
-def fixture():
+def fixture() -> list[Example]:
     return [Example(str(i), f"question {i}", str(i % 2)) for i in range(20)]
 
 
@@ -35,12 +36,12 @@ def test_split_is_deterministic_disjoint_and_reorder_invariant():
     first = split_dataset(data, seed=7)
     assert first == split_dataset(list(reversed(data)), seed=7)
     assert [len(part) for part in first] == [12, 4, 4]
-    assert set.union(*(set(x.id for x in part) for part in first)) == set(x.id for x in data)
+    assert set[str]().union(*(set(x.id for x in part) for part in first)) == set(x.id for x in data)
     assert not set(x.id for x in first[0]) & set(x.id for x in first[2])
 
 
 @pytest.mark.parametrize("fractions", [(0.5, 0.2, 0.2), (-0.1, 0.5, 0.6), (1, 0, 0)])
-def test_bad_splits_rejected(fractions):
+def test_bad_splits_rejected(fractions: tuple[float, float, float]):
     with pytest.raises(ValueError):
         split_dataset(fixture(), fractions=fractions)
 
@@ -55,13 +56,13 @@ def test_exact_match_normalization_and_length_validation():
 
 
 def test_judge_counterbalances_position_bias():
-    def biased(prompt, a, b):
+    def biased(prompt: str, a: str, b: str) -> dict[str, str]:
         return {"winner": "A", "reason": "first"}
 
     result = judge_pair("q", "good", "bad", biased)
     assert result == {"a_score": 0.5, "consistent": False, "calls": 2}
 
-    def content(prompt, a, b):
+    def content(prompt: str, a: str, b: str) -> dict[str, str]:
         return {"winner": "A" if a == "good" else "B", "reason": "rubric"}
 
     assert judge_pair("q", "good", "bad", content)["a_score"] == 1
@@ -69,9 +70,9 @@ def test_judge_counterbalances_position_bias():
 
 
 @pytest.mark.parametrize("response", [{"winner": "C"}, {"winner": "A"}, "A"])
-def test_invalid_judge_response_is_not_a_silent_pass(response):
+def test_invalid_judge_response_is_not_a_silent_pass(response: object):
     with pytest.raises(ValueError):
-        judge_pair("q", "a", "b", lambda *args: response)
+        judge_pair("q", "a", "b", lambda _prompt, _a, _b: response)
 
 
 def test_bootstrap_seed_and_constant_interval():
@@ -119,7 +120,7 @@ def test_regression_gate_paired_scores_and_budget():
         regression_gate([1], [1, 1])
 
 
-def test_manifest_and_results_are_reproducible_and_atomic(tmp_path):
+def test_manifest_and_results_are_reproducible_and_atomic(tmp_path: Path):
     manifest = RunManifest("tiny-policy-v1", dataset_digest(fixture()), "exact-match-v1", 3)
     path = tmp_path / "results.jsonl"
     rows = [{"id": "a", "score": 1.0}, {"id": "b", "score": 0.0}]

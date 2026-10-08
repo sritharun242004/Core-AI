@@ -8,6 +8,10 @@ copy of MNIST: the point is to test a learning loop without network access.
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
+
+FloatArray = NDArray[np.float64]
+IntArray = NDArray[np.int64]
 
 _SEGMENTS: dict[int, str] = {
     0: "abcdef",
@@ -23,7 +27,7 @@ _SEGMENTS: dict[int, str] = {
 }
 
 
-def _template(label: int, shift_y: int, shift_x: int) -> np.ndarray:
+def _template(label: int, shift_y: int, shift_x: int) -> FloatArray:
     image = np.zeros((28, 28), dtype=np.float64)
     y_top, y_mid, y_bottom = 4 + shift_y, 13 + shift_y, 22 + shift_y
     x_left, x_right = 5 + shift_x, 22 + shift_x
@@ -48,7 +52,7 @@ def make_mnist_shaped(
     n_test: int = 100,
     noise: float = 0.04,
     seed: int = 0,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[FloatArray, IntArray, FloatArray, IntArray]:
     """Return ``(x_train, y_train, x_test, y_test)`` with MNIST-like shapes.
 
     Class IDs are balanced by cycling through 0-9. A local NumPy generator is
@@ -62,9 +66,9 @@ def make_mnist_shaped(
         raise ValueError("noise must be non-negative")
     rng = np.random.default_rng(seed)
 
-    def make_split(count: int) -> tuple[np.ndarray, np.ndarray]:
+    def make_split(count: int) -> tuple[FloatArray, IntArray]:
         labels = np.arange(count, dtype=np.int64) % 10
-        rows = []
+        rows: list[FloatArray] = []
         for label in labels:
             shift_y, shift_x = rng.integers(-1, 2, size=2)
             image = _template(int(label), int(shift_y), int(shift_x))

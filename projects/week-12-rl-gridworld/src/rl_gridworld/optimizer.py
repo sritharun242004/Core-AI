@@ -23,9 +23,7 @@ def make_optimizer(
     return choices[name](parameters, lr=learning_rate, weight_decay=weight_decay)
 
 
-def regularization_penalty(
-    parameters: Iterable[Tensor], *, coefficient: float = 0.0
-) -> Tensor:
+def regularization_penalty(parameters: Iterable[Tensor], *, coefficient: float = 0.0) -> Tensor:
     """Return ``coefficient * sum(theta**2)`` (gradient: ``2*coefficient*theta``).
 
     Add this to a minimized loss for coupled L2. Do not also pass weight decay

@@ -8,6 +8,11 @@ from collections import OrderedDict
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from typing import cast
+
+from .rpc import JSONObject
+
+type CacheEntry = tuple[float, JSONObject]
 
 
 def finite_nonnegative(value: float) -> bool:
@@ -145,9 +150,9 @@ class ResponseCache:
             raise ValueError("invalid cache limits")
         self.capacity, self.ttl_seconds, self.max_bytes = capacity, ttl_seconds, max_bytes
         self.clock = clock
-        self._items: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+        self._items: OrderedDict[str, CacheEntry] = OrderedDict()
 
-    def get(self, key: CacheKey) -> dict | None:
+    def get(self, key: CacheKey) -> JSONObject | None:
         digest = key.digest()
         entry = self._items.get(digest)
         if entry is None:
@@ -159,16 +164,20 @@ class ResponseCache:
         self._items.move_to_end(digest)
         return deepcopy(value)
 
-    def put(self, key: CacheKey, value: dict, *, success: bool = True) -> None:
+    def put(self, key: CacheKey, value: object, *, success: bool = True) -> None:
         if not success:
             return
         digest = key.digest()
         if not isinstance(value, dict):
             raise ValueError("response must be a JSON object")
-        encoded = json.dumps(value, allow_nan=False)
+        response = cast(JSONObject, value)
+        encoded = json.dumps(response, allow_nan=False)
         if len(encoded.encode()) > self.max_bytes:
             raise ValueError("response exceeds cache entry bound")
-        self._items[digest] = (self.clock() + self.ttl_seconds, json.loads(encoded))
+        self._items[digest] = (
+            self.clock() + self.ttl_seconds,
+            cast(JSONObject, json.loads(encoded)),
+        )
         self._items.move_to_end(digest)
         while len(self._items) > self.capacity:
             self._items.popitem(last=False)

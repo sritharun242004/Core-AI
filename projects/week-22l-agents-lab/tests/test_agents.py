@@ -1,6 +1,8 @@
 """Boundary tests precede the controller implementation; all tools are local fixtures."""
 
 import threading
+from collections.abc import Mapping
+from typing import NoReturn, cast
 
 import pytest
 from agents_lab import (
@@ -16,6 +18,7 @@ from agents_lab import (
     ToolRegistry,
     fixture_registry,
 )
+from agents_lab.tools import Observation, Primitive
 
 
 def test_react_observes_then_finishes_and_records_audit():
@@ -38,7 +41,9 @@ def test_react_observes_then_finishes_and_records_audit():
         ("add", {"a": 1}, "invalid_arguments"),
     ],
 )
-def test_schema_and_capability_denials_are_counted(name, args, code):
+def test_schema_and_capability_denials_are_counted(
+    name: str, args: Mapping[str, Primitive], code: str
+):
     budget = Budget(2, 1)
     observation = fixture_registry().dispatch((Call(name, args),), budget)[0]
     assert observation.error == code
@@ -55,7 +60,7 @@ def test_batch_reservation_prevents_partial_execution():
 def test_parallel_independent_reads_join_in_input_order():
     barrier = threading.Barrier(2)
 
-    def read(args):
+    def read(args: Mapping[str, Primitive]) -> object:
         barrier.wait(timeout=3)
         return args["key"]
 
@@ -69,7 +74,7 @@ def test_parallel_independent_reads_join_in_input_order():
 
 
 def test_parallel_dependencies_and_writes_rejected_before_execution():
-    seen = []
+    seen: list[int] = []
     registry = ToolRegistry()
     registry.register(Tool("write", {}, str, lambda args: seen.append(1) or "ok", read_only=False))
     assert (
@@ -93,7 +98,7 @@ def test_registry_rejects_duplicates_and_validates_tool_output():
 
 
 def test_tool_exceptions_do_not_leak_exception_text():
-    def broken(args):
+    def broken(args: Mapping[str, Primitive]) -> NoReturn:
         raise RuntimeError("private fake token")
 
     registry = ToolRegistry()
@@ -107,7 +112,7 @@ def test_tool_exceptions_do_not_leak_exception_text():
     "action",
     [Action(), Action(final="x", calls=(Call("add", {"a": 1, "b": 2}),)), Action(final="x" * 4097)],
 )
-def test_structured_action_validation(action):
+def test_structured_action_validation(action: Action):
     result = ReAct(fixture_registry(), ScriptedModel([action]), Budget(2, 2)).run("test")
     assert result.status == "invalid_action"
     assert result.steps == 1
@@ -188,15 +193,20 @@ def test_zero_budget_never_calls_model():
 
 
 @pytest.mark.parametrize("steps,calls", [(-1, 1), (1, -1), (True, 1)])
-def test_invalid_budgets(steps, calls):
+def test_invalid_budgets(steps: int | bool, calls: int):
     with pytest.raises(ValueError):
-        Budget(steps, calls)
+        Budget(cast(int, steps), calls)
 
 
 @pytest.mark.parametrize(
-    "call", [Call([], {}), Call("x" * 65, {}), Call("lookup", {}, depends_on=[])]
+    "call",
+    [
+        Call(cast(str, []), {}),
+        Call("x" * 65, {}),
+        Call("lookup", {}, depends_on=cast(tuple[str, ...], [])),
+    ]
 )
-def test_malformed_runtime_call_fields_are_rejected(call):
+def test_malformed_runtime_call_fields_are_rejected(call: Call):
     result = ReAct(fixture_registry(), ScriptedModel([Action(calls=(call,))]), Budget(1, 1)).run(
         "test"
     )
@@ -205,7 +215,7 @@ def test_malformed_runtime_call_fields_are_rejected(call):
 
 
 def test_nonboolean_parallel_flag_is_rejected():
-    action = Action(calls=(Call("lookup", {"key": "guide"}),), parallel="yes")
+    action = Action(calls=(Call("lookup", {"key": "guide"}),), parallel=cast(bool, "yes"))
     result = ReAct(fixture_registry(), ScriptedModel([action]), Budget(1, 1)).run("test")
     assert result.status == "invalid_action"
 
@@ -215,7 +225,8 @@ def test_mutating_adapter_context_cannot_corrupt_tool_history():
     model = ScriptedModel([Action(calls=(Call("add", args),)), Action(final="5")])
     args["a"] = 999
     result = ReAct(fixture_registry(), model, Budget(2, 1)).run("test")
-    assert result.trajectory[1].data.value == 5
+    observation = cast(Observation, result.trajectory[1].data)
+    assert observation.value == 5
 
 
 def test_registry_capacity_and_batch_size_fail_before_execution():

@@ -26,9 +26,7 @@ print("d loss / d w:\n", w.grad)
 # ## 2. Train an MLP
 
 # %%
-x_train, y_train, x_test, y_test = make_mnist_shaped(
-    n_train=500, n_test=100, noise=0.04, seed=7
-)
+x_train, y_train, x_test, y_test = make_mnist_shaped(n_train=500, n_test=100, noise=0.04, seed=7)
 model = MLP(28 * 28, hidden=(64, 32), out_features=10, seed=7)
 history = train_mlp(
     model,

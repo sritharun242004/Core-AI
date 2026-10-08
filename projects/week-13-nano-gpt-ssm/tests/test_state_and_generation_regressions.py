@@ -36,6 +36,7 @@ def test_generation_restores_each_modules_mode_even_after_error(
     modes = [module.training for module in model.modules()]
 
     if fail:
+
         def broken_forward(_):
             raise RuntimeError("injected forward failure")
 
@@ -79,9 +80,7 @@ def test_public_recurrences_reject_empty_time(scan: str) -> None:
     inputs = torch.empty(2, 0, 3)
     with pytest.raises(ValueError, match="time"):
         if scan == "diagonal":
-            diagonal_ssm_scan(
-                inputs, decay=inputs, write=inputs, read=inputs, skip=torch.zeros(3)
-            )
+            diagonal_ssm_scan(inputs, decay=inputs, write=inputs, read=inputs, skip=torch.zeros(3))
         elif scan == "matrix":
             ssm_recurrence(inputs, torch.eye(3), torch.eye(3))
         elif scan == "cell":

@@ -13,7 +13,8 @@ import torch
 import torch.nn.functional as functional
 from torch import Tensor, nn
 
-from .preferences import _training_settings
+from .preferences import training_settings
+from .torch_api import backward, fork_rng, manual_seed, optimizer_step, qr
 
 
 def _matrix(values: Tensor) -> None:
@@ -43,12 +44,15 @@ def probe_fixture(*, seed: int = 21) -> tuple[Tensor, Tensor, Tensor, Tensor]:
 
 
 class LinearProbe(nn.Module):
+    mean: Tensor
+    scale: Tensor
+
     def __init__(self, train_x: Tensor, *, seed: int):
         super().__init__()
         self.register_buffer("mean", train_x.mean(0).detach().clone())
         self.register_buffer("scale", train_x.std(0, unbiased=False).clamp_min(1e-6).detach())
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(seed)
+        with fork_rng(devices=[]):
+            manual_seed(seed)
             self.linear = nn.Linear(train_x.shape[1], 1)
 
     def forward(self, values: Tensor) -> Tensor:
@@ -66,15 +70,15 @@ def fit_linear_probe(
 ) -> LinearProbe:
     """Fit standardization and logistic probe on training data ONLY."""
     _labels(train_x, train_y)
-    _training_settings(steps, lr)
+    training_settings(steps, lr)
     train_x, train_y = train_x.detach(), train_y.detach().to(train_x)
     model = LinearProbe(train_x, seed=seed)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     for _ in range(steps):
         optimizer.zero_grad(set_to_none=True)
         loss = functional.binary_cross_entropy_with_logits(model(train_x), train_y)
-        loss.backward()
-        optimizer.step()
+        backward(loss)
+        optimizer_step(optimizer)
     return model.eval()
 
 
@@ -87,7 +91,7 @@ def probe_accuracy(model: LinearProbe, values: Tensor, labels: Tensor) -> float:
 def sae_fixture(*, seed: int = 21) -> tuple[Tensor, Tensor]:
     """Sparse positive combinations of four known directions, with small noise."""
     generator = torch.Generator().manual_seed(seed)
-    dictionary = torch.linalg.qr(torch.randn(8, 4, generator=generator)).Q.T
+    dictionary = qr(torch.randn(8, 4, generator=generator)).Q.T
 
     def sample(count: int) -> Tensor:
         codes = torch.zeros(count, 4)
@@ -105,13 +109,15 @@ class TinySAE(nn.Module):
     Features may still split, duplicate or die: sparsity is not semantic truth.
     """
 
+    center: Tensor
+
     def __init__(self, width: int, features: int, *, seed: int = 21):
         super().__init__()
         if width < 1 or features < 1:
             raise ValueError("width and features must be positive")
         self.register_buffer("center", torch.zeros(width))
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(seed)
+        with fork_rng(devices=[]):
+            manual_seed(seed)
             self.encoder = nn.Linear(width, features)
             self.decoder = nn.Parameter(torch.randn(features, width))
 
@@ -162,20 +168,20 @@ def train_sae(
     """Optimize reconstruction+L1 on detached training activations, no test input."""
     _matrix(train_x)
     _penalty(l1_coefficient)
-    _training_settings(steps, lr)
+    training_settings(steps, lr)
     train_x = train_x.detach()
     model = TinySAE(train_x.shape[1], features, seed=seed)
     model.center.copy_(train_x.mean(0))
     with torch.no_grad():
         initial = functional.mse_loss(model(train_x)[0], train_x).item()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    losses = []
+    losses: list[float] = []
     for _ in range(steps):
         optimizer.zero_grad(set_to_none=True)
-        reconstruction, codes = model(train_x)
+        reconstruction, codes = model.forward(train_x)
         loss = sae_loss(train_x, reconstruction, codes, l1_coefficient=l1_coefficient)
-        loss.backward()
-        optimizer.step()
+        backward(loss)
+        optimizer_step(optimizer)
         losses.append(loss.item())
     with torch.no_grad():
         final = functional.mse_loss(model(train_x)[0], train_x).item()
@@ -202,5 +208,5 @@ def activation_metrics(codes: Tensor, *, threshold: float = 1e-6) -> ActivationM
         active.float().sum(-1).mean().item(),
         codes.abs().sum(-1).mean().item(),
         (rates == 0).float().mean().item(),
-        tuple(rates.tolist()),
+        tuple(float(rate.item()) for rate in rates.unbind()),
     )

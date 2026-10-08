@@ -3,6 +3,9 @@ name = "core-ai-book"
 version = "0.1.0"
 requires-python = ">=3.13"
 
+[dependency-groups]
+dev = ["pandas-stubs==3.0.5.260914", "scikit-learn-stubs==0.0.3"]
+
 [tool.uv.workspace]
 members = ["projects/*"]
 
@@ -16,3 +19,5 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF"]
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"

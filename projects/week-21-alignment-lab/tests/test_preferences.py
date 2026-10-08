@@ -1,9 +1,16 @@
 import copy
 import math
+from typing import TypedDict
 
 import pytest
 import torch
 from alignment_lab import TinyPolicy, dpo_loss, freeze_reference, preference_fixture, train_dpo
+from alignment_lab.torch_api import backward
+
+
+class TrainingSettings(TypedDict, total=False):
+    steps: int
+    lr: float
 
 
 def test_dpo_matches_worked_example_and_detaches_reference():
@@ -13,7 +20,8 @@ def test_dpo_matches_worked_example_and_detaches_reference():
     ref_rejected = torch.tensor([math.log(0.4)], requires_grad=True)
     loss = dpo_loss(chosen, rejected, ref_chosen, ref_rejected, beta=0.5)
     assert loss.item() == pytest.approx(math.log1p(math.exp(-0.5 * math.log(2))))
-    loss.backward()
+    backward(loss)
+    assert chosen.grad is not None and rejected.grad is not None
     assert chosen.grad.item() < 0 < rejected.grad.item()
     assert ref_chosen.grad is None and ref_rejected.grad is None
 
@@ -26,7 +34,7 @@ def test_identical_policy_reference_is_log_two_and_extremes_are_stable():
 
 
 @pytest.mark.parametrize("beta", [0, -1, float("nan"), float("inf")])
-def test_bad_beta_is_rejected(beta):
+def test_bad_beta_is_rejected(beta: float):
     with pytest.raises(ValueError, match="beta"):
         dpo_loss(*(torch.zeros(2) for _ in range(4)), beta=beta)
 
@@ -86,7 +94,7 @@ def test_mutable_or_shared_reference_is_rejected():
 
 
 @pytest.mark.parametrize("kwargs", [{"steps": 0}, {"lr": 0}, {"lr": float("nan")}])
-def test_training_rejects_invalid_optimizer_settings(kwargs):
+def test_training_rejects_invalid_optimizer_settings(kwargs: TrainingSettings):
     policy = TinyPolicy()
     with pytest.raises(ValueError):
         train_dpo(policy, freeze_reference(policy), preference_fixture(), **kwargs)

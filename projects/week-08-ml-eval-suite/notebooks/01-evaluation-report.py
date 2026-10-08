@@ -16,7 +16,9 @@ from sklearn.preprocessing import StandardScaler
 data = load_breast_cancer()
 report = evaluate_estimator(
     make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000)),
-    data.data, data.target, scoring="roc_auc"
+    data.data,
+    data.target,
+    scoring="roc_auc",
 )
 print(report["cv"]["scores"])
 print("mean ROC-AUC:", report["cv"]["mean"])

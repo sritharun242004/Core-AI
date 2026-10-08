@@ -86,15 +86,9 @@ dpo = dpo_batch_loss(policy, reference, chosen, rejected)
 print("DPO batch loss:", float(dpo.detach()))
 with torch.no_grad():
     # Full ids are shifted before scoring: logits[t] predicts ids[t + 1].
-    chosen_scores = sequence_logprob(
-        policy(chosen)[:, :-1], chosen[:, 1:], normalize=True
-    )
-    rejected_scores = sequence_logprob(
-        policy(rejected)[:, :-1], rejected[:, 1:], normalize=True
-    )
-    reference_scores = sequence_logprob(
-        reference(chosen)[:, :-1], chosen[:, 1:], normalize=True
-    )
+    chosen_scores = sequence_logprob(policy(chosen)[:, :-1], chosen[:, 1:], normalize=True)
+    rejected_scores = sequence_logprob(policy(rejected)[:, :-1], rejected[:, 1:], normalize=True)
+    reference_scores = sequence_logprob(reference(chosen)[:, :-1], chosen[:, 1:], normalize=True)
 labels = torch.ones_like(chosen_scores, dtype=torch.bool)
 print("KTO:", float(kto_loss(chosen_scores, reference_scores, labels)))
 print("IPO:", float(ipo_loss(chosen_scores, rejected_scores)))

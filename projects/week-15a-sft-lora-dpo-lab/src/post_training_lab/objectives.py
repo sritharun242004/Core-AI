@@ -54,9 +54,11 @@ def sequence_logprob(
         raise ValueError("normalization requires at least one selected token per sequence")
     safe_labels = labels.masked_fill(~valid, 0)
     safe_logits = logits.masked_fill(~valid.unsqueeze(-1), 0.0)
-    token_logps = functional.log_softmax(safe_logits, dim=-1).gather(
-        -1, safe_labels.unsqueeze(-1)
-    ).squeeze(-1)
+    token_logps = (
+        functional.log_softmax(safe_logits, dim=-1)
+        .gather(-1, safe_labels.unsqueeze(-1))
+        .squeeze(-1)
+    )
     sums = token_logps.masked_fill(~valid, 0.0).sum(dim=-1)
     return sums / lengths if normalize else sums
 
@@ -139,8 +141,10 @@ def dpo_batch_loss(
     if chosen_ids.shape[0] != rejected_ids.shape[0]:
         raise ValueError("chosen and rejected batch shapes must have equal batch size")
     reference_parameters = {id(parameter) for parameter in reference.parameters()}
-    if any(id(parameter) in reference_parameters and parameter.requires_grad
-           for parameter in policy.parameters()):
+    if any(
+        id(parameter) in reference_parameters and parameter.requires_grad
+        for parameter in policy.parameters()
+    ):
         raise ValueError("policy and reference must not share trainable parameters")
 
     def score(model: nn.Module, ids: Tensor, mask: Tensor | None) -> Tensor:
@@ -183,8 +187,9 @@ def kto_loss(
     _check_shapes(policy_logps, reference_logps, desirable)
     if not math.isfinite(beta) or beta <= 0:
         raise ValueError("beta must be finite and positive")
-    if any(not math.isfinite(weight) or weight < 0
-           for weight in (desirable_weight, undesirable_weight)):
+    if any(
+        not math.isfinite(weight) or weight < 0 for weight in (desirable_weight, undesirable_weight)
+    ):
         raise ValueError("KTO weights must be finite and non-negative")
     if not torch.all((desirable == 0) | (desirable == 1)):
         raise ValueError("desirable labels must be binary")
@@ -194,9 +199,7 @@ def kto_loss(
     # sigmoid(-x) = 1 - sigmoid(x), without subtractive cancellation.
     good = torch.sigmoid(beta * (baseline - delta))
     bad = torch.sigmoid(beta * (delta - baseline))
-    return torch.where(
-        desirable, desirable_weight * good, undesirable_weight * bad
-    ).mean()
+    return torch.where(desirable, desirable_weight * good, undesirable_weight * bad).mean()
 
 
 def ipo_loss(
@@ -282,12 +285,12 @@ def simpo_loss(
         raise ValueError("provide both chosen and rejected lengths")
     if chosen_lengths is not None and rejected_lengths is not None:
         _check_shapes(chosen_logps, chosen_lengths, rejected_lengths)
-        if any(not torch.isfinite(lengths).all() or (lengths <= 0).any()
-               for lengths in (chosen_lengths, rejected_lengths)):
+        if any(
+            not torch.isfinite(lengths).all() or (lengths <= 0).any()
+            for lengths in (chosen_lengths, rejected_lengths)
+        ):
             raise ValueError("lengths must be finite and positive")
-        chosen_lengths = chosen_lengths.to(
-            device=chosen_logps.device, dtype=chosen_logps.dtype
-        )
+        chosen_lengths = chosen_lengths.to(device=chosen_logps.device, dtype=chosen_logps.dtype)
         rejected_lengths = rejected_lengths.to(
             device=rejected_logps.device, dtype=rejected_logps.dtype
         )

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 Array = NDArray[np.float64]
 
@@ -24,7 +24,7 @@ def _design_matrix(x: Array, fit_intercept: bool) -> Array:
     return np.column_stack((np.ones(x.shape[0]), x)) if fit_intercept else x.copy()
 
 
-def _validate_xy(x: Array, y: Array) -> tuple[Array, Array]:
+def _validate_xy(x: ArrayLike, y: ArrayLike) -> tuple[Array, Array]:
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     if x.ndim != 2:
@@ -64,7 +64,7 @@ class LinearRegression:
         if self.learning_rate <= 0 or self.max_iter <= 0 or self.tol < 0:
             raise ValueError("learning_rate and max_iter must be positive; tol cannot be negative")
 
-    def fit(self, x: Array, y: Array) -> LinearRegression:
+    def fit(self, x: ArrayLike, y: ArrayLike) -> LinearRegression:
         x, y = _validate_xy(x, y)
         design = _design_matrix(x, self.fit_intercept)
         penalty = np.eye(design.shape[1]) * self.l2
@@ -116,7 +116,7 @@ class LinearRegression:
             penalty = self.l2 * np.sum(weights**2) / 2
         return float(np.mean(residual**2) / 2 + penalty)
 
-    def predict(self, x: Array) -> Array:
+    def predict(self, x: ArrayLike) -> Array:
         self._check_fitted()
         x = np.asarray(x, dtype=float)
         if x.ndim != 2 or x.shape[1] != self._n_features_in:
@@ -158,7 +158,7 @@ class LogisticRegression:
         penalty_weights = weights[1:] if self.fit_intercept else weights
         return float(data_loss + self.l2 * np.sum(penalty_weights**2) / 2)
 
-    def fit(self, x: Array, y: Array) -> LogisticRegression:
+    def fit(self, x: ArrayLike, y: ArrayLike) -> LogisticRegression:
         x, y = _validate_xy(x, y)
         if not np.all(np.isin(y, [0.0, 1.0])):
             raise ValueError("y must be binary with labels 0 and 1")
@@ -192,7 +192,7 @@ class LogisticRegression:
         self.coef_ = weights[1:].copy() if self.fit_intercept else weights.copy()
         return self
 
-    def predict_proba(self, x: Array) -> Array:
+    def predict_proba(self, x: ArrayLike) -> Array:
         self._check_fitted()
         x = np.asarray(x, dtype=float)
         if x.ndim != 2 or x.shape[1] != self._n_features_in:
@@ -200,7 +200,7 @@ class LogisticRegression:
         positive = self._sigmoid(_design_matrix(x, self.fit_intercept) @ self._weights)
         return np.column_stack((1.0 - positive, positive))
 
-    def predict(self, x: Array) -> NDArray[np.int_]:
+    def predict(self, x: ArrayLike) -> NDArray[np.int_]:
         return (self.predict_proba(x)[:, 1] >= 0.5).astype(int)
 
     def _check_fitted(self) -> None:

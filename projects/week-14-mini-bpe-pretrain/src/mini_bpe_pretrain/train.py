@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 from torch import Tensor
 
+from ._torch import backward, manual_seed
 from .data import TinyStoriesDataset
 from .model import TinyCausalLM
 from .tokenizer import BPETokenizer
@@ -45,7 +47,7 @@ def pretrain(
         raise ValueError("steps, batch_size, and learning_rate must be positive")
     if model.vocab_size != dataset.tokenizer.vocab_size:
         raise ValueError("model vocabulary must match dataset tokenizer")
-    torch.manual_seed(seed)
+    manual_seed(seed)
     generator = torch.Generator().manual_seed(seed)
     optimizer = optimizer or torch.optim.AdamW(model.parameters(), lr=learning_rate)
     model.train()
@@ -54,9 +56,9 @@ def pretrain(
         inputs, targets = dataset.sample_batch(batch_size, generator=generator)
         optimizer.zero_grad(set_to_none=True)
         loss = causal_cross_entropy(model(inputs), targets)
-        loss.backward()
+        backward(loss)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        cast(Callable[[], None], optimizer.step)()
         losses.append(float(loss.detach()))
     return TrainResult(losses=losses, steps=steps, tokens_seen=steps * batch_size * dataset.seq_len)
 
@@ -90,12 +92,24 @@ def load_checkpoint(
     *,
     optimizer: torch.optim.Optimizer | None = None,
 ) -> dict[str, Any]:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(payload, dict) or "model" not in payload:
+    loaded: object = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(loaded, dict) or "model" not in loaded:
         raise ValueError("checkpoint must contain a model state")
-    model.load_state_dict(payload["model"])
+    payload = cast(dict[str, Any], loaded)
+    raw_state: object = payload["model"]
+    if not isinstance(raw_state, dict):
+        raise ValueError("checkpoint model state must be a mapping")
+    state: dict[str, Tensor] = {}
+    for key, value in cast(dict[object, object], raw_state).items():
+        if not isinstance(key, str) or not isinstance(value, Tensor):
+            raise ValueError("checkpoint model state must map names to tensors")
+        state[key] = value
+    model.load_state_dict(state)
     if optimizer is not None and "optimizer" in payload:
-        optimizer.load_state_dict(payload["optimizer"])
+        raw_optimizer: object = payload["optimizer"]
+        if not isinstance(raw_optimizer, dict):
+            raise ValueError("checkpoint optimizer state must be a mapping")
+        optimizer.load_state_dict(cast(dict[str, Any], raw_optimizer))
     return payload
 
 

@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from itertools import pairwise
 from pathlib import Path
+from typing import cast
 
 DEFAULT_SPECIAL_TOKENS = ("<pad>", "<bos>", "<eos>", "<unk>")
 
@@ -62,9 +63,7 @@ class BPETokenizer:
         """
 
         documents = tuple(corpus)
-        if not documents or any(
-            not isinstance(document, str) or not document for document in documents
-        ):
+        if not documents or any(not document for document in documents):
             raise ValueError("corpus must contain at least one non-empty string")
         if vocab_size < len(special_tokens) + 1:
             raise ValueError("vocab_size must leave room for at least one symbol")
@@ -75,10 +74,12 @@ class BPETokenizer:
         capacity = vocab_size - len(special_tokens)
         if len(base_symbols) > capacity:
             # Keep the most frequent characters first; ties are code-point order.
-            counts = Counter(character for document in documents for character in document)
-            base_symbols = sorted(base_symbols, key=lambda symbol: (-counts[symbol], symbol))[
-                :capacity
-            ]
+            character_counts: Counter[str] = Counter(
+                character for document in documents for character in document
+            )
+            base_symbols = sorted(
+                base_symbols, key=lambda symbol: (-character_counts[symbol], symbol)
+            )[:capacity]
         symbols = list(base_symbols)
         sequences = [
             [character if character in base_symbols else "" for character in document]
@@ -90,12 +91,14 @@ class BPETokenizer:
         merges: list[tuple[str, str]] = []
 
         while len(symbols) < capacity:
-            counts: Counter[tuple[str, str]] = Counter()
+            pair_counts: Counter[tuple[str, str]] = Counter()
             for sequence in sequences:
-                counts.update(pairwise(sequence))
-            if not counts:
+                pair_counts.update(pairwise(sequence))
+            if not pair_counts:
                 break
-            best_pair = min(counts, key=lambda pair: (-counts[pair], pair[0], pair[1]))
+            best_pair = min(
+                pair_counts, key=lambda pair: (-pair_counts[pair], pair[0], pair[1])
+            )
             merged = best_pair[0] + best_pair[1]
             if merged in symbols:
                 break
@@ -170,8 +173,6 @@ class BPETokenizer:
         add_bos: bool = False,
         add_eos: bool = False,
     ) -> list[int]:
-        if not isinstance(text, str):
-            raise TypeError("text must be a string")
         tokens: list[str] = []
         for piece in self._split_specials(text):
             if piece in self.special_tokens:
@@ -187,7 +188,7 @@ class BPETokenizer:
     def decode(self, ids: Sequence[int], *, skip_special_tokens: bool = False) -> str:
         decoded: list[str] = []
         for index in ids:
-            if not isinstance(index, int) or index < 0 or index >= self.vocab_size:
+            if index < 0 or index >= self.vocab_size:
                 raise ValueError(f"token id {index!r} is outside the vocabulary")
             token = self.id_to_token[index]
             if token in self.special_tokens:
@@ -207,28 +208,35 @@ class BPETokenizer:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> BPETokenizer:
-        vocabulary = payload.get("vocabulary")
-        merges = payload.get("merges", [])
-        special_tokens = payload.get("special_tokens", DEFAULT_SPECIAL_TOKENS)
-        if not isinstance(vocabulary, list) or not all(
-            isinstance(item, str) for item in vocabulary
-        ):
-            raise ValueError("tokenizer vocabulary must be a list of strings")
-        if not isinstance(special_tokens, list) or not all(
-            isinstance(item, str) for item in special_tokens
-        ):
-            raise ValueError("tokenizer special_tokens must be a list of strings")
-        if not isinstance(merges, list):
+        raw_vocabulary: object = payload.get("vocabulary")
+        raw_merges: object = payload.get("merges", [])
+        raw_special_tokens: object = payload.get("special_tokens", DEFAULT_SPECIAL_TOKENS)
+        if not isinstance(raw_vocabulary, list) or not isinstance(raw_special_tokens, list):
+            raise ValueError("tokenizer vocabulary and special_tokens must be lists")
+        raw_vocabulary = cast(list[object], raw_vocabulary)
+        raw_special_tokens = cast(list[object], raw_special_tokens)
+        vocabulary: list[str] = []
+        for item in raw_vocabulary:
+            if not isinstance(item, str):
+                raise ValueError("tokenizer vocabulary must be a list of strings")
+            vocabulary.append(item)
+        special_tokens: list[str] = []
+        for item in raw_special_tokens:
+            if not isinstance(item, str):
+                raise ValueError("tokenizer special_tokens must be a list of strings")
+            special_tokens.append(item)
+        if not isinstance(raw_merges, list):
             raise ValueError("tokenizer merges must be a list")
-        parsed_merges = []
-        for pair in merges:
-            if (
-                not isinstance(pair, list)
-                or len(pair) != 2
-                or not all(isinstance(item, str) for item in pair)
-            ):
+        raw_merge_items = cast(list[object], raw_merges)
+        parsed_merges: list[tuple[str, str]] = []
+        for raw_pair in raw_merge_items:
+            if not isinstance(raw_pair, list) or len(raw_pair) != 2:
                 raise ValueError("each tokenizer merge must contain two strings")
-            parsed_merges.append((pair[0], pair[1]))
+            pair = cast(list[object], raw_pair)
+            left, right = pair
+            if not isinstance(left, str) or not isinstance(right, str):
+                raise ValueError("each tokenizer merge must contain two strings")
+            parsed_merges.append((left, right))
         return cls(vocabulary, parsed_merges, special_tokens)
 
     def save(self, path: str | Path) -> None:

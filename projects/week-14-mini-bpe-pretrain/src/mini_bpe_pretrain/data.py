@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import cast
 
 import torch
 from torch import Tensor
@@ -82,7 +83,12 @@ class TinyStoriesDataset(Dataset[tuple[Tensor, Tensor]]):
     ) -> tuple[Tensor, Tensor]:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
-        indices = torch.randint(len(self), (batch_size,), generator=generator).tolist()
+        samples = torch.randint(len(self), (batch_size,), generator=generator)
+        tolist = cast(Callable[[], object], samples.tolist)
+        raw_indices = tolist()
+        if not isinstance(raw_indices, list):
+            raise RuntimeError("torch.randint returned a non-list index payload")
+        indices = [int(index) for index in cast(list[object], raw_indices)]
         return self.batch(indices)
 
 

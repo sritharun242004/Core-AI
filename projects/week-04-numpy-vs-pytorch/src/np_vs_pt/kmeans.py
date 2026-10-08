@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import NDArray
+from torch import Tensor
 
 
-def kmeans_one_step_numpy(points: np.ndarray, centers: np.ndarray) -> np.ndarray:
+def kmeans_one_step_numpy(
+    points: NDArray[np.float64], centers: NDArray[np.float64]
+) -> NDArray[np.float64]:
     dists = ((points[:, None, :] - centers[None, :, :]) ** 2).sum(axis=-1)
     assign = dists.argmin(axis=1)
     new = np.stack(
@@ -15,7 +19,7 @@ def kmeans_one_step_numpy(points: np.ndarray, centers: np.ndarray) -> np.ndarray
     return new
 
 
-def kmeans_one_step_torch(points, centers):
+def kmeans_one_step_torch(points: Tensor, centers: Tensor) -> Tensor:
     import torch
 
     dists = ((points[:, None, :] - centers[None, :, :]) ** 2).sum(dim=-1)

@@ -30,19 +30,22 @@ def test_lora_inherits_base_dtype_device_and_eval_mode() -> None:
     torch.testing.assert_close(layer(inputs), base(inputs))
     with torch.no_grad():
         layer.lora_B.fill_(0.3)
-    torch.testing.assert_close(layer(inputs), nn.functional.linear(
-        inputs, layer.merged_weight(), base.bias
-    ))
+    torch.testing.assert_close(
+        layer(inputs), nn.functional.linear(inputs, layer.merged_weight(), base.bias)
+    )
 
 
-@pytest.mark.parametrize("options", [
-    {"rank": 0},
-    {"rank": 1.5},
-    {"dropout": -0.1},
-    {"dropout": float("nan")},
-    {"alpha": float("nan")},
-    {"target_modules": ("missing",)},
-])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"rank": 0},
+        {"rank": 1.5},
+        {"dropout": -0.1},
+        {"dropout": float("nan")},
+        {"alpha": float("nan")},
+        {"target_modules": ("missing",)},
+    ],
+)
 def test_failed_injection_does_not_mutate_model(options: dict) -> None:
     model = tiny_model()
     before_state = copy.deepcopy(model.state_dict())
@@ -71,7 +74,8 @@ def test_injecting_additional_targets_does_not_freeze_existing_adapters() -> Non
     inject_lora(model, rank=2, target_modules=("v_proj",))
     assert all(
         parameter.requires_grad
-        for module in model.modules() if isinstance(module, LoRALinear)
+        for module in model.modules()
+        if isinstance(module, LoRALinear)
         for parameter in (module.lora_A, module.lora_B)
     )
 
@@ -111,10 +115,16 @@ def test_adapter_update_changes_only_adapters_and_keeps_tied_base_weights() -> N
         sft_loss(model(ids[:, :-1]), ids[:, 1:]).backward()
         optimizer.step()
     assert model.lm_head.weight is model.token_embedding.weight
-    assert any(not torch.equal(value, before[name]) for name, value in model.named_parameters()
-               if "lora_" in name)
-    assert all(torch.equal(value, before[name]) for name, value in model.named_parameters()
-               if "lora_" not in name)
+    assert any(
+        not torch.equal(value, before[name])
+        for name, value in model.named_parameters()
+        if "lora_" in name
+    )
+    assert all(
+        torch.equal(value, before[name])
+        for name, value in model.named_parameters()
+        if "lora_" not in name
+    )
 
 
 def test_lora_checkpoint_restores_nonempty_optimizer_and_resumes_exactly(tmp_path: Path) -> None:
@@ -141,12 +151,16 @@ def test_lora_checkpoint_restores_nonempty_optimizer_and_resumes_exactly(tmp_pat
     assert metadata == {"step": 1, "description": "adapter resume"}
     assert restored_optimizer.state_dict()["state"]
     torch.testing.assert_close(model(ids), restored(ids), rtol=0, atol=0)
-    torch.testing.assert_close(step(model, optimizer), step(restored, restored_optimizer),
-                               rtol=0, atol=0)
+    torch.testing.assert_close(
+        step(model, optimizer), step(restored, restored_optimizer), rtol=0, atol=0
+    )
     for name, value in model.state_dict().items():
         assert torch.equal(value, restored.state_dict()[name])
-    assert all(not parameter.requires_grad for name, parameter in restored.named_parameters()
-               if "lora_" not in name)
+    assert all(
+        not parameter.requires_grad
+        for name, parameter in restored.named_parameters()
+        if "lora_" not in name
+    )
 
 
 @pytest.mark.parametrize("mismatch", ["alpha", "dropout", "rank", "uninjected"])
@@ -160,7 +174,8 @@ def test_incompatible_lora_checkpoint_rejected_before_mutating_target(
     target = tiny_model()
     if mismatch != "uninjected":
         inject_lora(
-            target, rank=3 if mismatch == "rank" else 2,
+            target,
+            rank=3 if mismatch == "rank" else 2,
             alpha=2 if mismatch == "alpha" else 5,
             dropout=0.0 if mismatch == "dropout" else 0.2,
         )

@@ -6,13 +6,14 @@ no resources, prompts, sampling, pagination, cancellation, auth or HTTP transpor
 
 from copy import deepcopy
 from math import isfinite
+from typing import cast
 
-from .rpc import JSONRPCServer, ProtocolError, RPCClient
+from .rpc import JSONObject, JSONRPCServer, ProtocolError, RPCClient
 
 PROTOCOL_VERSION = "2024-11-05"
 
 
-def object_schema(properties: dict) -> dict:
+def object_schema(properties: JSONObject) -> JSONObject:
     return {
         "type": "object",
         "properties": properties,
@@ -21,8 +22,8 @@ def object_schema(properties: dict) -> dict:
     }
 
 
-NUMBER = {"type": "number", "minimum": -1000, "maximum": 1000}
-TOOLS = [
+NUMBER: JSONObject = {"type": "number", "minimum": -1000, "maximum": 1000}
+TOOLS: list[JSONObject] = [
     {
         "name": "add",
         "description": "Add two finite bounded public numbers.",
@@ -36,18 +37,25 @@ TOOLS = [
 ]
 
 
-def validate_arguments(schema: dict, arguments: dict) -> None:
+def validate_arguments(schema: JSONObject, arguments: JSONObject) -> None:
     """Deliberately just this declared schema subset, not a JSON Schema validator."""
-    properties = schema["properties"]
-    if not isinstance(arguments, dict) or arguments.keys() != properties.keys():
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or arguments.keys() != properties.keys():
         raise ProtocolError(-32602, "invalid argument keys")
     for key, spec in properties.items():
+        if not isinstance(spec, dict):
+            raise ProtocolError(-32602, "invalid argument schema")
         value = arguments[key]
-        if spec["type"] == "number":
-            if type(value) not in (int, float) or not -1000 <= value <= 1000 or not isfinite(value):
+        if spec.get("type") == "number":
+            if type(value) not in (int, float):
                 raise ProtocolError(-32602, "number must be finite and within bounds")
-        elif type(value) is not str or len(value) > spec["maxLength"]:
-            raise ProtocolError(-32602, "invalid string argument")
+            number = cast(int | float, value)
+            if not -1000 <= number <= 1000 or not isfinite(number):
+                raise ProtocolError(-32602, "number must be finite and within bounds")
+        else:
+            max_length = spec.get("maxLength")
+            if type(value) is not str or type(max_length) is not int or len(value) > max_length:
+                raise ProtocolError(-32602, "invalid string argument")
 
 
 class MCPServer(JSONRPCServer):
@@ -59,7 +67,7 @@ class MCPServer(JSONRPCServer):
         self.calls = 0
         self._records = {"guide": "Use public fixtures only.", "version": "1"}
 
-    def dispatch(self, method: str, params: dict, *, notification: bool):
+    def dispatch(self, method: str, params: JSONObject, *, notification: bool) -> object:
         if notification:
             if method == "notifications/initialized" and self.state == "initializing":
                 self.state = "ready"
@@ -88,23 +96,35 @@ class MCPServer(JSONRPCServer):
         self.calls += 1
         if params.keys() != {"name", "arguments"} or not isinstance(params.get("name"), str):
             raise ProtocolError(-32602, "tool call needs name and arguments")
-        tool = next((item for item in TOOLS if item["name"] == params["name"]), None)
+        tool_name = params.get("name")
+        arguments = params.get("arguments")
+        if not isinstance(tool_name, str) or not isinstance(arguments, dict):
+            raise ProtocolError(-32602, "tool call needs name and arguments")
+        tool = next((item for item in TOOLS if item.get("name") == tool_name), None)
         if tool is None:
             raise ProtocolError(-32602, "unknown tool")
-        arguments = params["arguments"]
-        validate_arguments(tool["inputSchema"], arguments)
+        schema = tool.get("inputSchema")
+        if not isinstance(schema, dict):
+            raise ProtocolError(-32602, "invalid tool schema")
+        validate_arguments(schema, arguments)
         is_error = False
-        if tool["name"] == "add":
-            text = str(arguments["a"] + arguments["b"])
+        if tool_name == "add":
+            first, second = arguments.get("a"), arguments.get("b")
+            if type(first) not in (int, float) or type(second) not in (int, float):
+                raise ProtocolError(-32602, "invalid number arguments")
+            text = str(cast(int | float, first) + cast(int | float, second))
         else:
-            text = self._records.get(arguments["key"])
+            key = arguments.get("key")
+            if not isinstance(key, str):
+                raise ProtocolError(-32602, "invalid string argument")
+            text = self._records.get(key)
             if text is None:
                 text, is_error = "public record not found", True
         return {"content": [{"type": "text", "text": text}], "isError": is_error}
 
 
 class MCPClient(RPCClient):
-    def initialize(self) -> dict:
+    def initialize(self) -> JSONObject:
         result = self.request(
             "initialize",
             {
@@ -125,35 +145,32 @@ class MCPClient(RPCClient):
         self.notify("notifications/initialized")
         return result
 
-    def list_tools(self) -> list[dict]:
+    def list_tools(self) -> list[JSONObject]:
         result = self.request("tools/list")
-        if not isinstance(result, dict) or not isinstance(result.get("tools"), list):
+        tools = result.get("tools") if isinstance(result, dict) else None
+        if not isinstance(tools, list):
             raise ProtocolError(-32600, "invalid tools list")
-        for tool in result["tools"]:
-            if (
-                not isinstance(tool, dict)
-                or not isinstance(tool.get("name"), str)
-                or (
-                    not isinstance(tool.get("inputSchema"), dict)
-                    or tool["inputSchema"].get("type") != "object"
-                )
-            ):
+        for tool in tools:
+            if not isinstance(tool, dict):
                 raise ProtocolError(-32600, "invalid tool descriptor")
-        return result["tools"]
+            schema = tool.get("inputSchema")
+            if not isinstance(tool.get("name"), str) or not isinstance(schema, dict):
+                raise ProtocolError(-32600, "invalid tool descriptor")
+            if schema.get("type") != "object":
+                raise ProtocolError(-32600, "invalid tool descriptor")
+        return [cast(JSONObject, tool) for tool in tools]
 
-    def call_tool(self, name: str, arguments: dict) -> dict:
+    def call_tool(self, name: str, arguments: JSONObject) -> JSONObject:
         result = self.request("tools/call", {"name": name, "arguments": arguments})
-        if (
-            not isinstance(result, dict)
-            or type(result.get("isError")) is not bool
-            or (not isinstance(result.get("content"), list))
-        ):
+        content = result.get("content") if isinstance(result, dict) else None
+        if not isinstance(result, dict) or type(result.get("isError")) is not bool:
             raise ProtocolError(-32600, "invalid tool result")
-        for item in result["content"]:
-            if (
-                not isinstance(item, dict)
-                or item.get("type") != "text"
-                or (not isinstance(item.get("text"), str) or len(item["text"]) > 4096)
-            ):
+        if not isinstance(content, list):
+            raise ProtocolError(-32600, "invalid tool result")
+        for item in content:
+            if not isinstance(item, dict) or item.get("type") != "text":
+                raise ProtocolError(-32600, "invalid text content")
+            text = item.get("text")
+            if not isinstance(text, str) or len(text) > 4096:
                 raise ProtocolError(-32600, "invalid text content")
         return result

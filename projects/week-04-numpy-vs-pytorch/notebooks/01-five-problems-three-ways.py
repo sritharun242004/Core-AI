@@ -4,6 +4,7 @@
 
 # %%
 import time
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -17,7 +18,7 @@ A = rng.random((200, 200))
 B = rng.random((200, 200))
 
 
-def timed(label, fn):
+def timed[T](label: str, fn: Callable[[], T]) -> tuple[str, float, T]:
     t = time.perf_counter()
     r = fn()
     return label, time.perf_counter() - t, r

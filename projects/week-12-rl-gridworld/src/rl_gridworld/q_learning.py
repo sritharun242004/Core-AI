@@ -2,9 +2,27 @@
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 import numpy as np
+from numpy.typing import NDArray
 
 from .env import Gridworld
+
+FloatArray = NDArray[np.float64]
+
+
+class QHistory(TypedDict):
+    episode_rewards: FloatArray
+    successes: list[bool]
+    q_values: FloatArray
+
+
+class QLearningResult(QHistory):
+    greedy_actions: NDArray[np.intp]
+    evaluation_mean_reward: float
+    evaluation_success_rate: float
+    epsilon: float
 
 
 def bellman_target(
@@ -96,7 +114,7 @@ class TabularQLearner:
         self.q_values[state, action] = new_value
         return new_value
 
-    def fit(self, env: Gridworld, episodes: int = 200) -> dict[str, np.ndarray | list[bool]]:
+    def fit(self, env: Gridworld, episodes: int = 200) -> QHistory:
         if env.n_states != self.n_states or env.n_actions != self.n_actions:
             raise ValueError("environment dimensions do not match the Q-table")
         if episodes <= 0:
@@ -125,13 +143,13 @@ class TabularQLearner:
             "q_values": self.q_values.copy(),
         }
 
-    def greedy_policy(self) -> np.ndarray:
+    def greedy_policy(self) -> NDArray[np.intp]:
         return self.q_values.argmax(axis=1)
 
 
 def evaluate_q_table(
     env: Gridworld,
-    q_values: np.ndarray,
+    q_values: FloatArray,
     *,
     episodes: int = 20,
 ) -> tuple[float, float]:
@@ -168,7 +186,7 @@ def train_q_learning(
     epsilon_decay: float = 0.985,
     seed: int = 0,
     evaluation_episodes: int = 20,
-) -> dict[str, object]:
+) -> QLearningResult:
     """Train and evaluate a Q-table with a fully deterministic environment."""
 
     learner = TabularQLearner(
@@ -185,15 +203,13 @@ def train_q_learning(
     mean_reward, success_rate = evaluate_q_table(
         env, learner.q_values, episodes=evaluation_episodes
     )
-    history.update(
-        {
-            "greedy_actions": learner.greedy_policy(),
-            "evaluation_mean_reward": mean_reward,
-            "evaluation_success_rate": success_rate,
-            "epsilon": learner.epsilon,
-        }
-    )
-    return history
+    return {
+        **history,
+        "greedy_actions": learner.greedy_policy(),
+        "evaluation_mean_reward": mean_reward,
+        "evaluation_success_rate": success_rate,
+        "epsilon": learner.epsilon,
+    }
 
 
 q_learning = train_q_learning

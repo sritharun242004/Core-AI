@@ -7,6 +7,13 @@ from pathlib import Path
 
 import numpy as np
 
+from .metrics import positive_integer
+
+
+def _nonnegative_integer(value: object) -> bool:
+    """Check untrusted constructor values without widening the public ID type."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
 
 @dataclass(frozen=True)
 class Interaction:
@@ -14,38 +21,38 @@ class Interaction:
     item: int
     timestamp: int
 
-    def __post_init__(self):
-        if any(
-            not isinstance(v, int) or isinstance(v, bool) or v < 0
-            for v in (self.user, self.item, self.timestamp)
-        ):
+    def __post_init__(self) -> None:
+        if not all(_nonnegative_integer(v) for v in (self.user, self.item, self.timestamp)):
             raise ValueError("user, item, timestamp must be nonnegative integers")
 
 
 def synthetic_movielens(seed: int = 22) -> list[Interaction]:
     """24 users, 18 items, three planted tastes; not actual MovieLens records."""
     rng = np.random.default_rng(seed)
-    rows = []
+    rows: list[Interaction] = []
     for user in range(24):
         items = rng.permutation(np.arange(6) + 6 * (user % 3))[:5]
         rows.extend(Interaction(user, int(item), t + 1) for t, item in enumerate(items))
     return rows
 
 
-def temporal_split(rows: list[Interaction], holdout: int = 1):
+def temporal_split(
+    rows: list[Interaction], holdout: int = 1
+) -> tuple[list[Interaction], list[Interaction]]:
     """Leave the last n unique edges per user out, rejecting ambiguous time ties.
 
     This is per-user chronology, NOT a global deployment-time cutoff. Repeated
     user/item events must be aggregated explicitly before calling this function.
     """
-    if not isinstance(holdout, int) or holdout < 1:
+    if not positive_integer(holdout):
         raise ValueError("holdout must be a positive integer")
     if len({(r.user, r.item) for r in rows}) != len(rows):
         raise ValueError("duplicate user-item edges must be aggregated first")
-    grouped = defaultdict(list)
+    grouped: defaultdict[int, list[Interaction]] = defaultdict(list)
     for row in rows:
         grouped[row.user].append(row)
-    fit, test = [], []
+    fit: list[Interaction] = []
+    test: list[Interaction] = []
     for user in sorted(grouped):
         ordered = sorted(grouped[user], key=lambda r: (r.timestamp, r.item))
         if len(ordered) <= holdout:
@@ -57,7 +64,9 @@ def temporal_split(rows: list[Interaction], holdout: int = 1):
     return fit, test
 
 
-def load_movielens(path: str | Path, min_rating: float = 4.0):
+def load_movielens(
+    path: str | Path, min_rating: float = 4.0
+) -> tuple[list[Interaction], dict[int, int], dict[int, int]]:
     """Parse an EXISTING MovieLens ratings.csv; never fetch anything.
 
     Return positive interactions plus sorted raw-ID -> contiguous-ID maps.
@@ -71,7 +80,7 @@ def load_movielens(path: str | Path, min_rating: float = 4.0):
         expected = {"userId", "movieId", "rating", "timestamp"}
         if not expected.issubset(reader.fieldnames or []):
             raise ValueError("expected MovieLens ratings.csv columns")
-        raw = []
+        raw: list[tuple[int, int, int]] = []
         for row in reader:
             rating = float(row["rating"])
             if not np.isfinite(rating):

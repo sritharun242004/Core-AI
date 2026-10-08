@@ -9,7 +9,7 @@ from linalg_lab.svd_compress import svd_reconstruct
 
 rng = np.random.default_rng(1)
 image = rng.normal(size=(24, 3)) @ rng.normal(size=(3, 24))
-errors = []
+errors: list[float] = []
 for rank in (0, 1, 2, 3):
     approximation = svd_reconstruct(image, rank)
     error = float(np.linalg.norm(image - approximation))

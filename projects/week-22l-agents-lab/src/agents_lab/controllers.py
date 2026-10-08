@@ -1,10 +1,9 @@
 """Deterministic, budgeted teaching controllers; no chain-of-thought is collected."""
 
 from collections import deque
-from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast, overload
 
 from .tools import Budget, Call, Observation, ToolRegistry
 
@@ -38,9 +37,17 @@ class RunResult:
     trajectory: tuple[Event, ...]
 
 
+class Verifier(Protocol):
+    def __call__(self, answer: str, /) -> bool: ...
+
+
+def _runtime_value(value: object) -> object:
+    return value
+
+
 class Model(Protocol):
-    def act(self, context: Context) -> Action: ...
-    def plan(self, task: str) -> tuple[str, ...]: ...
+    def act(self, context: Context) -> object: ...
+    def plan(self, task: str) -> object: ...
 
 
 class ScriptedModel:
@@ -71,9 +78,10 @@ class BoundedMemory:
         self.max_chars = max_chars
 
     def add(self, note: str) -> None:
-        if not isinstance(note, str) or len(note) > self.max_chars:
+        note_value = _runtime_value(note)
+        if not isinstance(note_value, str) or len(note_value) > self.max_chars:
             raise ValueError("invalid memory note")
-        self._notes.append(note)
+        self._notes.append(note_value)
 
     def snapshot(self) -> tuple[str, ...]:
         return tuple(self._notes)
@@ -134,7 +142,9 @@ class ReAct:
                 return self._result("call_budget")
         return self._result("step_budget")
 
-    def run(self, task: str) -> RunResult:
+    def run(self, task: object, *args: object, **kwargs: object) -> RunResult:
+        if args or kwargs:
+            raise TypeError("ReAct.run accepts only task")
         if not isinstance(task, str) or not 1 <= len(task) <= 8192:
             raise ValueError("task must contain 1..8192 characters")
         return self._execute(task)
@@ -147,19 +157,38 @@ class Reflexion(ReAct):
     by an LLM. The control pattern illustrates Reflexion; it is not a paper reproduction.
     """
 
+    @overload
     def run(
-        self, task: str, *, verifier: Callable[[str], bool], feedback: str, attempts: int = 2
-    ) -> RunResult:
+        self, task: str, *, verifier: Verifier, feedback: str, attempts: int = 2
+    ) -> RunResult: ...
+
+    @overload
+    def run(self, task: object, *args: object, **kwargs: object) -> RunResult: ...
+
+    def run(self, task: object, *args: object, **kwargs: object) -> RunResult:
+        if args or "verifier" not in kwargs or "feedback" not in kwargs:
+            raise TypeError("Reflexion.run requires verifier and feedback keywords")
+        unexpected = set(kwargs) - {"verifier", "feedback", "attempts"}
+        if unexpected:
+            raise TypeError("Reflexion.run received an unexpected keyword")
+        verifier = cast(Verifier, kwargs["verifier"])
+        feedback = kwargs["feedback"]
+        attempts = kwargs.get("attempts", 2)
         if type(attempts) is not int or not 1 <= attempts <= 16:
             raise ValueError("attempts must be in 1..16")
         if not isinstance(feedback, str) or len(feedback) > self.memory.max_chars:
             raise ValueError("feedback exceeds memory schema")
+        if not isinstance(task, str) or not 1 <= len(task) <= 8192:
+            raise ValueError("task must contain 1..8192 characters")
         for _ in range(attempts):
             result = super().run(task)
             if result.status != "completed":
                 return result
+            answer = result.answer
+            if answer is None:
+                return self._result("verifier_error")
             try:
-                accepted = verifier(result.answer)
+                accepted = verifier(answer)
             except Exception:
                 return self._result("verifier_error")
             if accepted is True:
@@ -172,7 +201,16 @@ class Reflexion(ReAct):
 class PlanAndExecute(ReAct):
     """Charge one planning step, validate the plan, execute subtasks sequentially."""
 
-    def run(self, task: str, *, max_subtasks: int = 4) -> RunResult:
+    @overload
+    def run(self, task: str, *, max_subtasks: int = 4) -> RunResult: ...
+
+    @overload
+    def run(self, task: object, *args: object, **kwargs: object) -> RunResult: ...
+
+    def run(self, task: object, *args: object, **kwargs: object) -> RunResult:
+        if args or set(kwargs) - {"max_subtasks"}:
+            raise TypeError("PlanAndExecute.run accepts only task and max_subtasks")
+        max_subtasks = kwargs.get("max_subtasks", 4)
         if not isinstance(task, str) or not 1 <= len(task) <= 8192:
             raise ValueError("task must contain 1..8192 characters")
         if type(max_subtasks) is not int or not 1 <= max_subtasks <= 16:
@@ -183,17 +221,22 @@ class PlanAndExecute(ReAct):
             plan = self.model.plan(task)
         except Exception:
             return self._result("model_error")
+        candidate_plan = cast(tuple[object, ...], plan)
         if (
             not isinstance(plan, tuple)
-            or not 1 <= len(plan) <= max_subtasks
-            or any(not isinstance(item, str) or not 1 <= len(item) <= 1024 for item in plan)
+            or not 1 <= len(candidate_plan) <= max_subtasks
+            or any(
+                not isinstance(item, str) or not 1 <= len(item) <= 1024
+                for item in candidate_plan
+            )
         ):
             return self._result("invalid_plan")
-        self.events.append(Event("plan", plan))
-        answers = []
-        for index, subtask in enumerate(plan):
+        typed_plan = cast(tuple[str, ...], candidate_plan)
+        self.events.append(Event("plan", typed_plan))
+        answers: list[str] = []
+        for index, subtask in enumerate(typed_plan):
             result = self._execute(f"{task}\nSubtask {index + 1}: {subtask}")
-            if result.status != "completed":
+            if result.status != "completed" or result.answer is None:
                 return result
             answers.append(result.answer)
             note = f"Subtask {index + 1}: {result.answer}"

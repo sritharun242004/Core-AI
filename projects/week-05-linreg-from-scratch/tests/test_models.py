@@ -21,9 +21,7 @@ def test_gradient_descent_reaches_closed_form_in_under_500_steps() -> None:
     rng = np.random.default_rng(7)
     x = rng.normal(size=(80, 3))
     y = 0.4 + x @ np.array([1.5, -2.0, 0.75])
-    model = LinearRegression(
-        solver="gd", learning_rate=0.08, max_iter=500, tol=1e-12
-    ).fit(x, y)
+    model = LinearRegression(solver="gd", learning_rate=0.08, max_iter=500, tol=1e-12).fit(x, y)
 
     np.testing.assert_allclose(model.coef_, [1.5, -2.0, 0.75], atol=2e-4)
     assert model.n_iter_ < 500

@@ -23,10 +23,10 @@ class Neuron:
 
 
 class Layer:
-    def __init__(self, nin: int, nout: int, **kwargs):
+    def __init__(self, nin: int, nout: int, **kwargs: bool):
         self.neurons = [Neuron(nin, **kwargs) for _ in range(nout)]
 
-    def __call__(self, x: list[Value]):
+    def __call__(self, x: list[Value]) -> Value | list[Value]:
         out = [n(x) for n in self.neurons]
         return out[0] if len(out) == 1 else out
 
@@ -41,11 +41,10 @@ class MLP:
             Layer(sizes[i], sizes[i + 1], nonlin=(i != len(nouts) - 1)) for i in range(len(nouts))
         ]
 
-    def __call__(self, x: list[Value]):
+    def __call__(self, x: list[Value]) -> list[Value]:
         for layer in self.layers:
-            x = layer(x)
-            if not isinstance(x, list):
-                x = [x]
+            output = layer(x)
+            x = output if isinstance(output, list) else [output]
         return x
 
     def parameters(self) -> list[Value]:

@@ -1,4 +1,5 @@
 """Rank-k SVD reconstruction — the arithmetic behind LoRA and PCA."""
+
 from __future__ import annotations
 
 from pathlib import Path

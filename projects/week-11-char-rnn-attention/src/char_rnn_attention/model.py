@@ -158,9 +158,7 @@ class CharLSTMAttention(nn.Module):
             decoder_output, decoder_state = self.decoder(
                 self.embedding(decoder_input), decoder_state
             )
-            context, step_weights = self.attention(
-                decoder_output, encoder_outputs, source_mask
-            )
+            context, step_weights = self.attention(decoder_output, encoder_outputs, source_mask)
             step_logits = self.output(torch.cat([decoder_output, context], dim=-1))
             logits_steps.append(step_logits)
             weight_steps.append(step_weights)
@@ -169,12 +167,11 @@ class CharLSTMAttention(nn.Module):
                 if teacher_forcing_ratio == 0:
                     decoder_input = predicted.detach().unsqueeze(1)
                 else:
-                    use_teacher = torch.rand(
-                        source_ids.shape[0], device=source_ids.device
-                    ) < teacher_forcing_ratio
-                    next_input = torch.where(
-                        use_teacher, target_ids[:, step], predicted.detach()
+                    use_teacher = (
+                        torch.rand(source_ids.shape[0], device=source_ids.device)
+                        < teacher_forcing_ratio
                     )
+                    next_input = torch.where(use_teacher, target_ids[:, step], predicted.detach())
                     decoder_input = next_input.unsqueeze(1)
         return torch.cat(logits_steps, dim=1), torch.cat(weight_steps, dim=1)
 

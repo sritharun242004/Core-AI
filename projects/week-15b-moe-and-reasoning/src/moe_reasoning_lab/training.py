@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 import torch
 from torch import Tensor
 from torch.nn import functional
 
+from ._torch import backward
 from .moe import TinyMoEClassifier
 
 
@@ -49,7 +52,7 @@ def train_supervised_moe(
         optimizer.zero_grad(set_to_none=True)
         logits = model(features)
         loss = functional.cross_entropy(logits, labels) + aux_weight * model.aux_loss
-        loss.backward()
-        optimizer.step()
+        backward(loss)
+        cast(Callable[[], None], optimizer.step)()
         losses.append(float(loss.detach()))
     return SupervisedTrainResult(model=model, losses=losses)

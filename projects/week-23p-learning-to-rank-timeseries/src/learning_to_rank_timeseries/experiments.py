@@ -2,13 +2,25 @@
 
 import hashlib
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from statistics import NormalDist
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 
-def randomize(units: list[str], *, treatment_probability: float = 0.5, seed: int = 23):
+def _valid_units(units: Sequence[object]) -> bool:
+    return all(isinstance(unit, str) for unit in units)
+
+
+def _valid_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def randomize(
+    units: list[str], *, treatment_probability: float = 0.5, seed: int = 23
+) -> NDArray[np.int64]:
     """Stable SHA256 assignment, independent of input order (not Python hash()).
 
     A pseudo-random classroom experiment, not a security/eligibility mechanism.
@@ -16,9 +28,9 @@ def randomize(units: list[str], *, treatment_probability: float = 0.5, seed: int
     """
     if not 0 < treatment_probability < 1:
         raise ValueError("treatment_probability must be in (0,1)")
-    if any(not isinstance(unit, str) for unit in units) or len(set(units)) != len(units):
+    if not _valid_units(units) or len(set(units)) != len(units):
         raise ValueError("units must be unique string IDs")
-    assignments = []
+    assignments: list[bool] = []
     for unit in units:
         digest = hashlib.sha256(f"{seed}:{unit}".encode()).digest()
         uniform = int.from_bytes(digest[:8], "big") / 2**64
@@ -37,7 +49,9 @@ class ExperimentResult:
     confidence: float
 
 
-def estimate_ate(outcomes, assignment, *, confidence: float = 0.95):
+def estimate_ate(
+    outcomes: ArrayLike, assignment: ArrayLike, *, confidence: float = 0.95
+) -> ExperimentResult:
     """Difference in unit means, Welch SE and asymptotic normal CI.
 
     Causal only under random assignment, consistency, no interference, and no
@@ -59,13 +73,13 @@ def estimate_ate(outcomes, assignment, *, confidence: float = 0.95):
     )
 
 
-def srm_pvalue(n_treated: int, n_control: int, *, treatment_probability: float = 0.5):
+def srm_pvalue(n_treated: int, n_control: int, *, treatment_probability: float = 0.5) -> float:
     """Two-arm allocation chi-square test (1 degree of freedom), approximate.
 
     Expected counts must be >=5. A small p-value flags sample ratio mismatch,
     not which logging/randomization bug caused it and not a treatment effect.
     """
-    if any(not isinstance(n, int) or isinstance(n, bool) or n < 0 for n in (n_treated, n_control)):
+    if not all(_valid_count(n) for n in (n_treated, n_control)):
         raise ValueError("counts must be nonnegative integers")
     if not 0 < treatment_probability < 1:
         raise ValueError("treatment probability must be in (0,1)")

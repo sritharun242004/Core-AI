@@ -62,6 +62,8 @@ def test_srm_flags_bad_allocation_but_not_balanced_counts():
         ([1, 2, 3, 4], [0, 0, 1, 2]),
     ],
 )
-def test_invalid_or_underpowered_arm_counts_rejected(outcomes, assignment):
+def test_invalid_or_underpowered_arm_counts_rejected(
+    outcomes: list[float | int], assignment: list[int]
+):
     with pytest.raises(ValueError):
         estimate_ate(np.array(outcomes), np.array(assignment))

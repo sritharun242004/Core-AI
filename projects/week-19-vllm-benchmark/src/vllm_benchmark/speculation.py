@@ -3,9 +3,12 @@
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+FloatArray = NDArray[np.float64]
 
 
-def _distributions(target, draft) -> tuple[np.ndarray, np.ndarray]:
+def _distributions(target: ArrayLike, draft: ArrayLike) -> tuple[FloatArray, FloatArray]:
     target = np.asarray(target, dtype=np.float64)
     draft = np.asarray(draft, dtype=np.float64)
     if target.ndim != 1 or target.size == 0 or target.shape != draft.shape:
@@ -21,14 +24,14 @@ def _distributions(target, draft) -> tuple[np.ndarray, np.ndarray]:
     return target / target.sum(), draft / draft.sum()
 
 
-def acceptance_probability(target, draft) -> np.ndarray:
+def acceptance_probability(target: ArrayLike, draft: ArrayLike) -> FloatArray:
     """min(1, p(x)/q(x)); define 1 where q=0 (those proposals never occur)."""
     target, draft = _distributions(target, draft)
     ratio = np.divide(target, draft, out=np.ones_like(target), where=draft > 0)
     return np.minimum(1.0, ratio)
 
 
-def residual_distribution(target, draft) -> np.ndarray:
+def residual_distribution(target: ArrayLike, draft: ArrayLike) -> FloatArray:
     """Normalized positive part of p-q, NOT p and NOT absolute(p-q)."""
     target, draft = _distributions(target, draft)
     residual = np.maximum(target - draft, 0.0)
@@ -44,7 +47,9 @@ class SpeculativeResult:
     accepted: bool
 
 
-def speculative_sample(target, draft, rng: np.random.Generator) -> SpeculativeResult:
+def speculative_sample(
+    target: ArrayLike, draft: ArrayLike, rng: np.random.Generator
+) -> SpeculativeResult:
     target, draft = _distributions(target, draft)
     proposal = int(rng.choice(len(draft), p=draft))
     accepted = bool(rng.random() < min(1.0, target[proposal] / draft[proposal]))

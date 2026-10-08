@@ -48,8 +48,7 @@ class MLP:
         sizes = [in_features, *hidden, out_features]
         rng = np.random.default_rng(seed)
         self.layers = [
-            Linear(sizes[index], sizes[index + 1], rng=rng)
-            for index in range(len(sizes) - 1)
+            Linear(sizes[index], sizes[index + 1], rng=rng) for index in range(len(sizes) - 1)
         ]
 
     def __call__(self, inputs: Tensor | object) -> Tensor:
@@ -120,7 +119,7 @@ def train_mlp(
     if epochs < 0:
         raise ValueError("epochs must be non-negative")
     if batch_size is None:
-        batch_size = features.shape[0]
+        batch_size = int(features.shape[0])
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
 

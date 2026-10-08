@@ -8,16 +8,15 @@ graph, seeds the output, and applies the chain rule in reverse order.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from types import EllipsisType
+from typing import cast
 
 import numpy as np
+from numpy.typing import NDArray
 
-Array = np.ndarray
-
-
-def _as_float_array(value: object) -> Array:
-    if isinstance(value, Tensor):
-        return value.data
-    return np.asarray(value, dtype=np.float64)
+Array = NDArray[np.float64]
+type IndexPart = int | slice | EllipsisType | list[int] | NDArray[np.int_ | np.bool_] | None
+type Index = IndexPart | tuple[IndexPart, ...]
 
 
 def _unbroadcast(gradient: Array, shape: tuple[int, ...]) -> Array:
@@ -134,7 +133,7 @@ class Tensor:
     def __rtruediv__(self, other: object) -> Tensor:
         return self._wrap(other) / self
 
-    def __pow__(self, exponent: float) -> Tensor:
+    def __pow__(self, exponent: object) -> Tensor:
         if not isinstance(exponent, (int, float)):
             raise TypeError("exponent must be a plain number")
         output_data = self.data**exponent
@@ -256,7 +255,13 @@ class Tensor:
         return out
 
     def reshape(self, *shape: int | tuple[int, ...]) -> Tensor:
-        target_shape = shape[0] if len(shape) == 1 and isinstance(shape[0], tuple) else shape
+        # NumPy validates invalid mixed tuple/scalar shapes itself; valid calls
+        # supply either one tuple or individual integer dimensions.
+        target_shape = (
+            shape[0]
+            if len(shape) == 1 and isinstance(shape[0], tuple)
+            else cast(tuple[int, ...], shape)
+        )
         out = Tensor(self.data.reshape(target_shape), self.requires_grad, (self,), "reshape")
 
         def _backward() -> None:
@@ -284,14 +289,15 @@ class Tensor:
     def T(self) -> Tensor:  # noqa: N802 - NumPy-compatible transpose spelling
         return self.transpose()
 
-    def __getitem__(self, index: object) -> Tensor:
+    def __getitem__(self, index: Index) -> Tensor:
         out = Tensor(self.data[index], self.requires_grad, (self,), "slice")
 
         def _backward() -> None:
             if out.grad is None:
                 return
             gradient = np.zeros_like(self.data)
-            np.add.at(gradient, index, out.grad)
+            # ufunc.at stubs omit slices/tuples, which NumPy supports at runtime.
+            cast(Callable[[Array, Index, Array], None], np.add.at)(gradient, index, out.grad)
             self._add_grad(gradient)
 
         out._backward = _backward

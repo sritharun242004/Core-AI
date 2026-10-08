@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import TypedDict, cast
 
 import numpy as np
 import torch
+from numpy.typing import NDArray
 from torch import Tensor, nn
 from torch.distributions import Categorical
 
@@ -90,6 +92,15 @@ class PolicyNetwork(nn.Module):
         return Categorical(probs=self.action_probabilities(states))
 
 
+class PolicyGradientResult(TypedDict):
+    policy: PolicyNetwork
+    episode_rewards: NDArray[np.float64]
+    losses: NDArray[np.float64]
+    moving_average: NDArray[np.float64]
+    evaluation_mean_reward: float
+    evaluation_success_rate: float
+
+
 def _episode(
     env: Gridworld,
     policy: PolicyNetwork,
@@ -102,8 +113,11 @@ def _episode(
     succeeded = False
     for _ in range(env.max_steps):
         distribution = policy.distribution(torch.tensor(state))
-        action = distribution.probs.argmax().item() if greedy else distribution.sample().item()
-        log_probs.append(distribution.log_prob(torch.tensor(action)))
+        action = int(distribution.probs.argmax() if greedy else distribution.sample())
+        # Categorical.log_prob is a Tensor-returning method with incomplete stubs.
+        log_probs.append(
+            cast(Callable[[Tensor], Tensor], distribution.log_prob)(torch.tensor(action))
+        )
         state, reward, done, info = env.step(action)
         rewards.append(reward)
         if done:
@@ -152,14 +166,14 @@ def train_policy_gradient(
     weight_decay: float = 0.0,
     entropy_coefficient: float = 0.01,
     evaluation_episodes: int = 20,
-) -> dict[str, object]:
+) -> PolicyGradientResult:
     """Train a seeded REINFORCE baseline and return inspectable metrics."""
 
     if episodes <= 0:
         raise ValueError("episodes must be positive")
     if learning_rate <= 0 or weight_decay < 0 or entropy_coefficient < 0:
         raise ValueError("learning_rate must be positive; penalties cannot be negative")
-    torch.manual_seed(seed)
+    cast(Callable[[int], torch.Generator], torch.manual_seed)(seed)
     policy = PolicyNetwork(env.n_states, env.n_actions, hidden_size=hidden_size)
     optimizer = make_optimizer(
         policy.parameters(),
@@ -181,13 +195,15 @@ def train_policy_gradient(
         if entropy_coefficient:
             # Re-run the state-independent entropy estimate for a light
             # exploration bonus; it is deliberately not hidden in the loss.
-            entropy = torch.stack([
-                policy.distribution(torch.tensor(state)).entropy()
-                for state in range(env.n_states)
-            ]).mean()
+            entropy = torch.stack(
+                [
+                    policy.distribution(torch.tensor(state)).entropy()
+                    for state in range(env.n_states)
+                ]
+            ).mean()
             loss = loss - entropy_coefficient * entropy
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
+        cast(Callable[[], None], loss.backward)()
         nn.utils.clip_grad_norm_(policy.parameters(), max_norm=1.0)
         optimizer.step()
         reward = float(sum(episode_rewards))

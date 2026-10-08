@@ -11,6 +11,34 @@ from torch import Tensor, nn
 from .position import apply_rope, build_alibi_bias, build_rope_cache
 
 
+def _required_int(values: dict[str, object], key: str) -> int:
+    value = values.get(key)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(f"{key} must be an integer")
+    return value
+
+
+def _optional_int(values: dict[str, object], key: str) -> int | None:
+    value = values.get(key)
+    if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+        raise ValueError(f"{key} must be an integer or null")
+    return value
+
+
+def _required_float(values: dict[str, object], key: str) -> float:
+    value = values.get(key)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f"{key} must be numeric")
+    return float(value)
+
+
+def _required_str(values: dict[str, object], key: str) -> str:
+    value = values.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
+    return value
+
+
 @dataclass(frozen=True)
 class LMConfig:
     vocab_size: int
@@ -28,6 +56,11 @@ class LMConfig:
 
 class CausalSelfAttention(nn.Module):
     """Multi-head causal attention with an inspectable probability tensor."""
+
+    causal_mask: Tensor
+    rope_cos: Tensor
+    rope_sin: Tensor
+    alibi: Tensor
 
     def __init__(
         self,
@@ -188,8 +221,28 @@ class TinyCausalLM(nn.Module):
 
     @classmethod
     def from_config(cls, config: LMConfig | dict[str, object]) -> TinyCausalLM:
-        values = config.as_dict() if isinstance(config, LMConfig) else dict(config)
-        return cls(**values)
+        if isinstance(config, LMConfig):
+            return cls(
+                vocab_size=config.vocab_size,
+                d_model=config.d_model,
+                n_heads=config.n_heads,
+                n_layers=config.n_layers,
+                d_ff=config.d_ff,
+                max_seq_len=config.max_seq_len,
+                dropout=config.dropout,
+                position_type=config.position_type,
+            )
+        values = dict(config)
+        return cls(
+            vocab_size=_required_int(values, "vocab_size"),
+            d_model=_required_int(values, "d_model"),
+            n_heads=_required_int(values, "n_heads"),
+            n_layers=_required_int(values, "n_layers"),
+            d_ff=_optional_int(values, "d_ff"),
+            max_seq_len=_required_int(values, "max_seq_len"),
+            dropout=_required_float(values, "dropout"),
+            position_type=_required_str(values, "position_type"),
+        )
 
     def forward(self, input_ids: Tensor) -> Tensor:
         self._validate_ids(input_ids)

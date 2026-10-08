@@ -45,11 +45,7 @@ def test_resnet_has_a_real_skip_path_and_backpropagates() -> None:
 def test_resnet_zero_init_residual_starts_blocks_near_identity() -> None:
     model = resnet18(num_classes=10, widths=(4, 8, 16, 32), blocks=(1, 1, 1, 1))
 
-    bn_weights = [
-        block.bn2.weight
-        for block in model.modules()
-        if isinstance(block, BasicBlock)
-    ]
+    bn_weights = [block.bn2.weight for block in model.modules() if isinstance(block, BasicBlock)]
 
     assert bn_weights
     assert all(torch.equal(weight, torch.zeros_like(weight)) for weight in bn_weights)

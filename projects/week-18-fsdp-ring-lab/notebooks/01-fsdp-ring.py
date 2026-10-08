@@ -36,9 +36,11 @@ for stage, expected in enumerate((1600, 700, 550, 400)):
     ledger = memory_ledger(100, 4, stage=stage, largest_unit=40)
     communication = zero_communication(100, 4, stage=stage)
     assert ledger.persistent_bytes == expected
-    print(f"stage={stage} persistent={ledger.persistent_bytes} "
-          f"materialization={ledger.materialization_bytes} "
-          f"sent/rank={communication.sent_per_rank} bytes")
+    print(
+        f"stage={stage} persistent={ledger.persistent_bytes} "
+        f"materialization={ledger.materialization_bytes} "
+        f"sent/rank={communication.sent_per_rank} bytes"
+    )
 
 # %% [markdown]
 # ## 2. Uneven transport never creates extra examples
@@ -87,10 +89,13 @@ for actual, expected in zip(ring_grads, dense_grads, strict=True):
     torch.testing.assert_close(actual, expected, atol=1e-12, rtol=1e-10)
     assert torch.count_nonzero(actual[1, :, 4:]) == 0
 print("max forward error:", (ring - dense).abs().max().item())
-print("max Q/K/V gradient errors:", [
-    (actual - expected).abs().max().item()
-    for actual, expected in zip(ring_grads, dense_grads, strict=True)
-])
+print(
+    "max Q/K/V gradient errors:",
+    [
+        (actual - expected).abs().max().item()
+        for actual, expected in zip(ring_grads, dense_grads, strict=True)
+    ],
+)
 
 # %% [markdown]
 # ## 5. Ring wire volume is not wall time

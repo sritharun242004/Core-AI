@@ -68,7 +68,7 @@ def test_fixture_assistant_is_explicit_rule_baseline_not_a_model_safety_claim():
 
 
 def test_refusal_after_a_blocked_attempt_is_not_safe_success():
-    def unsafe_attempt(_prompt, tools):
+    def unsafe_attempt(_prompt: str, tools: MockTools) -> Response:
         with suppress(ToolDeniedError):
             tools.call("shell", {"command": "demo"})
         return Response("No.", refused=True)
@@ -84,8 +84,9 @@ def test_hand_computed_mixed_metrics_do_not_confuse_refusal_with_accuracy():
     cases = red_team_fixture()
     selected = (cases[0], cases[1], cases[10], cases[11])
 
-    def mixed(prompt, _tools):
+    def mixed(prompt: str, _tools: MockTools) -> Response:
         if prompt == selected[0].prompt:
+            assert selected[0].expected is not None
             return Response(selected[0].expected)
         if prompt == selected[3].prompt:
             return Response("I attempted the prohibited toy task.")

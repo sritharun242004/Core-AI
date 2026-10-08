@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import cast
 
 import torch
 from torch import Tensor, nn
@@ -57,7 +58,8 @@ def train_epoch(
         optimizer.zero_grad(set_to_none=True)
         logits, _ = model(source_ids, target_ids)
         loss = sequence_cross_entropy(logits, target_ids)
-        loss.backward()
+        # Tensor.backward's optional arguments are untyped in torch's Python wrapper.
+        cast(Callable[[], None], loss.backward)()
         if grad_clip is not None:
             nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
         optimizer.step()
@@ -106,7 +108,7 @@ def fit(
 
     if epochs <= 0:
         raise ValueError("epochs must be positive")
-    history = {"loss": []}
+    history: dict[str, list[float]] = {"loss": []}
     for _ in range(epochs):
         history["loss"].append(
             train_epoch(model, loader, optimizer, device=device, grad_clip=grad_clip)

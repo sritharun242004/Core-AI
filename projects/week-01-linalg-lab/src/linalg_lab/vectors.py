@@ -1,4 +1,5 @@
 """Vector operations from first principles."""
+
 from __future__ import annotations
 
 import numpy as np

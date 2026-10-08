@@ -5,12 +5,34 @@ import math
 import os
 import re
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path
+from typing import TypedDict, cast
 
 import numpy as np
+from numpy.typing import NDArray
+
+FloatValues = Sequence[float] | NDArray[np.float64]
+
+
+class JudgeResult(TypedDict):
+    a_score: float
+    consistent: bool
+    calls: int
+
+
+class RegressionResult(TypedDict):
+    passed: bool
+    mean_delta: float
+    delta_interval: tuple[float, float]
+
+
+class Trajectory(TypedDict):
+    success: bool
+    tool_calls: int
+    unsafe_attempts: int
 
 
 @dataclass(frozen=True)
@@ -38,7 +60,7 @@ def dataset_digest(examples: Sequence[Example]) -> str:
 def split_dataset(
     examples: Sequence[Example],
     *,
-    fractions=(0.6, 0.2, 0.2),
+    fractions: Sequence[float] = (0.6, 0.2, 0.2),
     seed: int = 0,
 ) -> tuple[tuple[Example, ...], ...]:
     """Seeded random split; use chronological/group splits when domain requires it."""
@@ -60,7 +82,7 @@ def split_dataset(
     )
 
 
-def _values(values: Sequence[float]) -> np.ndarray:
+def _values(values: FloatValues) -> NDArray[np.float64]:
     array = np.asarray(values, dtype=np.float64)
     if array.ndim != 1 or not array.size or not np.isfinite(array).all():
         raise ValueError("values must be a nonempty finite vector")
@@ -71,7 +93,7 @@ def exact_match(predictions: Sequence[str], expected: Sequence[str]) -> float:
     if not predictions or len(predictions) != len(expected):
         raise ValueError("prediction and target lengths must match and be nonempty")
 
-    def normalize(s):
+    def normalize(s: str) -> str:
         return " ".join(s.casefold().split())
 
     return sum(
@@ -79,28 +101,35 @@ def exact_match(predictions: Sequence[str], expected: Sequence[str]) -> float:
     ) / len(expected)
 
 
-def judge_pair(prompt: str, a: str, b: str, judge: Callable) -> dict:
+def judge_pair(
+    prompt: str, a: str, b: str, judge: Callable[[str, str, str], object]
+) -> JudgeResult:
     """Two rubric-judge calls; swap positions, map scores back to original A.
 
     A contradictory pair averages to .5 but is NOT marked as an agreed tie.
     Adapters must treat candidate text as untrusted data, not instructions.
     """
-    scores = []
+    scores: list[float] = []
     for left, right, swapped in ((a, b, False), (b, a, True)):
         result = judge(prompt, left, right)
+        if not isinstance(result, dict):
+            raise ValueError("judge response requires winner A/B/tie and a reason string")
+        # External evaluator output has not yet been validated.
+        fields = cast(dict[object, object], result)
+        winner = fields.get("winner")
         if (
-            not isinstance(result, dict)
-            or result.get("winner") not in {"A", "B", "tie"}
-            or not isinstance(result.get("reason"), str)
+            not isinstance(winner, str)
+            or winner not in {"A", "B", "tie"}
+            or not isinstance(fields.get("reason"), str)
         ):
             raise ValueError("judge response requires winner A/B/tie and a reason string")
-        score = {"A": 1.0, "B": 0.0, "tie": 0.5}[result["winner"]]
+        score = {"A": 1.0, "B": 0.0, "tie": 0.5}[winner]
         scores.append(1 - score if swapped else score)
     return {"a_score": sum(scores) / 2, "consistent": scores[0] == scores[1], "calls": 2}
 
 
 def bootstrap_interval(
-    values: Sequence[float], *, confidence: float = 0.95, resamples: int = 2000, seed: int = 0
+    values: FloatValues, *, confidence: float = 0.95, resamples: object = 2000, seed: int = 0
 ) -> tuple[float, float]:
     array = _values(values)
     if not 0 < confidence < 1 or not isinstance(resamples, int) or resamples < 1:
@@ -114,7 +143,7 @@ def bootstrap_interval(
 
 
 def population_stability(
-    reference: Sequence[float], current: Sequence[float], *, bins: int = 10, smoothing: float = 1e-6
+    reference: FloatValues, current: FloatValues, *, bins: object = 10, smoothing: float = 1e-6
 ) -> float:
     """PSI with training quantile edges and open-ended tails.
 
@@ -134,7 +163,7 @@ def population_stability(
 
 
 def contamination(
-    train: Sequence[Example], evaluation: Sequence[Example], *, n: int = 5
+    train: Sequence[Example], evaluation: Sequence[Example], *, n: object = 5
 ) -> dict[str, float]:
     """Fraction of each eval prompt's distinct n-grams seen in other training IDs.
 
@@ -146,15 +175,15 @@ def contamination(
     dataset_digest(train)
     dataset_digest(evaluation)
 
-    def grams(text):
+    def grams(text: str) -> set[tuple[str, ...]]:
         tokens = re.findall(r"\w+", text.casefold())
         return {tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)}
 
-    index: dict[tuple, set[str]] = {}
+    index: dict[tuple[str, ...], set[str]] = {}
     for example in train:
         for gram in grams(example.prompt):
             index.setdefault(gram, set()).add(example.id)
-    result = {}
+    result: dict[str, float] = {}
     for example in evaluation:
         query = grams(example.prompt)
         hits = sum(bool(index.get(gram, set()) - {example.id}) for gram in query)
@@ -162,27 +191,38 @@ def contamination(
     return result
 
 
-def trajectory_metrics(rows: Sequence[dict]) -> dict[str, float]:
+def trajectory_metrics(rows: Sequence[Mapping[str, object]]) -> dict[str, float]:
     if not rows:
         raise ValueError("trajectories must not be empty")
+    validated: list[Trajectory] = []
     for row in rows:
-        if not isinstance(row.get("success"), bool):
+        success = row.get("success")
+        if not isinstance(success, bool):
             raise ValueError("success must be boolean")
+        counts: dict[str, int] = {}
         for field in ("tool_calls", "unsafe_attempts"):
             value = row.get(field)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{field} must be a nonnegative integer")
+            counts[field] = value
+        validated.append(
+            Trajectory(
+                success=success,
+                tool_calls=counts["tool_calls"],
+                unsafe_attempts=counts["unsafe_attempts"],
+            )
+        )
     return {
-        "task_success": sum(row["success"] for row in rows) / len(rows),
-        "safe_success": sum(row["success"] and not row["unsafe_attempts"] for row in rows)
+        "task_success": sum(row["success"] for row in validated) / len(rows),
+        "safe_success": sum(row["success"] and not row["unsafe_attempts"] for row in validated)
         / len(rows),
-        "mean_tool_calls": sum(row["tool_calls"] for row in rows) / len(rows),
+        "mean_tool_calls": sum(row["tool_calls"] for row in validated) / len(rows),
     }
 
 
 def regression_gate(
-    baseline: Sequence[float], candidate: Sequence[float], *, max_drop: float = 0.02, seed: int = 0
-) -> dict:
+    baseline: FloatValues, candidate: FloatValues, *, max_drop: float = 0.02, seed: int = 0
+) -> RegressionResult:
     """One paired observation per case, higher is better; conservative lower-CI gate."""
     before, after = _values(baseline), _values(candidate)
     if before.shape != after.shape or not math.isfinite(max_drop) or max_drop < 0:
@@ -207,18 +247,21 @@ class RunManifest:
         return sha256(_canonical(asdict(self)).encode()).hexdigest()[:16]
 
 
-def write_results(path: str | Path, manifest: RunManifest, rows: Sequence[dict]) -> None:
+def write_results(
+    path: str | Path, manifest: RunManifest, rows: Sequence[Mapping[str, object]]
+) -> None:
     """Validate/serialize before atomic replacement; no wall-clock entropy.
 
     Rows are supplied in evaluation order. Include model revision, prompt rubric
     revision and dataset digest in the manifest rather than mutable aliases.
     """
     lines = [_canonical({"manifest": asdict(manifest), "run_id": manifest.run_id})]
-    seen = set()
+    seen: set[str] = set()
     for row in rows:
-        if not isinstance(row.get("id"), str) or row["id"] in seen:
+        ident = row.get("id")
+        if not isinstance(ident, str) or ident in seen:
             raise ValueError("result IDs must be unique strings")
-        seen.add(row["id"])
+        seen.add(ident)
         lines.append(_canonical(row))
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)

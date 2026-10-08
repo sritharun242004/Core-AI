@@ -26,7 +26,7 @@ for step in range(300):
     loss = Value(0.0)
     for x, y in zip(xs, ys, strict=True):
         pred = model([Value(x[0]), Value(x[1])])
-        pred_val = pred[0] if isinstance(pred, list) else pred
+        pred_val = pred[0]
         loss = loss + (pred_val - Value(y)) ** 2
     for p in model.parameters():
         p.grad = 0.0

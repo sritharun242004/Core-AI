@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
+from typing import TypedDict, Unpack, cast
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 FloatArray = NDArray[np.float64]
+
+
+class KMeansOptions(TypedDict, total=False):
+    max_iter: int
+    tol: float
+    random_state: int | np.random.Generator | None
+    n_init: int
+    init: str
+
+
+def _positive_integer(value: object, name: str) -> int:
+    if not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
 
 
 class KMeans:
@@ -26,14 +42,11 @@ class KMeans:
         n_init: int = 10,
         init: str = "k-means++",
     ) -> None:
-        if not isinstance(n_clusters, int) or n_clusters < 1:
-            raise ValueError("n_clusters must be a positive integer")
-        if not isinstance(max_iter, int) or max_iter < 1:
-            raise ValueError("max_iter must be a positive integer")
+        _positive_integer(n_clusters, "n_clusters")
+        _positive_integer(max_iter, "max_iter")
         if tol < 0:
             raise ValueError("tol must be non-negative")
-        if not isinstance(n_init, int) or n_init < 1:
-            raise ValueError("n_init must be a positive integer")
+        _positive_integer(n_init, "n_init")
         if init not in {"k-means++", "random"}:
             raise ValueError("init must be 'k-means++' or 'random'")
         self.n_clusters = n_clusters
@@ -72,9 +85,7 @@ class KMeans:
         self._check_is_fitted()
         x_array = _as_matrix(x)
         if x_array.shape[1] != self.n_features_in_:
-            raise ValueError(
-                f"expected {self.n_features_in_} features, got {x_array.shape[1]}"
-            )
+            raise ValueError(f"expected {self.n_features_in_} features, got {x_array.shape[1]}")
         return _assign(x_array, self.cluster_centers_)[0]
 
     def fit_predict(self, x: ArrayLike) -> NDArray[np.int_]:
@@ -88,7 +99,7 @@ class KMeans:
 def kmeans(
     x: ArrayLike,
     n_clusters: int,
-    **kwargs: object,
+    **kwargs: Unpack[KMeansOptions],
 ) -> KMeans:
     """Convenience constructor returning a fitted :class:`KMeans`."""
 
@@ -105,6 +116,7 @@ def _single_run(
     init: str,
 ) -> tuple[FloatArray, NDArray[np.int_], float, int]:
     centers = _initialize_centers(x, n_clusters, rng, init)
+    _iteration = 0
     for _iteration in range(1, max_iter + 1):
         labels, distances = _assign(x, centers)
         new_centers = centers.copy()
@@ -151,17 +163,14 @@ def _initialize_centers(
             index = int(rng.integers(0, n_samples))
         else:
             probabilities = closest / total
-            index = int(rng.choice(n_samples, p=probabilities))
+            # NumPy's scalar choice overload leaves its integer result unknown.
+            index = int(cast(np.int64, rng.choice(n_samples, p=probabilities)))
         centers[cluster] = x[index]
-        closest = np.minimum(
-            closest, _squared_distances(x, centers[cluster : cluster + 1])[:, 0]
-        )
+        closest = np.minimum(closest, _squared_distances(x, centers[cluster : cluster + 1])[:, 0])
     return centers
 
 
-def _assign(
-    x: FloatArray, centers: FloatArray
-) -> tuple[NDArray[np.int_], FloatArray]:
+def _assign(x: FloatArray, centers: FloatArray) -> tuple[NDArray[np.int_], FloatArray]:
     squared = _squared_distances(x, centers)
     labels = np.argmin(squared, axis=1).astype(int)
     distances = squared[np.arange(len(x)), labels]

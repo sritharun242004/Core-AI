@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from importlib import import_module
+from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
+from matplotlib.text import Text
 from numpy.typing import NDArray
-from sklearn.datasets import load_digits, load_iris
 from sklearn.manifold import TSNE
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
+from ._third_party import UMAPModule, load_digits, load_iris
 from .kmeans import KMeans
 from .pca import PCA
 
@@ -45,7 +48,18 @@ class ComparisonOutput:
     def methods(self) -> tuple[str, ...]:
         return tuple(self.embeddings)
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(
+        self,
+    ) -> dict[
+        str,
+        str
+        | FloatArray
+        | IntArray
+        | dict[str, FloatArray]
+        | dict[str, IntArray]
+        | dict[str, str]
+        | bool,
+    ]:
         """Return a serialization-friendly view (the Matplotlib figure is omitted)."""
 
         return {
@@ -59,7 +73,17 @@ class ComparisonOutput:
             "umap_available": self.umap_available,
         }
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(
+        self, key: str
+    ) -> (
+        str
+        | FloatArray
+        | IntArray
+        | dict[str, FloatArray]
+        | dict[str, IntArray]
+        | dict[str, str]
+        | bool
+    ):
         """Allow notebook code to use ``result["embeddings"]`` as well as attributes."""
 
         return self.as_dict()[key]
@@ -70,7 +94,7 @@ def run_comparison(
     *,
     random_state: int = 42,
     n_clusters: int | None = None,
-    max_samples: int | None = None,
+    max_samples: object = None,
     include_umap: bool = True,
     make_figure: bool = True,
     tsne_perplexity: float = 30.0,
@@ -99,7 +123,8 @@ def run_comparison(
 
     # Scaling is fitted on this one local dataset, then shared by the two
     # clustering models.  This keeps iris' centimeter units from dominating.
-    x_scaled = StandardScaler().fit_transform(x)
+    # The fit_transform stub leaves unused metadata kwargs unknown.
+    x_scaled = cast(Callable[[FloatArray], FloatArray], StandardScaler().fit_transform)(x)
     pca = PCA(n_components=2).fit(x_scaled)
     pca_embedding = pca.transform(x_scaled)
 
@@ -143,7 +168,8 @@ def run_comparison(
 
     if include_umap:
         try:
-            import umap  # type: ignore[import-not-found]
+            # Keep UMAP optional; its structural contract is checked by use below.
+            umap = cast(UMAPModule, import_module("umap"))
 
             reducer = umap.UMAP(
                 n_components=2,
@@ -242,7 +268,7 @@ def plot_comparison(result: ComparisonOutput, *, make_figure: bool = True) -> Fi
         axis.set_xlabel("component 1")
         axis.set_ylabel("component 2")
         axis.grid(alpha=0.18)
-    figure.suptitle(f"Unsupervised comparison · {result.dataset_name}")
+    cast(Callable[[str], Text], figure.suptitle)(f"Unsupervised comparison · {result.dataset_name}")
     return figure
 
 

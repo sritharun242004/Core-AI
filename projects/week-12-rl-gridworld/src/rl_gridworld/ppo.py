@@ -9,9 +9,7 @@ import torch
 from torch import Tensor
 
 
-def clipped_surrogate(
-    ratios: Tensor, advantages: Tensor, *, clip_epsilon: float = 0.2
-) -> Tensor:
+def clipped_surrogate(ratios: Tensor, advantages: Tensor, *, clip_epsilon: float = 0.2) -> Tensor:
     """Return elementwise ``min(r*A, clip(r, 1-eps, 1+eps)*A)``."""
 
     if ratios.shape != advantages.shape or ratios.numel() == 0:
@@ -27,9 +25,7 @@ def clipped_surrogate(
     return torch.minimum(ratios * fixed_advantages, clipped * fixed_advantages)
 
 
-def ppo_clip_loss(
-    ratios: Tensor, advantages: Tensor, *, clip_epsilon: float = 0.2
-) -> Tensor:
+def ppo_clip_loss(ratios: Tensor, advantages: Tensor, *, clip_epsilon: float = 0.2) -> Tensor:
     """Negate the mean surrogate because optimizers minimize a loss."""
 
     return -clipped_surrogate(ratios, advantages, clip_epsilon=clip_epsilon).mean()

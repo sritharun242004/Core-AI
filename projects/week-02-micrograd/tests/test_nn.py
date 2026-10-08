@@ -12,11 +12,12 @@ def test_mlp_overfits_xor():
     model = nn.MLP(2, [4, 4, 1])
     xs = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]]
     ys = [0.0, 1.0, 1.0, 0.0]
+    loss = Value(0.0)
     for _ in range(300):
         loss = Value(0.0)
         for x_row, y_target in zip(xs, ys, strict=True):
             pred = model([Value(x_row[0]), Value(x_row[1])])
-            pred_val = pred[0] if isinstance(pred, list) else pred
+            pred_val = pred[0]
             loss = loss + (pred_val - Value(y_target)) ** 2
         for p in model.parameters():
             p.grad = 0.0

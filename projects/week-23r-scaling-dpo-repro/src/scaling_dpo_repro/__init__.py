@@ -2,13 +2,39 @@
 
 import copy
 import math
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+from typing import Literal, TypedDict, cast
 
 import numpy as np
 import torch
-from torch import nn
+from numpy.typing import ArrayLike
+from torch import Tensor, nn
 
 
-def fit_power_law(sizes, losses, *, irreducible: float = 0.0) -> dict[str, float]:
+class PowerLawFit(TypedDict):
+    amplitude: float
+    alpha: float
+    irreducible: float
+    rmse_log: float
+
+
+class PreferenceResult(TypedDict):
+    before: float
+    after: float
+    reference_unchanged: bool
+
+
+class ScalingRun(TypedDict):
+    width: int
+    parameters: int
+    train_tokens: int
+    validation_loss: float
+    seed: int
+    task: Literal["synthetic-sum-mod8"]
+
+
+def fit_power_law(sizes: ArrayLike, losses: ArrayLike, *, irreducible: float = 0.0) -> PowerLawFit:
     """Fit L(N)=E+A*N**(-alpha) with FIXED E using log-linear least squares.
 
     Three sizes do not identify a joint compute-optimal Chinchilla law. E is a
@@ -39,7 +65,9 @@ def fit_power_law(sizes, losses, *, irreducible: float = 0.0) -> dict[str, float
     }
 
 
-def paired_seed_interval(baseline, candidate, *, seed: int = 0, resamples: int = 1000):
+def paired_seed_interval(
+    baseline: ArrayLike, candidate: ArrayLike, *, seed: int = 0, resamples: int = 1000
+) -> tuple[float, float]:
     before, after = np.asarray(baseline, dtype=float), np.asarray(candidate, dtype=float)
     if (
         before.ndim != 1
@@ -53,10 +81,18 @@ def paired_seed_interval(baseline, candidate, *, seed: int = 0, resamples: int =
     differences = after - before
     rng = np.random.default_rng(seed)
     means = [rng.choice(differences, size=differences.size).mean() for _ in range(resamples)]
-    return tuple(float(x) for x in np.quantile(means, [0.025, 0.975]))
+    quantiles = np.quantile(means, [0.025, 0.975])
+    return float(quantiles[0]), float(quantiles[1])
 
 
-def dpo_loss(chosen, rejected, reference_chosen, reference_rejected, *, beta: float = 0.1):
+def dpo_loss(
+    chosen: Tensor,
+    rejected: Tensor,
+    reference_chosen: Tensor,
+    reference_rejected: Tensor,
+    *,
+    beta: float = 0.1,
+) -> Tensor:
     """Stanford Rafailov et al. 2023; arguments are summed completion log-probs."""
     tensors = (chosen, rejected, reference_chosen, reference_rejected)
     if not chosen.numel() or any(value.shape != chosen.shape for value in tensors):
@@ -69,12 +105,13 @@ def dpo_loss(chosen, rejected, reference_chosen, reference_rejected, *, beta: fl
     return -nn.functional.logsigmoid(beta * margin).mean()
 
 
-def train_preference(*, seed: int = 0, steps: int = 30) -> dict:
+def train_preference(*, seed: int = 0, steps: int = 30) -> PreferenceResult:
     """One-token completion policy for three synthetic prompts; not an LLM."""
     if steps < 1:
         raise ValueError("positive steps required")
-    with torch.random.fork_rng(devices=[]):
-        torch.random.default_generator.manual_seed(seed)
+    # Narrow the unannotated third-party call; an empty device list isolates CPU RNG only.
+    with cast(Callable[[list[int]], AbstractContextManager[None]], torch.random.fork_rng)([]):
+        torch.random.set_rng_state(torch.Generator().manual_seed(seed).get_state())
         policy = nn.Embedding(3, 2)
         reference = copy.deepcopy(policy).eval().requires_grad_(False)
         snapshot = reference.weight.detach().clone()
@@ -82,21 +119,22 @@ def train_preference(*, seed: int = 0, steps: int = 30) -> dict:
         optimizer = torch.optim.Adam(policy.parameters(), lr=0.1)
         with torch.no_grad():
             ref = reference(prompts).log_softmax(-1)
-            before = policy(prompts).softmax(-1)[:, 0].mean().item()
+            before = float(policy(prompts).softmax(-1)[:, 0].mean().item())
         for _ in range(steps):
             optimizer.zero_grad(set_to_none=True)
             scores = policy(prompts).log_softmax(-1)
             loss = dpo_loss(scores[:, 0], scores[:, 1], ref[:, 0], ref[:, 1])
-            loss.backward()
-            optimizer.step()
+            # With no closure or explicit gradient, these calls return None.
+            cast(Callable[[], None], loss.backward)()
+            cast(Callable[[], None], optimizer.step)()
         return {
             "before": before,
-            "after": policy(prompts).softmax(-1)[:, 0].mean().item(),
+            "after": float(policy(prompts).softmax(-1)[:, 0].mean().item()),
             "reference_unchanged": torch.equal(snapshot, reference.weight),
         }
 
 
-def run_three_sizes(*, seed: int = 0, steps: int = 20) -> list[dict]:
+def run_three_sizes(*, seed: int = 0, steps: int = 20) -> list[ScalingRun]:
     """Train three causal fixed-context MLP LMs, NOT three Transformer replicas.
 
     Token contexts are sampled without replacement; target is their sum mod vocabulary.
@@ -105,16 +143,16 @@ def run_three_sizes(*, seed: int = 0, steps: int = 20) -> list[dict]:
     """
     if steps < 1:
         raise ValueError("steps must be positive")
-    with torch.random.fork_rng(devices=[]):
-        torch.random.default_generator.manual_seed(seed)
+    with cast(Callable[[list[int]], AbstractContextManager[None]], torch.random.fork_rng)([]):
+        torch.random.set_rng_state(torch.Generator().manual_seed(seed).get_state())
         generator = torch.Generator().manual_seed(seed)
         ids = torch.randperm(8**3, generator=generator)[:192]
         contexts = torch.stack([ids // 64, (ids // 8) % 8, ids % 8], dim=-1)
         train_x, valid_x = contexts[:64], contexts[64:]
         train_y, valid_y = train_x.sum(-1) % 8, valid_x.sum(-1) % 8
-        rows = []
+        rows: list[ScalingRun] = []
         for width in (8, 16, 32):
-            torch.random.default_generator.manual_seed(seed)
+            torch.random.set_rng_state(torch.Generator().manual_seed(seed).get_state())
             model = nn.Sequential(
                 nn.Embedding(8, width),
                 nn.Flatten(),
@@ -126,10 +164,10 @@ def run_three_sizes(*, seed: int = 0, steps: int = 20) -> list[dict]:
             for _ in range(steps):
                 optimizer.zero_grad(set_to_none=True)
                 loss = nn.functional.cross_entropy(model(train_x), train_y)
-                loss.backward()
-                optimizer.step()
+                cast(Callable[[], None], loss.backward)()
+                cast(Callable[[], None], optimizer.step)()
             with torch.no_grad():
-                valid_loss = nn.functional.cross_entropy(model(valid_x), valid_y).item()
+                valid_loss = float(nn.functional.cross_entropy(model(valid_x), valid_y).item())
             rows.append(
                 {
                     "width": width,
@@ -144,6 +182,9 @@ def run_three_sizes(*, seed: int = 0, steps: int = 20) -> list[dict]:
 
 
 __all__ = [
+    "PowerLawFit",
+    "PreferenceResult",
+    "ScalingRun",
     "dpo_loss",
     "fit_power_law",
     "paired_seed_interval",

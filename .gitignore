@@ -23,3 +23,6 @@ yarn.lock
 npm-shrinkwrap.json
 Pipfile.lock
 poetry.lock
+
+# AI agent scratchpads (do not commit)
+__agent__/

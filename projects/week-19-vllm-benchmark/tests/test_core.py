@@ -21,7 +21,7 @@ from vllm_benchmark import (
 
 @pytest.mark.parametrize("bits", [4, 8])
 @pytest.mark.parametrize("group_size", [1, 3, 8])
-def test_group_quantization_error_bound_and_shape(bits, group_size):
+def test_group_quantization_error_bound_and_shape(bits: int, group_size: int) -> None:
     weights = np.array([[-2.1, 0.0, 0.3, 0.7, 8.2], [0.0, 0.0, 0.0, -0.2, 0.1]])
     original = weights.copy()
     packed = quantize(weights, bits=bits, group_size=group_size)
@@ -60,7 +60,7 @@ def test_zero_groups_and_outliers_are_independent():
         ([float("inf")], 8, 2),
     ],
 )
-def test_invalid_quantization(values, bits, group):
+def test_invalid_quantization(values: list[float], bits: int, group: int | float) -> None:
     with pytest.raises(ValueError):
         quantize(np.array(values), bits=bits, group_size=group)
 
@@ -86,10 +86,10 @@ def test_paging_fragmentation_reuse_and_atomic_exhaustion():
     cache.check_invariants()
 
 
-def test_randomized_allocator_capacity_and_no_aliasing():
+def test_randomized_allocator_capacity_and_no_aliasing() -> None:
     rng = random.Random(19)
     cache = PagedKVCache(num_pages=9, page_size=3)
-    live = {}
+    live: dict[str, tuple[int, ...]] = {}
     for step in range(300):
         if live and rng.random() < 0.45:
             name = rng.choice(list(live))
@@ -110,7 +110,7 @@ def test_randomized_allocator_capacity_and_no_aliasing():
 
 
 @pytest.mark.parametrize("pages,size", [(0, 4), (4, 0), (-1, 2), (2.5, 4), (True, 4)])
-def test_invalid_allocator_dimensions(pages, size):
+def test_invalid_allocator_dimensions(pages: int | float | bool, size: int | float | bool) -> None:
     with pytest.raises(ValueError):
         PagedKVCache(pages, size)
 
@@ -128,7 +128,7 @@ def test_allocator_lifecycle_errors_do_not_mutate():
     cache.release("empty")
 
 
-def identity(**updates):
+def identity(**updates: str) -> CacheIdentity:
     fields = dict(
         tenant="tenant-a",
         model_revision="weights-sha",
@@ -207,7 +207,7 @@ def test_aggregate_tpot_weights_decode_intervals_not_requests():
     "submitted,times,completed",
     [(1, (0.5,), 2), (0, (1, 0.5), 2), (0, (1,), 0.9), (0, (), -1), (0, (float("nan"),), 2)],
 )
-def test_invalid_traces(submitted, times, completed):
+def test_invalid_traces(submitted: float, times: tuple[float, ...], completed: float) -> None:
     with pytest.raises(ValueError):
         RequestTrace(submitted, times, completed)
 
@@ -257,6 +257,6 @@ def test_speculative_sampling_matches_target_not_draft():
         ([float("nan"), 0], [1, 0]),
     ],
 )
-def test_invalid_speculative_distributions(p, q):
+def test_invalid_speculative_distributions(p: list[float], q: list[float]) -> None:
     with pytest.raises(ValueError):
         residual_distribution(p, q)

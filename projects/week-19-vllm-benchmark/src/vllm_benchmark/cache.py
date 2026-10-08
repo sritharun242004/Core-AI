@@ -5,6 +5,7 @@ import json
 from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from typing import cast
 
 from .quantization import positive_int
 
@@ -12,11 +13,11 @@ from .quantization import positive_int
 class PagedKVCache:
     """Logical block table only: no tensors, eviction, sharing, or attention kernels."""
 
-    def __init__(self, num_pages: int, page_size: int):
+    def __init__(self, num_pages: object, page_size: object):
         positive_int(num_pages, "num_pages")
         positive_int(page_size, "page_size")
-        self.num_pages = num_pages
-        self.page_size = page_size
+        self.num_pages = cast(int, num_pages)
+        self.page_size = cast(int, page_size)
         self._free = set(range(num_pages))
         self._pages: dict[str, tuple[int, ...]] = {}
         self._tokens: dict[str, int] = {}
@@ -42,7 +43,7 @@ class PagedKVCache:
         self._free.difference_update(pages)
         return pages
 
-    def allocate(self, request: str, tokens: int) -> tuple[int, ...]:
+    def allocate(self, request: object, tokens: int) -> tuple[int, ...]:
         positive_int(tokens, "tokens", allow_zero=True)
         if not isinstance(request, str) or not request or request in self._pages:
             raise ValueError("request must be a nonempty, unique ID")
@@ -87,7 +88,7 @@ class CacheIdentity:
     kv_dtype: str
 
 
-def prefix_key(identity: CacheIdentity, token_ids: Sequence[int]) -> str:
+def prefix_key(identity: CacheIdentity, token_ids: Sequence[object]) -> str:
     """Exact token sequence, never decoded text or ambiguous string concatenation."""
     fields = asdict(identity)
     if any(not isinstance(value, str) or not value for value in fields.values()):
@@ -113,7 +114,7 @@ class PrefixCache:
         self.max_entries = max_entries
         self._entries: OrderedDict[str, object] = OrderedDict()
 
-    def put(self, identity: CacheIdentity, token_ids: Sequence[int], value: object) -> None:
+    def put(self, identity: CacheIdentity, token_ids: Sequence[object], value: object) -> None:
         if value is None:
             raise ValueError("None is reserved for cache misses")
         key = prefix_key(identity, token_ids)
@@ -122,7 +123,7 @@ class PrefixCache:
         while len(self._entries) > self.max_entries:
             self._entries.popitem(last=False)
 
-    def get(self, identity: CacheIdentity, token_ids: Sequence[int]) -> object | None:
+    def get(self, identity: CacheIdentity, token_ids: Sequence[object]) -> object | None:
         key = prefix_key(identity, token_ids)
         if key not in self._entries:
             return None

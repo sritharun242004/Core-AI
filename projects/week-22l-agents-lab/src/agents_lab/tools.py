@@ -4,12 +4,18 @@ This is not a Python sandbox. Register trusted callbacks only. No tool in the
 fixture can access the filesystem, network, subprocesses, or credentials.
 """
 
-from collections.abc import Callable
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any
+from typing import Protocol, cast
+
+Primitive = int | float | str | bool
+
+
+class ToolHandler(Protocol):
+    def __call__(self, arguments: Mapping[str, Primitive], /) -> object: ...
 
 
 @dataclass
@@ -19,7 +25,7 @@ class Budget:
     steps: int = field(default=0, init=False)
     calls: int = field(default=0, init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if any(type(n) is not int or n < 0 for n in (self.max_steps, self.max_calls)):
             raise ValueError("budgets must be nonnegative integers")
 
@@ -41,24 +47,48 @@ class Budget:
 @dataclass(frozen=True)
 class Call:
     name: str
-    arguments: dict[str, Any]
+    arguments: Mapping[str, Primitive]
     depends_on: tuple[str, ...] = ()
+
+
+def _runtime_value(value: object) -> object:
+    return value
+
+
+def _valid_call_envelope(value: object) -> bool:
+    if not isinstance(value, Call):
+        return False
+    name = _runtime_value(value.name)
+    depends_on = _runtime_value(value.depends_on)
+    if not isinstance(name, str) or not 1 <= len(name) <= 64:
+        return False
+    if not isinstance(depends_on, tuple):
+        return False
+    candidate_dependencies = cast(tuple[object, ...], depends_on)
+    return all(isinstance(dependency, str) for dependency in candidate_dependencies)
 
 
 @dataclass(frozen=True)
 class Observation:
     name: str
-    value: Any = None
+    value: object = None
     error: str | None = None
 
 
-def matches(value: Any, kind: type) -> bool:
+def matches(value: object, kind: type[Primitive]) -> bool:
     """An intentionally small schema: exact primitives, no bool-as-int, finite numbers."""
-    if kind in (int, float):
-        valid_type = type(value) is int if kind is int else type(value) in (int, float)
-        return valid_type and abs(value) <= 1000 and isfinite(value)
+    if kind is int:
+        number = cast(int, value)
+        return type(value) is int and abs(number) <= 1000 and isfinite(number)
+    if kind is float:
+        if type(value) not in (int, float):
+            return False
+        number = cast(int | float, value)
+        return abs(number) <= 1000 and isfinite(number)
     if kind is str:
-        return type(value) is str and len(value) <= 4096
+        if type(value) is not str:
+            return False
+        return len(value) <= 4096
     if kind is bool:
         return type(value) is bool
     return False
@@ -67,9 +97,9 @@ def matches(value: Any, kind: type) -> bool:
 @dataclass(frozen=True)
 class Tool:
     name: str
-    parameters: dict[str, type]
-    output: type
-    handler: Callable[[dict[str, Any]], Any]
+    parameters: Mapping[str, type[Primitive]]
+    output: type[Primitive]
+    handler: ToolHandler
     read_only: bool = True
 
 
@@ -96,7 +126,7 @@ class ToolRegistry:
             raise ValueError("registry full")
         if not tool.name.isidentifier() or len(tool.name) > 64:
             raise ValueError("invalid tool name")
-        supported = (int, float, str, bool)
+        supported: tuple[type[Primitive], ...] = (int, float, str, bool)
         if tool.output not in supported or any(
             t not in supported for t in tool.parameters.values()
         ):
@@ -122,47 +152,52 @@ class ToolRegistry:
         return Observation(call.name, deepcopy(value))
 
     def dispatch(
-        self, calls: tuple[Call, ...], budget: Budget, *, parallel: bool = False
+        self, calls: object, budget: Budget, *, parallel: bool = False
     ) -> tuple[Observation, ...]:
         if (
             type(parallel) is not bool
             or not isinstance(calls, tuple)
-            or (not calls or len(calls) > self.max_batch)
+            or (not calls or len(cast(tuple[object, ...], calls)) > self.max_batch)
         ):
             raise ValueError(
                 "batch must contain 1..max_batch typed calls and a boolean parallel flag"
             )
-        if any(
-            not isinstance(c, Call)
-            or not isinstance(c.name, str)
-            or not 1 <= len(c.name) <= 64
-            or not isinstance(c.depends_on, tuple)
-            or any(not isinstance(dep, str) for dep in c.depends_on)
-            for c in calls
-        ):
+        candidate_calls = cast(tuple[object, ...], calls)
+        if any(not _valid_call_envelope(call) for call in candidate_calls):
             raise ValueError("invalid call envelope")
-        calls = deepcopy(calls)
-        if not budget.reserve_calls(len(calls)):
-            return tuple(Observation(c.name, error="call_budget") for c in calls)
-        if any(c.depends_on for c in calls):
+        typed_calls = cast(tuple[Call, ...], deepcopy(candidate_calls))
+        if not budget.reserve_calls(len(typed_calls)):
+            return tuple(Observation(c.name, error="call_budget") for c in typed_calls)
+        if any(c.depends_on for c in typed_calls):
             # Dependencies must become separate controller steps, never string substitution.
-            return tuple(Observation(c.name, error="dependent_batch") for c in calls)
+            return tuple(Observation(c.name, error="dependent_batch") for c in typed_calls)
         if parallel and any(
-            c.name in self._tools and not self._tools[c.name].read_only for c in calls
+            c.name in self._tools and not self._tools[c.name].read_only for c in typed_calls
         ):
-            return tuple(Observation(c.name, error="not_read_only") for c in calls)
+            return tuple(Observation(c.name, error="not_read_only") for c in typed_calls)
         if parallel:
-            with ThreadPoolExecutor(max_workers=min(4, len(calls))) as pool:
-                return tuple(pool.map(self._invoke, calls))
-        return tuple(self._invoke(c) for c in calls)
+            with ThreadPoolExecutor(max_workers=min(4, len(typed_calls))) as pool:
+                return tuple(pool.map(self._invoke, typed_calls))
+        return tuple(self._invoke(c) for c in typed_calls)
 
 
 def fixture_registry() -> ToolRegistry:
     """Only arithmetic and an immutable public in-memory catalogue are allowlisted."""
     records = {"guide": "Read only public fixtures.", "hours": "Study for 20 hours."}
+
+    def add(arguments: Mapping[str, Primitive]) -> object:
+        left, right = arguments["a"], arguments["b"]
+        if type(left) not in (int, float) or type(right) not in (int, float):
+            raise TypeError("arithmetic arguments must be numeric")
+        return cast(int | float, left) + cast(int | float, right)
+
+    def lookup(arguments: Mapping[str, Primitive]) -> object:
+        key = arguments["key"]
+        if type(key) is not str:
+            raise TypeError("lookup key must be a string")
+        return records[key]
+
     registry = ToolRegistry()
-    registry.register(
-        Tool("add", {"a": float, "b": float}, float, lambda args: args["a"] + args["b"])
-    )
-    registry.register(Tool("lookup", {"key": str}, str, lambda args: records[args["key"]]))
+    registry.register(Tool("add", {"a": float, "b": float}, float, add))
+    registry.register(Tool("lookup", {"key": str}, str, lookup))
     return registry

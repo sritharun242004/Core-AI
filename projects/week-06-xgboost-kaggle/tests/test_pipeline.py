@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.model_selection import StratifiedKFold, cross_val_score, cross_validate
+from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 from xgboost_kaggle import (
     TitanicFeatures,
@@ -19,20 +19,23 @@ from xgboost_kaggle import (
     make_submission,
     make_synthetic_titanic,
 )
+from xgboost_kaggle._sklearn import FloatArray, cross_val_score
 
 
 @pytest.fixture(scope="module")
-def data():
+def data() -> tuple[pd.DataFrame, pd.DataFrame]:
     return make_synthetic_titanic(n_train=900, n_test=180, seed=42)
 
 
 @pytest.fixture(scope="module")
-def scores(data):
+def scores(data: tuple[pd.DataFrame, pd.DataFrame]) -> dict[str, FloatArray]:
     train, _ = data
     return evaluate_models(train, n_splits=3, seed=42)
 
 
-def test_fixture_is_deterministic_mixed_and_unlabelled_at_test_time(data):
+def test_fixture_is_deterministic_mixed_and_unlabelled_at_test_time(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+):
     train, test = data
     again_train, again_test = make_synthetic_titanic(900, 180, seed=42)
     pd.testing.assert_frame_equal(train, again_train)
@@ -43,7 +46,7 @@ def test_fixture_is_deterministic_mixed_and_unlabelled_at_test_time(data):
     assert set(train.PassengerId).isdisjoint(test.PassengerId)
 
 
-def test_xgboost_beats_linear_baseline_on_nonlinear_fixture(scores):
+def test_xgboost_beats_linear_baseline_on_nonlinear_fixture(scores: dict[str, FloatArray]):
     # Absolute AUC difference, not a percent-relative or real-Titanic guarantee.
     assert set(scores) == {"baseline", "xgboost"}
     for values in scores.values():
@@ -54,7 +57,10 @@ def test_xgboost_beats_linear_baseline_on_nonlinear_fixture(scores):
     assert scores["xgboost"].mean() >= 0.80
 
 
-def test_scores_match_sklearn_on_identical_stratified_folds(data, scores):
+def test_scores_match_sklearn_on_identical_stratified_folds(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+    scores: dict[str, FloatArray],
+):
     train, _ = data
     cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
     expected = cross_val_score(
@@ -68,7 +74,9 @@ def test_scores_match_sklearn_on_identical_stratified_folds(data, scores):
     np.testing.assert_allclose(scores["baseline"], expected, atol=1e-12)
 
 
-def test_feature_engineering_is_row_local_and_does_not_mutate_inputs(data):
+def test_feature_engineering_is_row_local_and_does_not_mutate_inputs(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+):
     train, _ = data
     frame = train.iloc[:3].copy()
     frame["SibSp"] = [1.0, 0.0, np.nan]
@@ -87,7 +95,7 @@ def test_feature_engineering_is_row_local_and_does_not_mutate_inputs(data):
     pd.testing.assert_frame_equal(frame, original)
 
 
-def test_preprocessing_is_fitted_only_on_training_fold(data):
+def test_preprocessing_is_fitted_only_on_training_fold(data: tuple[pd.DataFrame, pd.DataFrame]):
     train, _ = data
     frame = train.iloc[:90].drop(columns="Survived").copy()
     frame["Age"] = np.r_[np.arange(60, dtype=float), np.full(30, 1000.0)]
@@ -116,7 +124,10 @@ def test_preprocessing_is_fitted_only_on_training_fold(data):
 
 
 @pytest.mark.parametrize("model_name", ["baseline", "xgboost"])
-def test_pipeline_handles_all_missing_columns_and_unknown_categories(data, model_name):
+def test_pipeline_handles_all_missing_columns_and_unknown_categories(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+    model_name: str,
+):
     train, test = (frame.copy() for frame in data)
     train["Age"] = np.nan
     train["Cabin"] = None
@@ -133,7 +144,10 @@ def test_pipeline_handles_all_missing_columns_and_unknown_categories(data, model
     np.testing.assert_allclose(proba, model.predict_proba(changed_ids), atol=1e-12)
 
 
-def test_submission_round_trip_has_exact_schema_and_preserves_order(data, tmp_path):
+def test_submission_round_trip_has_exact_schema_and_preserves_order(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+    tmp_path: Path,
+):
     train, test = data
     test = test.iloc[::-1].copy()
     model = fit_model(train)
@@ -149,7 +163,10 @@ def test_submission_round_trip_has_exact_schema_and_preserves_order(data, tmp_pa
     assert len(restored) == len(test)
 
 
-def test_user_csv_loading_and_optional_text_columns(data, tmp_path):
+def test_user_csv_loading_and_optional_text_columns(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+    tmp_path: Path,
+):
     train, test = (frame.drop(columns=["Name", "Cabin", "Ticket"]) for frame in data)
     train_path, test_path = tmp_path / "train.csv", tmp_path / "test.csv"
     train.to_csv(train_path, index=False)
@@ -172,14 +189,21 @@ def test_user_csv_loading_and_optional_text_columns(data, tmp_path):
         ("SibSp", -2, "nonnegative"),
     ],
 )
-def test_invalid_training_data_is_rejected(data, column, value, message):
+def test_invalid_training_data_is_rejected(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+    column: str,
+    value: str | float,
+    message: str,
+):
     train = data[0].copy()
     train[column] = value
     with pytest.raises(ValueError, match=message):
         fit_model(train)
 
 
-def test_missing_required_features_and_single_class_are_rejected(data):
+def test_missing_required_features_and_single_class_are_rejected(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+):
     train, _ = data
     with pytest.raises(ValueError, match="Fare"):
         fit_model(train.drop(columns="Fare"))
@@ -188,12 +212,12 @@ def test_missing_required_features_and_single_class_are_rejected(data):
 
 
 @pytest.mark.parametrize("folds", [1, 2.5, 1000])
-def test_invalid_cv_fold_count_is_rejected(data, folds):
+def test_invalid_cv_fold_count_is_rejected(data: tuple[pd.DataFrame, pd.DataFrame], folds: float):
     with pytest.raises(ValueError, match="n_splits"):
         evaluate_models(data[0], n_splits=folds)
 
 
-def test_submission_rejects_labels_and_duplicate_ids(data):
+def test_submission_rejects_labels_and_duplicate_ids(data: tuple[pd.DataFrame, pd.DataFrame]):
     train, test = data
     model = fit_model(train, model="baseline")
     with pytest.raises(ValueError, match="Survived"):
@@ -207,7 +231,10 @@ def test_unknown_model_is_rejected():
         build_pipeline("imaginary")
 
 
-def test_cli_accepts_user_csv_and_reports_auc(data, tmp_path):
+def test_cli_accepts_user_csv_and_reports_auc(
+    data: tuple[pd.DataFrame, pd.DataFrame],
+    tmp_path: Path,
+):
     train, test = data
     train_path, test_path = tmp_path / "train.csv", tmp_path / "test.csv"
     output = tmp_path / "submission.csv"
@@ -216,8 +243,17 @@ def test_cli_accepts_user_csv_and_reports_auc(data, tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
     command = [
-        sys.executable, "-m", "xgboost_kaggle", "--train", str(train_path),
-        "--test", str(test_path), "--output", str(output), "--folds", "3",
+        sys.executable,
+        "-m",
+        "xgboost_kaggle",
+        "--train",
+        str(train_path),
+        "--test",
+        str(test_path),
+        "--output",
+        str(output),
+        "--folds",
+        "3",
     ]
     result = subprocess.run(command, capture_output=True, text=True, env=env, check=True)
     assert "roc_auc" in result.stdout
