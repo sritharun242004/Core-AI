@@ -7,6 +7,12 @@
 @import "@radix-ui/colors/amber.css";
 @import "@radix-ui/colors/grass.css";
 @import "@radix-ui/colors/tomato.css";
+@import "@radix-ui/colors/indigo-dark.css";
+@import "@radix-ui/colors/teal-dark.css";
+@import "@radix-ui/colors/violet-dark.css";
+@import "@radix-ui/colors/amber-dark.css";
+@import "@radix-ui/colors/grass-dark.css";
+@import "@radix-ui/colors/tomato-dark.css";
 @plugin "@tailwindcss/typography";
 
 /* Tailwind v4 is CSS-first: this replaces the `darkMode` key from a JS
@@ -18,54 +24,124 @@
 :root[data-theme="light"] {
   --canvas: var(--slate-1);
   --canvas-subtle: var(--slate-2);
+  --canvas-raised: #ffffff;
   --fg: var(--slate-12);
   --fg-muted: var(--slate-11);
   --border-soft: var(--slate-6);
-  --accent-p1: var(--indigo-9); /* Month 1 */
-  --accent-p2: var(--teal-9); /* Month 2 */
-  --accent-p3: var(--violet-9); /* Month 3 */
-  --accent-p4: var(--amber-9); /* Month 4 */
-  --accent-p5: var(--grass-9); /* Month 5 */
-  --accent-p6: var(--tomato-9); /* Month 6 */
+  --border-strong: var(--slate-8);
+
+  --accent-p1: var(--indigo-9); /* Month 1 — foundations */
+  --accent-p2: var(--teal-9);   /* Month 2 — classical ML */
+  --accent-p3: var(--violet-9); /* Month 3 — deep learning */
+  --accent-p4: var(--amber-9);  /* Month 4 — transformers / LLMs */
+  --accent-p5: var(--grass-9);  /* Month 5 — systems */
+  --accent-p6: var(--tomato-9); /* Month 6 — specialization */
+
+  /* Softer tints for backgrounds / halos — the Radix -3 stops are
+     designed for exactly this (UI element backgrounds). */
+  --accent-glow-p1: var(--indigo-3);
+  --accent-glow-p2: var(--teal-3);
+  --accent-glow-p3: var(--violet-3);
+  --accent-glow-p4: var(--amber-3);
+  --accent-glow-p5: var(--grass-3);
+  --accent-glow-p6: var(--tomato-3);
+
+  /* Readable text-tone accents on the current canvas (Radix -11 stops). */
+  --accent-ink-p1: var(--indigo-11);
+  --accent-ink-p2: var(--teal-11);
+  --accent-ink-p3: var(--violet-11);
+  --accent-ink-p4: var(--amber-11);
+  --accent-ink-p5: var(--grass-11);
+  --accent-ink-p6: var(--tomato-11);
 }
 
 /*
- * @radix-ui/colors ships its "dark" stylesheets scoped to `.dark` /
- * `.dark-theme` class selectors (see slate-dark.css), not the
- * `[data-theme="dark"]` attribute this app toggles on <html>. Importing
- * slate-dark.css therefore never applies here on its own. Re-declare the
- * slate stops we consume under the attribute selector so dark mode
- * actually swaps values. Hex values below are copied verbatim from
- * @radix-ui/colors@3.0.0 slate-dark.css (sRGB stops, non-P3). Accent -9
- * stops are intentionally left unchanged across themes: Radix accent
- * scales are designed to stay legible on both light and dark canvases.
+ * Radix dark stylesheets scope to `.dark` / `.dark-theme`. This app
+ * toggles the `[data-theme="dark"]` attribute on <html>, so re-declare
+ * the stops we consume. Hex values copied verbatim from @radix-ui/colors@3.0.0.
  */
 :root[data-theme="dark"] {
-  --canvas: #111113; /* slate-1 (dark) */
-  --canvas-subtle: #18191b; /* slate-2 (dark) */
-  --fg: #edeef0; /* slate-12 (dark) */
-  --fg-muted: #b0b4ba; /* slate-11 (dark) */
-  --border-soft: #363a3f; /* slate-6 (dark) */
+  --canvas: #0a0a0c;         /* a shade darker than slate-1 for a premium feel */
+  --canvas-subtle: #121317;
+  --canvas-raised: #1a1b20;
+  --fg: #edeef0;             /* slate-12 (dark) */
+  --fg-muted: #b0b4ba;        /* slate-11 (dark) */
+  --border-soft: #2a2d33;
+  --border-strong: #40444d;
+
+  /* Dark-mode accent -9 stops are tuned to work on both canvases, but
+     the -3/-11 glow/ink tones need re-pointing to the dark families. */
+  --accent-glow-p1: #182449; /* indigo-3 (dark) */
+  --accent-glow-p2: #0d2a2d; /* teal-3 (dark) */
+  --accent-glow-p3: #251e40; /* violet-3 (dark) */
+  --accent-glow-p4: #302008; /* amber-3 (dark) */
+  --accent-glow-p5: #0e2919; /* grass-3 (dark) */
+  --accent-glow-p6: #391714; /* tomato-3 (dark) */
+
+  --accent-ink-p1: #9eb1ff;
+  --accent-ink-p2: #4cc3b5;
+  --accent-ink-p3: #baa7ff;
+  --accent-ink-p4: #ffca16;
+  --accent-ink-p5: #63c174;
+  --accent-ink-p6: #ff6a56;
+
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --canvas: #111113;
-    --canvas-subtle: #18191b;
+    --canvas: #0a0a0c;
+    --canvas-subtle: #121317;
+    --canvas-raised: #1a1b20;
     --fg: #edeef0;
     --fg-muted: #b0b4ba;
-    --border-soft: #363a3f;
+    --border-soft: #2a2d33;
+    --border-strong: #40444d;
+    --accent-glow-p1: #182449;
+    --accent-glow-p2: #0d2a2d;
+    --accent-glow-p3: #251e40;
+    --accent-glow-p4: #302008;
+    --accent-glow-p5: #0e2919;
+    --accent-glow-p6: #391714;
+    --accent-ink-p1: #9eb1ff;
+    --accent-ink-p2: #4cc3b5;
+    --accent-ink-p3: #baa7ff;
+    --accent-ink-p4: #ffca16;
+    --accent-ink-p5: #63c174;
+    --accent-ink-p6: #ff6a56;
     color-scheme: dark;
   }
+}
+
+/* Reusable gradient compositions — reference these from any component. */
+:root {
+  --gradient-hero: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--accent-p1) 70%, transparent) 0%,
+    color-mix(in oklab, var(--accent-p3) 60%, transparent) 35%,
+    color-mix(in oklab, var(--accent-p4) 55%, transparent) 70%,
+    color-mix(in oklab, var(--accent-p6) 55%, transparent) 100%
+  );
+  --gradient-roadmap: linear-gradient(
+    90deg,
+    var(--accent-p1),
+    var(--accent-p2),
+    var(--accent-p3),
+    var(--accent-p4),
+    var(--accent-p5),
+    var(--accent-p6)
+  );
 }
 
 @theme {
   --color-canvas: var(--canvas);
   --color-canvas-subtle: var(--canvas-subtle);
+  --color-canvas-raised: var(--canvas-raised);
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-border-soft: var(--border-soft);
+  --color-border-strong: var(--border-strong);
+
   --color-accent-p1: var(--accent-p1);
   --color-accent-p2: var(--accent-p2);
   --color-accent-p3: var(--accent-p3);
@@ -73,28 +149,30 @@
   --color-accent-p5: var(--accent-p5);
   --color-accent-p6: var(--accent-p6);
 
+  --color-accent-glow-p1: var(--accent-glow-p1);
+  --color-accent-glow-p2: var(--accent-glow-p2);
+  --color-accent-glow-p3: var(--accent-glow-p3);
+  --color-accent-glow-p4: var(--accent-glow-p4);
+  --color-accent-glow-p5: var(--accent-glow-p5);
+  --color-accent-glow-p6: var(--accent-glow-p6);
+
+  --color-accent-ink-p1: var(--accent-ink-p1);
+  --color-accent-ink-p2: var(--accent-ink-p2);
+  --color-accent-ink-p3: var(--accent-ink-p3);
+  --color-accent-ink-p4: var(--accent-ink-p4);
+  --color-accent-ink-p5: var(--accent-ink-p5);
+  --color-accent-ink-p6: var(--accent-ink-p6);
+
   /* Font families: these look like self-references, but they are an
    * intentional bridge, not a bug. Astro's <Font> component (from
    * 'astro:assets') injects the REAL value into an unlayered
    * `:root { --font-display: ...actual font stack... }` <style> block in
-   * <head>. Tailwind's `@theme` block, in contrast, compiles into
-   * `@layer theme { :root { --font-display: var(--font-display); } }`.
-   * Per the CSS Cascade Layers spec, unlayered normal-priority
-   * declarations always win over layered ones regardless of source
-   * order, so Astro's real value wins and this "self-reference" resolves
-   * correctly. BUT: if that unlayered override is missing, the property
-   * is invalid at computed-value time and silently falls back to the
-   * browser default font — with no error and nothing for a test to
-   * catch. Any page that uses the font-display/font-body/font-mono
-   * utilities MUST also render the matching
-   * <Font cssVariable="--font-display|--font-body|--font-mono" /> tags
-   * in its <head> (see src/pages/index.astro), or fonts will silently
-   * regress to system defaults. */
+   * <head>. */
   --font-display: var(--font-display);
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
 
-  /* 1.250 Major Third scale */
+  /* 1.250 Major Third scale, extended to 7xl for display */
   --text-xs: 12px;
   --text-sm: 14px;
   --text-base: 16px;
@@ -105,6 +183,8 @@
   --text-3xl: 39px;
   --text-4xl: 49px;
   --text-5xl: 61px;
+  --text-6xl: 76px;
+  --text-7xl: 96px;
 
   --spacing-1: 4px;
   --spacing-2: 8px;
@@ -120,6 +200,8 @@
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
 
   --max-width-prose: 68ch;
   --leading-relaxed: 1.7;

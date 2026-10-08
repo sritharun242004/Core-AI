@@ -18,24 +18,75 @@ interface Props {
   }
 }
 const { frontmatter } = Astro.props
+const PART_TITLES = [
+  'Math & Programming',
+  'Classical ML',
+  'Deep Learning',
+  'Transformers & LLMs',
+  'Systems & Production',
+  'Specialization & Interview',
+]
+const partTitle = PART_TITLES[frontmatter.part - 1]
+const accentIx = `p${frontmatter.part}`
 const lessons = await getCollection('weeks')
 const prerequisites = (frontmatter.prereqSlugs ?? [])
   .map((slug) => lessons.find((lesson) => lesson.data.slug === slug))
   .filter(Boolean)
 ---
 <BookShell title={frontmatter.title} accent={`var(${frontmatter.accentVar})`}>
-  <header class="mb-8">
-    <p class="text-fg-muted text-sm">Week {weekLabel(frontmatter)} · Part {frontmatter.part} · {frontmatter.hours} hrs · Difficulty {'▮'.repeat(frontmatter.difficulty) + '▯'.repeat(5 - frontmatter.difficulty)}</p>
-    <h1 class="font-display text-4xl sm:text-5xl mt-2 break-words">{frontmatter.title}</h1>
-    <div class="mt-3"><ComputeBadge tier={frontmatter.computeTier} /></div>
-    {prerequisites.length > 0 && (
-      <nav aria-label="Prerequisites" class="mt-4 text-sm text-fg-muted">
-        <p>Before this lesson:</p>
-        <ul class="mt-1 space-y-1">
-          {prerequisites.map((lesson) => lesson && <li><a class="underline" href={`/weeks/${lesson.data.slug}`}>W{weekLabel(lesson.data)} — {lesson.data.title}</a></li>)}
-        </ul>
-      </nav>
-    )}
+  <header
+    class="relative -mx-4 lg:-mx-8 mb-12 overflow-hidden rounded-xl border border-border-soft"
+    style={`--accent: var(--accent-${accentIx}); --glow: var(--accent-glow-${accentIx}); --ink: var(--accent-ink-${accentIx});`}
+  >
+    <div class="absolute inset-x-0 top-0 h-1" style="background: var(--accent);" aria-hidden="true"></div>
+    <div
+      class="absolute -right-24 -top-24 w-72 h-72 rounded-full opacity-50 blur-3xl pointer-events-none"
+      style="background: var(--glow);"
+      aria-hidden="true"
+    ></div>
+    <div class="relative px-6 py-10 lg:px-10 lg:py-14">
+      <p class="font-mono text-xs uppercase tracking-widest" style="color: var(--ink);">
+        Week {weekLabel(frontmatter)} · Month {frontmatter.part} — {partTitle}
+      </p>
+      <h1
+        class="font-display text-4xl md:text-5xl lg:text-6xl leading-tight mt-4 break-words"
+        style="letter-spacing: -0.02em;"
+      >
+        {frontmatter.title}
+      </h1>
+      <p class="mt-6 max-w-2xl text-fg-muted text-md leading-relaxed">{frontmatter.hook}</p>
+      <div class="mt-6 flex flex-wrap items-center gap-3 text-sm">
+        <ComputeBadge tier={frontmatter.computeTier} />
+        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-border-soft bg-canvas-raised">
+          <span class="font-mono text-xs text-fg-muted">Hours</span>
+          <span class="font-medium">{frontmatter.hours}</span>
+        </span>
+        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-border-soft bg-canvas-raised">
+          <span class="font-mono text-xs text-fg-muted">Difficulty</span>
+          <span class="font-mono" style="color: var(--ink);">
+            {'●'.repeat(frontmatter.difficulty)}<span class="text-fg-muted/40">{'○'.repeat(5 - frontmatter.difficulty)}</span>
+          </span>
+        </span>
+      </div>
+      {prerequisites.length > 0 && (
+        <nav aria-label="Prerequisites" class="mt-6 text-sm">
+          <p class="font-mono text-xs uppercase tracking-widest text-fg-muted">Before this lesson</p>
+          <ul class="mt-2 flex flex-wrap gap-2">
+            {prerequisites.map((lesson) => lesson && (
+              <li>
+                <a
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-soft bg-canvas-raised hover:border-border-strong transition-colors"
+                  href={`/weeks/${lesson.data.slug}`}
+                >
+                  <span class="font-mono text-xs text-fg-muted">W{weekLabel(lesson.data)}</span>
+                  <span>{lesson.data.title}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
+    </div>
   </header>
   <article class="prose-book"><slot /></article>
 </BookShell>

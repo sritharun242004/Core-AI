@@ -35,6 +35,11 @@ const { title, accent = 'var(--accent-p1)' } = Astro.props
   </head>
   <body class="bg-canvas text-fg font-body">
     <a href="#main-content" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-canvas focus:p-3">Skip to content</a>
+    <div
+      class="fixed inset-x-0 top-0 h-0.5 z-50 pointer-events-none"
+      style="background: var(--gradient-roadmap);"
+      aria-hidden="true"
+    ></div>
     <ReadingProgressBar />
     <div class="flex fixed top-3 right-3 z-40 gap-2">
       <SearchOpener client:load />
