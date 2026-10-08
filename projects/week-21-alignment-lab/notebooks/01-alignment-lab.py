@@ -6,6 +6,7 @@
 
 # %%
 from dataclasses import asdict
+from typing import cast
 
 import torch
 import torch.nn.functional as functional
@@ -71,7 +72,8 @@ with torch.no_grad():
     states = policy.hidden_states(torch.arange(8))
     logits = logit_lens(states, policy.final_norm, policy.unembedding)
     assert torch.allclose(logits[:, -1], policy(torch.arange(8)))
-    print("Logit-lens action probabilities, context 0:", logits[0].softmax(-1).tolist())
+    probs = cast(list[float], logits[0].softmax(-1).tolist())  # pyright: ignore[reportUnknownMemberType]
+    print("Logit-lens action probabilities, context 0:", probs)
 
 # %% [markdown]
 # Intermediate logits use the final LayerNorm and unembedding. An apparent

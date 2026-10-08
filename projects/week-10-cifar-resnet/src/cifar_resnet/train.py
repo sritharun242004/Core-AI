@@ -26,7 +26,7 @@ def seed_everything(seed: int) -> None:
     """Seed torch (and CUDA if present) for comparable small experiments."""
 
     # torch's seed annotation is incomplete; the public contract accepts an int.
-    cast(Callable[[int], torch.Generator], torch.manual_seed)(seed)
+    cast(Callable[[int], torch.Generator], torch.manual_seed)(seed)  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 

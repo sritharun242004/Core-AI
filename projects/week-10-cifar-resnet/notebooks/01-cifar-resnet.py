@@ -6,6 +6,8 @@
 # accuracy. Opt into the real loader only after reading COMPUTE.md.
 
 # %%
+from typing import cast
+
 import torch
 from cifar_resnet import (
     CIFARCNN,
@@ -42,8 +44,11 @@ logits = resnet(x)
 print("ResNet parameters:", count_parameters(resnet))
 print("ResNet logits:", logits.shape)
 loss = torch.nn.functional.cross_entropy(logits, torch.tensor([0, 1, 2, 3]))
-loss.backward()
-print("first gradient norm:", resnet.stem[0].weight.grad.norm().item())
+loss.backward()  # pyright: ignore[reportUnknownMemberType]
+stem_weight = resnet.stem[0].weight
+assert stem_weight.grad is not None, "backward() must populate .grad"
+grad_norm = cast(float, stem_weight.grad.norm().item())  # pyright: ignore[reportUnknownMemberType, reportCallIssue]
+print("first gradient norm:", grad_norm)
 
 # %% [markdown]
 # ## 3. Offline smoke training

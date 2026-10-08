@@ -4,6 +4,8 @@ Torch tests skip cleanly if torch isn't installed."""
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
 from hypothesis import given, settings
@@ -89,14 +91,14 @@ def test_topk_parity_numpy_vs_torch():
     from np_vs_pt.topk import topk_numpy, topk_torch
 
     x = np.array([3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0])
-    npx = topk_numpy(x, 3).tolist()
-    tx = topk_torch(torch.tensor(x), 3).tolist()
+    npx = cast(list[int], topk_numpy(x, 3).tolist())
+    tx = cast(list[int], topk_torch(torch.tensor(x), 3).tolist())  # pyright: ignore[reportUnknownMemberType]
     assert npx == tx
 
 
 @given(n=st.integers(min_value=1, max_value=20))
 @settings(max_examples=25, deadline=None)
-def test_softmax_sums_to_one_across_ranks(n):
+def test_softmax_sums_to_one_across_ranks(n: int) -> None:
     """Property test — softmax over any shape sums to 1 within tolerance."""
     from np_vs_pt.softmax import softmax_numpy
 

@@ -38,7 +38,9 @@ def test_resnet_has_a_real_skip_path_and_backpropagates() -> None:
     loss.backward()
 
     assert any(parameter.grad is not None for parameter in model.parameters())
-    assert all(torch.isfinite(parameter.grad).all() for parameter in model.parameters())
+    for parameter in model.parameters():
+        if parameter.grad is not None:
+            assert torch.isfinite(parameter.grad).all()
     assert any("downsample" in name for name, _ in model.named_parameters())
 
 
