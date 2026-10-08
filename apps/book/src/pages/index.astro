@@ -5,12 +5,12 @@ import { compareWeeks, weekLabel } from '../lib/weeks'
 
 const weeks = (await getCollection('weeks')).sort((a, b) => compareWeeks(a.data, b.data))
 const PART_META = [
-  { title: 'Math & Programming',          caption: 'Linear algebra, calculus, probability, Python for ML',             accent: 'p1' },
-  { title: 'Classical ML',                caption: 'Regression, trees, unsupervised, honest evaluation',               accent: 'p2' },
-  { title: 'Deep Learning',               caption: 'Autograd, CNNs, sequence models, RL primer',                       accent: 'p3' },
-  { title: 'Transformers & LLMs',         caption: 'Attention from scratch, pre-training, SFT/DPO, MoE & reasoning',   accent: 'p4' },
-  { title: 'Systems & Production',        caption: 'Distributed training, inference engines, MLOps, safety',           accent: 'p5' },
-  { title: 'Specialization & Interview',  caption: 'Pick two of three tracks, capstone, 7-day interview protocol',     accent: 'p6' },
+  { title: 'Math & Programming',          caption: 'Linear algebra, calculus, probability, Python for ML',             accent: 'p1', color: 'blue',   glyph: '1' },
+  { title: 'Classical ML',                caption: 'Regression, trees, unsupervised, honest evaluation',               accent: 'p2', color: 'green',  glyph: '2' },
+  { title: 'Deep Learning',               caption: 'Autograd, CNNs, sequence models, RL primer',                       accent: 'p3', color: 'violet', glyph: '3' },
+  { title: 'Transformers & LLMs',         caption: 'Attention from scratch, pre-training, SFT/DPO, MoE & reasoning',   accent: 'p4', color: 'yellow', glyph: '4' },
+  { title: 'Systems & Production',        caption: 'Distributed training, inference engines, MLOps, safety',           accent: 'p5', color: 'red',    glyph: '5' },
+  { title: 'Specialization & Interview',  caption: 'Pick two of three tracks, capstone, 7-day interview protocol',     accent: 'p6', color: 'pink',   glyph: '6' },
 ] as const
 
 const parts = PART_META.map((meta, i) => ({
@@ -22,127 +22,115 @@ const parts = PART_META.map((meta, i) => ({
 const totalHours = weeks.reduce((sum, w) => sum + (w.data.hours ?? 20), 0)
 ---
 <BookShell title="Home">
-  <section class="relative -mx-4 lg:-mx-8 mb-24 overflow-hidden rounded-xl">
+  {/* --- Hero: giant stickered title on a kraft-paper card --- */}
+  <section class="relative mb-16">
     <div
-      class="absolute inset-0 opacity-80"
-      style="background: var(--gradient-hero); filter: saturate(1.1);"
-      aria-hidden="true"
-    ></div>
-    <div
-      class="absolute inset-x-0 top-0 h-1"
-      style="background: var(--gradient-roadmap);"
-      aria-hidden="true"
-    ></div>
-    <div class="relative px-6 py-16 lg:px-12 lg:py-24">
-      <p class="font-mono text-xs uppercase tracking-widest text-fg">25 weeks · 7 labs · 3 tracks</p>
-      <h1
-        class="font-display text-5xl md:text-6xl lg:text-7xl leading-none mt-6 text-fg"
-        style="letter-spacing: -0.03em;"
-      >
-        Core AI
-      </h1>
-      <p class="font-display text-2xl md:text-3xl text-fg mt-4" style="letter-spacing: -0.01em;">
+      class="toy-card relative overflow-hidden"
+      style="background: var(--paper-2); padding: 44px 32px 60px;"
+    >
+      <div
+        class="absolute inset-x-0 top-0 h-2"
+        style="background: var(--gradient-roadmap);"
+        aria-hidden="true"
+      ></div>
+
+      {/* floating sticker up-right */}
+      <span class="toy-sticker red hidden sm:inline-flex absolute right-6 top-10 text-sm">
+        25 weeks ·  7 labs ·  3 tracks
+      </span>
+
+      <h1 class="toy-title text-5xl sm:text-6xl md:text-7xl">Core AI</h1>
+      <p class="font-display text-2xl sm:text-3xl mt-6" style="color: var(--ink);">
         From foundation to frontier.
       </p>
-      <p class="mt-6 max-w-xl text-fg/90 text-md leading-relaxed">
-        A self-driven roadmap from the math you need to the systems people deploy. Each week ships one tested reference project, one company lens across seven labs, and one interview drill. Practice and feedback — not completion alone — establish interview readiness.
+      <p class="mt-5 max-w-xl text-md leading-relaxed" style="color: var(--ink-soft); font-weight: 700;">
+        A self-driven roadmap from the math you need to the systems people deploy. Each week ships one tested reference project, one Company Lens across seven labs, and one interview drill. Practice and feedback — not completion alone — build interview readiness.
       </p>
-      <div class="mt-10 flex flex-wrap gap-3">
-        <a
-          href="/weeks/week-01-linear-algebra"
-          class="group inline-flex items-center gap-2 px-5 py-3 rounded-md bg-fg text-canvas font-medium hover:translate-x-0.5 transition-transform"
-        >
-          Start Week 1
-          <span class="transition-transform group-hover:translate-x-1">→</span>
-        </a>
-        <a
-          href="/how-to-study"
-          class="inline-flex items-center gap-2 px-5 py-3 rounded-md border border-fg/40 text-fg font-medium hover:bg-fg/5 transition-colors"
-        >
-          How to study this book
-        </a>
+
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a href="/weeks/week-01-linear-algebra" class="toy-btn blue">Start Week 1 →</a>
+        <a href="/how-to-study" class="toy-btn paper">How to study this book</a>
       </div>
-      <dl class="mt-12 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-2xl text-fg">
-        <div>
-          <dt class="font-mono text-xs uppercase tracking-wider opacity-70">Weeks</dt>
-          <dd class="font-display text-3xl mt-1">{weeks.length}</dd>
+
+      {/* stats row — four toy blocks */}
+      <div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-5 max-w-2xl">
+        <div class="toy-card-sm p-4" style="background: var(--paper);">
+          <p class="font-mono text-xs uppercase tracking-wider" style="color: var(--ink-soft); font-weight: 800;">Weeks</p>
+          <p class="font-display text-4xl mt-1" style="color: var(--blue);">{weeks.length}</p>
         </div>
-        <div>
-          <dt class="font-mono text-xs uppercase tracking-wider opacity-70">Study hours</dt>
-          <dd class="font-display text-3xl mt-1">{totalHours}+</dd>
+        <div class="toy-card-sm p-4" style="background: var(--paper);">
+          <p class="font-mono text-xs uppercase tracking-wider" style="color: var(--ink-soft); font-weight: 800;">Study hours</p>
+          <p class="font-display text-4xl mt-1" style="color: var(--green);">{totalHours}+</p>
         </div>
-        <div>
-          <dt class="font-mono text-xs uppercase tracking-wider opacity-70">Companies</dt>
-          <dd class="font-display text-3xl mt-1">7</dd>
+        <div class="toy-card-sm p-4" style="background: var(--paper);">
+          <p class="font-mono text-xs uppercase tracking-wider" style="color: var(--ink-soft); font-weight: 800;">Companies</p>
+          <p class="font-display text-4xl mt-1" style="color: var(--violet);">7</p>
         </div>
-        <div>
-          <dt class="font-mono text-xs uppercase tracking-wider opacity-70">Projects</dt>
-          <dd class="font-display text-3xl mt-1">25</dd>
+        <div class="toy-card-sm p-4" style="background: var(--paper);">
+          <p class="font-mono text-xs uppercase tracking-wider" style="color: var(--ink-soft); font-weight: 800;">Projects</p>
+          <p class="font-display text-4xl mt-1" style="color: var(--red);">25</p>
         </div>
-      </dl>
+      </div>
     </div>
   </section>
 
-  <section class="mb-10">
-    <h2 class="font-display text-3xl md:text-4xl" style="letter-spacing: -0.02em;">
-      The six parts
+  {/* --- The six parts headline --- */}
+  <section class="mb-8">
+    <span class="toy-sticker violet text-sm">The six parts</span>
+    <h2 class="font-display text-3xl sm:text-4xl mt-5" style="letter-spacing: -0.01em;">
+      One deliberately shaped arc per month.
     </h2>
-    <p class="text-fg-muted mt-3 max-w-xl">
-      Each month is one deliberately shaped arc. Each week inside it carries the same anatomy:
-      hook → intuition → math → code → company lens → reference project → assignments → interview drill.
+    <p class="mt-3 max-w-xl text-md" style="color: var(--ink-soft); font-weight: 700;">
+      Each week carries the same anatomy: hook → intuition → math → code → company lens → reference project → assignments → interview drill.
     </p>
   </section>
 
-  <div class="grid gap-5 md:grid-cols-2 mb-24">
-    {parts.map(({ part, title, caption, accent, weeks }) => (
+  {/* --- 6 Month cards — each a toy-block headline + sticker weeks list --- */}
+  <div class="grid gap-6 md:grid-cols-2 mb-16">
+    {parts.map(({ part, title, caption, accent, color, glyph, weeks }) => (
       <article
-        class="group relative overflow-hidden rounded-xl border border-border-soft bg-canvas-raised p-6 lg:p-8 transition-all hover:border-border-strong hover:-translate-y-0.5"
-        style={`--accent: var(--accent-${accent}); --glow: var(--accent-glow-${accent}); --ink: var(--accent-ink-${accent});`}
+        class="toy-card relative overflow-visible p-6 sm:p-8"
+        style={`--accent: var(--${color}); --ink-accent: var(--accent-ink-${accent}); --glow: var(--accent-glow-${accent}); background: var(--glow);`}
       >
+        {/* corner block number */}
         <div
-          class="absolute inset-x-0 top-0 h-1"
-          style="background: var(--accent);"
-          aria-hidden="true"
-        ></div>
-        <div
-          class="absolute -right-16 -top-16 w-56 h-56 rounded-full opacity-40 blur-3xl pointer-events-none"
-          style="background: var(--glow);"
-          aria-hidden="true"
-        ></div>
-        <header class="relative flex items-baseline gap-3">
-          <span
-            class="font-mono text-xs uppercase tracking-widest"
-            style="color: var(--ink);"
-          >
-            Month {part}
-          </span>
-          <span class="text-xs text-fg-muted">· {weeks.length} weeks</span>
+          class="absolute -top-6 -left-3 toy-block"
+          style={`width: 76px; height: 76px; background: var(--${color}); transform: rotate(-6deg);`}
+        >
+          <div class="glyph" style={`font-size: 44px; color: ${['yellow','pink'].includes(color) ? 'var(--ink)' : 'var(--paper)'};`}>{glyph}</div>
+        </div>
+        <header class="pl-20 min-h-[76px]">
+          <p class="font-mono text-xs uppercase tracking-widest" style="color: var(--ink-soft); font-weight: 900;">
+            Month {part} · {weeks.length} weeks
+          </p>
+          <h3 class="font-display text-2xl sm:text-3xl mt-1" style="letter-spacing: -0.01em;">
+            {title}
+          </h3>
         </header>
-        <h3 class="relative font-display text-2xl mt-2" style="letter-spacing: -0.01em;">
-          {title}
-        </h3>
-        <p class="relative text-sm text-fg-muted mt-2 max-w-md">{caption}</p>
-        <ol class="relative mt-6 space-y-1.5">
+        <p class="mt-4 text-sm max-w-md" style="color: var(--ink-soft); font-weight: 700;">{caption}</p>
+        <ol class="mt-5 space-y-1.5">
           {weeks.map((w) => (
             <li>
               <a
                 href={`/weeks/${w.data.slug}`}
-                class="group/row flex items-center gap-3 py-1.5 -mx-2 px-2 rounded-sm hover:bg-canvas-subtle transition-colors"
+                class="group flex items-center gap-3 py-1.5 px-3 -mx-3 rounded-md transition-colors hover:bg-canvas"
               >
                 <span
-                  class="font-mono text-xs w-10 shrink-0"
-                  style="color: var(--ink);"
+                  class="font-mono text-xs w-12 shrink-0 font-black"
+                  style="color: var(--ink-accent);"
                 >
                   W{weekLabel(w.data)}
                 </span>
-                <span class="flex-1 group-hover/row:translate-x-0.5 transition-transform">{w.data.title}</span>
-                <span class="text-xs text-fg-muted shrink-0">{w.data.hours}h</span>
+                <span class="flex-1 font-bold group-hover:translate-x-0.5 transition-transform">
+                  {w.data.title}
+                </span>
+                <span class="text-xs font-black shrink-0" style="color: var(--ink-soft);">{w.data.hours}h</span>
               </a>
             </li>
           ))}
         </ol>
         {part === 6 && (
-          <p class="relative mt-4 text-xs text-fg-muted">
+          <p class="relative mt-5 text-xs font-bold" style="color: var(--ink-soft);">
             Pick 2 of 3 tracks (L · P · R). All six α/β lessons are available.
           </p>
         )}
@@ -150,26 +138,34 @@ const totalHours = weeks.reduce((sum, w) => sum + (w.data.hours ?? 20), 0)
     ))}
   </div>
 
-  <section class="mb-16 rounded-xl border border-border-soft bg-canvas-subtle p-6 lg:p-10">
-    <h2 class="font-display text-3xl" style="letter-spacing: -0.02em;">
-      Companies × Weeks matrix
+  {/* --- Companies CTA — big playful card with 7 stickers --- */}
+  <section
+    class="toy-card relative mb-16 p-6 sm:p-10 overflow-hidden"
+    style="background: var(--paper);"
+  >
+    <span class="toy-sticker green absolute right-6 top-6 text-sm">Lab x Weeks</span>
+    <h2 class="font-display text-3xl sm:text-4xl" style="letter-spacing: -0.01em;">
+      Seven labs. Twenty-five weeks.
     </h2>
-    <p class="text-fg-muted mt-3 max-w-xl">
-      Every week compares the same seven labs — OpenAI, Anthropic, Google DeepMind, Meta, xAI, DeepSeek, Alibaba Qwen — so comparisons compound. By Week 25, 175 interview angles are internalized.
+    <p class="mt-3 max-w-xl text-md" style="color: var(--ink-soft); font-weight: 700;">
+      Every week compares the same seven labs so comparisons compound. By Week 25, 175 interview angles are internalized.
     </p>
-    <div class="mt-6 flex flex-wrap gap-3">
-      <a
-        href="/companies"
-        class="inline-flex items-center gap-2 px-5 py-3 rounded-md bg-fg text-canvas font-medium hover:translate-x-0.5 transition-transform"
-      >
-        Open the matrix →
-      </a>
-      <a
-        href="/companies/compare"
-        class="inline-flex items-center gap-2 px-5 py-3 rounded-md border border-border-strong hover:bg-canvas transition-colors"
-      >
-        Compare on an axis
-      </a>
+    <div class="mt-5 flex flex-wrap gap-2">
+      {[
+        {name: 'OpenAI', color: 'violet'},
+        {name: 'Anthropic', color: 'red'},
+        {name: 'Google DeepMind', color: 'blue'},
+        {name: 'Meta', color: 'blue'},
+        {name: 'xAI', color: 'paper'},
+        {name: 'DeepSeek', color: 'yellow'},
+        {name: 'Alibaba Qwen', color: 'pink'},
+      ].map((lab) => (
+        <span class={`toy-sticker ${lab.color} text-sm`} style="transform: rotate(-1deg);">{lab.name}</span>
+      ))}
+    </div>
+    <div class="mt-7 flex flex-wrap gap-3">
+      <a href="/companies" class="toy-btn blue">Open the matrix →</a>
+      <a href="/companies/compare" class="toy-btn paper">Compare on an axis</a>
     </div>
   </section>
 </BookShell>

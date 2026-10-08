@@ -1,178 +1,184 @@
 @import "tailwindcss";
-@import "@radix-ui/colors/slate.css";
-@import "@radix-ui/colors/slate-dark.css";
-@import "@radix-ui/colors/indigo.css";
-@import "@radix-ui/colors/teal.css";
-@import "@radix-ui/colors/violet.css";
-@import "@radix-ui/colors/amber.css";
-@import "@radix-ui/colors/grass.css";
-@import "@radix-ui/colors/tomato.css";
-@import "@radix-ui/colors/indigo-dark.css";
-@import "@radix-ui/colors/teal-dark.css";
-@import "@radix-ui/colors/violet-dark.css";
-@import "@radix-ui/colors/amber-dark.css";
-@import "@radix-ui/colors/grass-dark.css";
-@import "@radix-ui/colors/tomato-dark.css";
 @plugin "@tailwindcss/typography";
 
-/* Tailwind v4 is CSS-first: this replaces the `darkMode` key from a JS
- * config. Any selector using the `dark:` variant compiles against
- * `[data-theme="dark"] &` instead of a `.dark` class. */
+/* ---------- devday "playroom" theme — committed one-theme design system ---------- */
+/* Hard-offset shadows, 4px ink outlines, warm paper surfaces, polka-dot backdrop.
+ * Palette and type-stack adapted from
+ * https://github.com/AravindBaranitharan/devday/blob/main/head.part.html
+ */
+
 @custom-variant dark ([data-theme="dark"] &);
 
 :root,
 :root[data-theme="light"] {
-  --canvas: var(--slate-1);
-  --canvas-subtle: var(--slate-2);
-  --canvas-raised: #ffffff;
-  --fg: var(--slate-12);
-  --fg-muted: var(--slate-11);
-  --border-soft: var(--slate-6);
-  --border-strong: var(--slate-8);
+  --wall:       #FFFFFF; /* playroom wall */
+  --wall-dot:   #DEE6F2; /* polka dot on the wall */
+  --ink:        #2B2440; /* deep indigo ink — outlines everywhere */
+  --ink-soft:   #5B5478; /* secondary text */
+  --paper:      #FFF8EC; /* warm card white */
+  --paper-2:    #F6EBD3; /* kraft tint */
+  --paper-3:    #ECD9A8; /* deeper kraft for accents */
 
-  --accent-p1: var(--indigo-9); /* Month 1 — foundations */
-  --accent-p2: var(--teal-9);   /* Month 2 — classical ML */
-  --accent-p3: var(--violet-9); /* Month 3 — deep learning */
-  --accent-p4: var(--amber-9);  /* Month 4 — transformers / LLMs */
-  --accent-p5: var(--grass-9);  /* Month 5 — systems */
-  --accent-p6: var(--tomato-9); /* Month 6 — specialization */
+  /* six playful stops — same count the curriculum uses for Months. */
+  --red:        #F2503F;  --red-dark:    #C93A2B;
+  --yellow:     #FFC94A;  --yellow-dark: #E0A62B;
+  --green:      #2FB77A;  --green-dark:  #1F8F5D;
+  --blue:       #2F7BE0;  --blue-dark:   #1F5DB0;
+  --violet:     #7A5CF0;  --violet-dark: #5A3FD0;
+  --pink:       #FF9BB3;  --pink-dark:   #D4607D;
 
-  /* Softer tints for backgrounds / halos — the Radix -3 stops are
-     designed for exactly this (UI element backgrounds). */
-  --accent-glow-p1: var(--indigo-3);
-  --accent-glow-p2: var(--teal-3);
-  --accent-glow-p3: var(--violet-3);
-  --accent-glow-p4: var(--amber-3);
-  --accent-glow-p5: var(--grass-3);
-  --accent-glow-p6: var(--tomato-3);
+  /* wood tones for shelves/dividers */
+  --wood:       #E3B778;  --wood-dark:   #B98B4E;  --wood-line: #8F6633;
 
-  /* Readable text-tone accents on the current canvas (Radix -11 stops). */
-  --accent-ink-p1: var(--indigo-11);
-  --accent-ink-p2: var(--teal-11);
-  --accent-ink-p3: var(--violet-11);
-  --accent-ink-p4: var(--amber-11);
-  --accent-ink-p5: var(--grass-11);
-  --accent-ink-p6: var(--tomato-11);
+  /* --- role aliases that the rest of the book reads --- */
+  --canvas:         var(--wall);
+  --canvas-subtle:  var(--paper);
+  --canvas-raised:  var(--paper);
+  --fg:             var(--ink);
+  --fg-muted:       var(--ink-soft);
+  --border-soft:    var(--ink);
+  --border-strong:  var(--ink);
+
+  /* Month 1-6 accents mapped to the playroom palette */
+  --accent-p1:  var(--blue);     /* M1 math — cool blue */
+  --accent-p2:  var(--green);    /* M2 classical ML — forest green */
+  --accent-p3:  var(--violet);   /* M3 deep learning — electric violet */
+  --accent-p4:  var(--yellow);   /* M4 transformers — buttery yellow */
+  --accent-p5:  var(--red);      /* M5 systems — alarm red */
+  --accent-p6:  var(--pink);     /* M6 specialization — soft pink */
+
+  /* ink-on-color: dark-text accents when written on a tinted card */
+  --accent-ink-p1: var(--blue-dark);
+  --accent-ink-p2: var(--green-dark);
+  --accent-ink-p3: var(--violet-dark);
+  --accent-ink-p4: var(--yellow-dark);
+  --accent-ink-p5: var(--red-dark);
+  --accent-ink-p6: var(--pink-dark);
+
+  /* "glow" chips: light tints behind headings/badges */
+  --accent-glow-p1: color-mix(in oklab, var(--blue)   16%, var(--paper));
+  --accent-glow-p2: color-mix(in oklab, var(--green)  16%, var(--paper));
+  --accent-glow-p3: color-mix(in oklab, var(--violet) 16%, var(--paper));
+  --accent-glow-p4: color-mix(in oklab, var(--yellow) 24%, var(--paper));
+  --accent-glow-p5: color-mix(in oklab, var(--red)    16%, var(--paper));
+  --accent-glow-p6: color-mix(in oklab, var(--pink)   22%, var(--paper));
 }
 
-/*
- * Radix dark stylesheets scope to `.dark` / `.dark-theme`. This app
- * toggles the `[data-theme="dark"]` attribute on <html>, so re-declare
- * the stops we consume. Hex values copied verbatim from @radix-ui/colors@3.0.0.
- */
+/* dark theme — flip the playroom to a bedtime version with deep indigo wall,
+   cream ink, same accent-9 stops (they're legible on both). */
 :root[data-theme="dark"] {
-  --canvas: #0a0a0c;         /* a shade darker than slate-1 for a premium feel */
-  --canvas-subtle: #121317;
-  --canvas-raised: #1a1b20;
-  --fg: #edeef0;             /* slate-12 (dark) */
-  --fg-muted: #b0b4ba;        /* slate-11 (dark) */
-  --border-soft: #2a2d33;
-  --border-strong: #40444d;
+  --wall:       #141020;
+  --wall-dot:   #2A2240;
+  --ink:        #F6EBD3; /* paper-2 becomes the ink */
+  --ink-soft:   #B9AEDB;
+  --paper:      #1E1930;
+  --paper-2:    #2A2240;
+  --paper-3:    #3A2E55;
 
-  /* Dark-mode accent -9 stops are tuned to work on both canvases, but
-     the -3/-11 glow/ink tones need re-pointing to the dark families. */
-  --accent-glow-p1: #182449; /* indigo-3 (dark) */
-  --accent-glow-p2: #0d2a2d; /* teal-3 (dark) */
-  --accent-glow-p3: #251e40; /* violet-3 (dark) */
-  --accent-glow-p4: #302008; /* amber-3 (dark) */
-  --accent-glow-p5: #0e2919; /* grass-3 (dark) */
-  --accent-glow-p6: #391714; /* tomato-3 (dark) */
+  --canvas:         var(--wall);
+  --canvas-subtle:  var(--paper);
+  --canvas-raised:  var(--paper-2);
+  --fg:             var(--ink);
+  --fg-muted:       var(--ink-soft);
+  --border-soft:    var(--ink);
+  --border-strong:  var(--ink);
 
-  --accent-ink-p1: #9eb1ff;
-  --accent-ink-p2: #4cc3b5;
-  --accent-ink-p3: #baa7ff;
-  --accent-ink-p4: #ffca16;
-  --accent-ink-p5: #63c174;
-  --accent-ink-p6: #ff6a56;
+  --accent-glow-p1: color-mix(in oklab, var(--blue)   22%, var(--paper));
+  --accent-glow-p2: color-mix(in oklab, var(--green)  22%, var(--paper));
+  --accent-glow-p3: color-mix(in oklab, var(--violet) 22%, var(--paper));
+  --accent-glow-p4: color-mix(in oklab, var(--yellow) 28%, var(--paper));
+  --accent-glow-p5: color-mix(in oklab, var(--red)    22%, var(--paper));
+  --accent-glow-p6: color-mix(in oklab, var(--pink)   28%, var(--paper));
+
+  --accent-ink-p1: #9FC1FF;
+  --accent-ink-p2: #7CE0B3;
+  --accent-ink-p3: #C6B1FF;
+  --accent-ink-p4: #FFE084;
+  --accent-ink-p5: #FF8A79;
+  --accent-ink-p6: #FFC9D7;
 
   color-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --canvas: #0a0a0c;
-    --canvas-subtle: #121317;
-    --canvas-raised: #1a1b20;
-    --fg: #edeef0;
-    --fg-muted: #b0b4ba;
-    --border-soft: #2a2d33;
-    --border-strong: #40444d;
-    --accent-glow-p1: #182449;
-    --accent-glow-p2: #0d2a2d;
-    --accent-glow-p3: #251e40;
-    --accent-glow-p4: #302008;
-    --accent-glow-p5: #0e2919;
-    --accent-glow-p6: #391714;
-    --accent-ink-p1: #9eb1ff;
-    --accent-ink-p2: #4cc3b5;
-    --accent-ink-p3: #baa7ff;
-    --accent-ink-p4: #ffca16;
-    --accent-ink-p5: #63c174;
-    --accent-ink-p6: #ff6a56;
+    --wall:       #141020;  --wall-dot:   #2A2240;
+    --ink:        #F6EBD3;  --ink-soft:   #B9AEDB;
+    --paper:      #1E1930;  --paper-2:    #2A2240;  --paper-3: #3A2E55;
+    --canvas:     var(--wall); --canvas-subtle: var(--paper); --canvas-raised: var(--paper-2);
+    --fg:         var(--ink); --fg-muted: var(--ink-soft);
+    --border-soft: var(--ink); --border-strong: var(--ink);
     color-scheme: dark;
   }
 }
 
-/* Reusable gradient compositions — reference these from any component. */
+/* ---------- shared gradients + decorations ---------- */
 :root {
-  --gradient-hero: linear-gradient(
-    135deg,
-    color-mix(in oklab, var(--accent-p1) 70%, transparent) 0%,
-    color-mix(in oklab, var(--accent-p3) 60%, transparent) 35%,
-    color-mix(in oklab, var(--accent-p4) 55%, transparent) 70%,
-    color-mix(in oklab, var(--accent-p6) 55%, transparent) 100%
-  );
+  /* 4px solid-ink outline + 8px hard offset drop — devday signature */
+  --line:        4px;
+  --line-thin:   3px;
+  --shadow-xs:   3px 3px 0 var(--ink);
+  --shadow-sm:   4px 4px 0 var(--ink);
+  --shadow-md:   8px 8px 0 var(--ink);
+  --shadow-lg:   12px 12px 0 var(--ink);
+
+  /* dotted-paper backdrop */
+  --bg-playroom: radial-gradient(circle at 12px 12px, var(--wall-dot) 0 5px, transparent 6px) 0 0 / 48px 48px, var(--wall);
+
+  /* 6-stop roadmap stripe */
   --gradient-roadmap: linear-gradient(
     90deg,
-    var(--accent-p1),
-    var(--accent-p2),
-    var(--accent-p3),
-    var(--accent-p4),
-    var(--accent-p5),
-    var(--accent-p6)
+    var(--accent-p1), var(--accent-p2), var(--accent-p3),
+    var(--accent-p4), var(--accent-p5), var(--accent-p6)
   );
 }
 
 @theme {
-  --color-canvas: var(--canvas);
-  --color-canvas-subtle: var(--canvas-subtle);
-  --color-canvas-raised: var(--canvas-raised);
-  --color-fg: var(--fg);
-  --color-fg-muted: var(--fg-muted);
-  --color-border-soft: var(--border-soft);
-  --color-border-strong: var(--border-strong);
+  --color-canvas:          var(--canvas);
+  --color-canvas-subtle:   var(--canvas-subtle);
+  --color-canvas-raised:   var(--canvas-raised);
+  --color-fg:              var(--fg);
+  --color-fg-muted:        var(--fg-muted);
+  --color-border-soft:     var(--border-soft);
+  --color-border-strong:   var(--border-strong);
+  --color-ink:             var(--ink);
+  --color-paper:           var(--paper);
+  --color-paper-2:         var(--paper-2);
+  --color-paper-3:         var(--paper-3);
+  --color-wall:            var(--wall);
 
-  --color-accent-p1: var(--accent-p1);
-  --color-accent-p2: var(--accent-p2);
-  --color-accent-p3: var(--accent-p3);
-  --color-accent-p4: var(--accent-p4);
-  --color-accent-p5: var(--accent-p5);
-  --color-accent-p6: var(--accent-p6);
+  --color-red:    var(--red);     --color-red-dark:    var(--red-dark);
+  --color-yellow: var(--yellow);  --color-yellow-dark: var(--yellow-dark);
+  --color-green:  var(--green);   --color-green-dark:  var(--green-dark);
+  --color-blue:   var(--blue);    --color-blue-dark:   var(--blue-dark);
+  --color-violet: var(--violet);  --color-violet-dark: var(--violet-dark);
+  --color-pink:   var(--pink);    --color-pink-dark:   var(--pink-dark);
 
-  --color-accent-glow-p1: var(--accent-glow-p1);
-  --color-accent-glow-p2: var(--accent-glow-p2);
-  --color-accent-glow-p3: var(--accent-glow-p3);
-  --color-accent-glow-p4: var(--accent-glow-p4);
-  --color-accent-glow-p5: var(--accent-glow-p5);
-  --color-accent-glow-p6: var(--accent-glow-p6);
+  --color-accent-p1:       var(--accent-p1);
+  --color-accent-p2:       var(--accent-p2);
+  --color-accent-p3:       var(--accent-p3);
+  --color-accent-p4:       var(--accent-p4);
+  --color-accent-p5:       var(--accent-p5);
+  --color-accent-p6:       var(--accent-p6);
+  --color-accent-glow-p1:  var(--accent-glow-p1);
+  --color-accent-glow-p2:  var(--accent-glow-p2);
+  --color-accent-glow-p3:  var(--accent-glow-p3);
+  --color-accent-glow-p4:  var(--accent-glow-p4);
+  --color-accent-glow-p5:  var(--accent-glow-p5);
+  --color-accent-glow-p6:  var(--accent-glow-p6);
+  --color-accent-ink-p1:   var(--accent-ink-p1);
+  --color-accent-ink-p2:   var(--accent-ink-p2);
+  --color-accent-ink-p3:   var(--accent-ink-p3);
+  --color-accent-ink-p4:   var(--accent-ink-p4);
+  --color-accent-ink-p5:   var(--accent-ink-p5);
+  --color-accent-ink-p6:   var(--accent-ink-p6);
 
-  --color-accent-ink-p1: var(--accent-ink-p1);
-  --color-accent-ink-p2: var(--accent-ink-p2);
-  --color-accent-ink-p3: var(--accent-ink-p3);
-  --color-accent-ink-p4: var(--accent-ink-p4);
-  --color-accent-ink-p5: var(--accent-ink-p5);
-  --color-accent-ink-p6: var(--accent-ink-p6);
-
-  /* Font families: these look like self-references, but they are an
-   * intentional bridge, not a bug. Astro's <Font> component (from
-   * 'astro:assets') injects the REAL value into an unlayered
-   * `:root { --font-display: ...actual font stack... }` <style> block in
-   * <head>. */
+  /* fonts resolved by Astro Fonts API */
   --font-display: var(--font-display);
-  --font-body: var(--font-body);
-  --font-mono: var(--font-mono);
+  --font-body:    var(--font-body);
+  --font-mono:    var(--font-mono);
 
-  /* 1.250 Major Third scale, extended to 7xl for display */
+  /* 1.250 Major Third, extended for display */
   --text-xs: 12px;
   --text-sm: 14px;
   --text-base: 16px;
@@ -197,12 +203,118 @@
   --spacing-24: 96px;
 
   --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 20px;
-  --radius-2xl: 28px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;   /* devday card radius */
+  --radius-xl: 28px;
+  --radius-2xl: 36px;
+  --radius-full: 999px;
 
   --max-width-prose: 68ch;
   --leading-relaxed: 1.7;
+}
+
+/* ---------- devday component primitives (available anywhere) ---------- */
+.playroom-bg { background: var(--bg-playroom); }
+
+.toy-card {
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--line) solid var(--ink);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.toy-card-sm {
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--line-thin) solid var(--ink);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.toy-sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--yellow);
+  color: var(--ink);
+  border: var(--line) solid var(--ink);
+  border-radius: var(--radius-full);
+  padding: 6px 18px;
+  font-weight: 900;
+  box-shadow: var(--shadow-xs);
+  transform: rotate(-2deg);
+}
+.toy-sticker.red    { background: var(--red);    color: var(--paper); }
+.toy-sticker.green  { background: var(--green);  color: var(--paper); }
+.toy-sticker.blue   { background: var(--blue);   color: var(--paper); }
+.toy-sticker.violet { background: var(--violet); color: var(--paper); }
+.toy-sticker.pink   { background: var(--pink); }
+.toy-sticker.paper  { background: var(--paper); }
+
+.toy-block {
+  width: 150px; height: 150px;
+  border: var(--line) solid var(--ink);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  place-items: center;
+  padding: 12px 10px 14px;
+  text-align: center;
+}
+.toy-block .glyph { font-family: var(--font-display); font-size: 64px; line-height: 1; color: var(--ink); }
+.toy-block .name  { font-size: 19px; font-weight: 900; line-height: 1.1; }
+
+.toy-kbd {
+  font-family: var(--font-body);
+  font-weight: 900;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-bottom-width: 6px;
+  border-radius: 10px;
+  padding: 1px 10px;
+  display: inline-block;
+  line-height: 1.3;
+}
+
+.toy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--yellow);
+  color: var(--ink);
+  border: var(--line) solid var(--ink);
+  border-radius: var(--radius-full);
+  padding: 12px 24px;
+  font-weight: 900;
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.toy-btn:hover  { transform: translate(-1px, -1px); box-shadow: 6px 6px 0 var(--ink); }
+.toy-btn:active { transform: translate(2px, 2px);   box-shadow: 2px 2px 0 var(--ink); }
+.toy-btn.red    { background: var(--red);    color: var(--paper); }
+.toy-btn.green  { background: var(--green);  color: var(--paper); }
+.toy-btn.blue   { background: var(--blue);   color: var(--paper); }
+.toy-btn.violet { background: var(--violet); color: var(--paper); }
+.toy-btn.pink   { background: var(--pink); }
+.toy-btn.paper  { background: var(--paper); }
+
+/* Chunky display headline with multi-layer ink outline + drop shadow */
+.toy-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  color: var(--paper);
+  line-height: 1;
+  letter-spacing: 0.005em;
+  text-wrap: balance;
+  text-shadow:
+    -3px -3px 0 var(--ink), 3px -3px 0 var(--ink),
+    -3px  3px 0 var(--ink), 3px  3px 0 var(--ink),
+    -3px  0   0 var(--ink), 3px  0   0 var(--ink),
+     0  -3px  0 var(--ink),  0   3px 0 var(--ink),
+     7px 7px 0 var(--ink);
 }

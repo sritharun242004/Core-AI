@@ -18,15 +18,15 @@ interface Props {
   }
 }
 const { frontmatter } = Astro.props
-const PART_TITLES = [
-  'Math & Programming',
-  'Classical ML',
-  'Deep Learning',
-  'Transformers & LLMs',
-  'Systems & Production',
-  'Specialization & Interview',
-]
-const partTitle = PART_TITLES[frontmatter.part - 1]
+const PART_META = [
+  { title: 'Math & Programming',          color: 'blue'   },
+  { title: 'Classical ML',                color: 'green'  },
+  { title: 'Deep Learning',               color: 'violet' },
+  { title: 'Transformers & LLMs',         color: 'yellow' },
+  { title: 'Systems & Production',        color: 'red'    },
+  { title: 'Specialization & Interview',  color: 'pink'   },
+] as const
+const partMeta = PART_META[frontmatter.part - 1]
 const accentIx = `p${frontmatter.part}`
 const lessons = await getCollection('weeks')
 const prerequisites = (frontmatter.prereqSlugs ?? [])
@@ -35,58 +35,62 @@ const prerequisites = (frontmatter.prereqSlugs ?? [])
 ---
 <BookShell title={frontmatter.title} accent={`var(${frontmatter.accentVar})`}>
   <header
-    class="relative -mx-4 lg:-mx-8 mb-12 overflow-hidden rounded-xl border border-border-soft"
-    style={`--accent: var(--accent-${accentIx}); --glow: var(--accent-glow-${accentIx}); --ink: var(--accent-ink-${accentIx});`}
+    class="toy-card relative mb-12 p-6 sm:p-10 overflow-visible"
+    style={`background: var(--accent-glow-${accentIx});`}
   >
-    <div class="absolute inset-x-0 top-0 h-1" style="background: var(--accent);" aria-hidden="true"></div>
-    <div
-      class="absolute -right-24 -top-24 w-72 h-72 rounded-full opacity-50 blur-3xl pointer-events-none"
-      style="background: var(--glow);"
-      aria-hidden="true"
-    ></div>
-    <div class="relative px-6 py-10 lg:px-10 lg:py-14">
-      <p class="font-mono text-xs uppercase tracking-widest" style="color: var(--ink);">
-        Week {weekLabel(frontmatter)} · Month {frontmatter.part} — {partTitle}
-      </p>
-      <h1
-        class="font-display text-4xl md:text-5xl lg:text-6xl leading-tight mt-4 break-words"
-        style="letter-spacing: -0.02em;"
-      >
-        {frontmatter.title}
-      </h1>
-      <p class="mt-6 max-w-2xl text-fg-muted text-md leading-relaxed">{frontmatter.hook}</p>
-      <div class="mt-6 flex flex-wrap items-center gap-3 text-sm">
-        <ComputeBadge tier={frontmatter.computeTier} />
-        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-border-soft bg-canvas-raised">
-          <span class="font-mono text-xs text-fg-muted">Hours</span>
-          <span class="font-medium">{frontmatter.hours}</span>
+    {/* floating sticker with month */}
+    <span class={`toy-sticker ${partMeta.color} absolute right-5 -top-5 text-sm`} style="transform: rotate(3deg);">
+      Month {frontmatter.part}
+    </span>
+
+    <p class="font-mono text-xs uppercase tracking-widest font-black" style="color: var(--ink-soft);">
+      Week {weekLabel(frontmatter)} — {partMeta.title}
+    </p>
+    <h1
+      class="font-display text-4xl sm:text-5xl md:text-6xl mt-4 break-words leading-none"
+      style="letter-spacing: -0.015em;"
+    >
+      {frontmatter.title}
+    </h1>
+    <p class="mt-5 max-w-2xl text-md leading-relaxed" style="color: var(--ink-soft); font-weight: 700;">
+      {frontmatter.hook}
+    </p>
+
+    {/* meta chips row */}
+    <div class="mt-6 flex flex-wrap items-center gap-3 text-sm font-black">
+      <ComputeBadge tier={frontmatter.computeTier} />
+      <span class="toy-card-sm px-3 py-1.5 inline-flex items-center gap-2">
+        <span class="font-mono text-xs" style="color: var(--ink-soft);">Hours</span>
+        <span>{frontmatter.hours}</span>
+      </span>
+      <span class="toy-card-sm px-3 py-1.5 inline-flex items-center gap-2">
+        <span class="font-mono text-xs" style="color: var(--ink-soft);">Difficulty</span>
+        <span class="font-mono" style={`color: var(--${partMeta.color}-dark);`}>
+          {'●'.repeat(frontmatter.difficulty)}<span style="color: color-mix(in oklab, var(--ink-soft) 40%, transparent);">{'○'.repeat(5 - frontmatter.difficulty)}</span>
         </span>
-        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-border-soft bg-canvas-raised">
-          <span class="font-mono text-xs text-fg-muted">Difficulty</span>
-          <span class="font-mono" style="color: var(--ink);">
-            {'●'.repeat(frontmatter.difficulty)}<span class="text-fg-muted/40">{'○'.repeat(5 - frontmatter.difficulty)}</span>
-          </span>
-        </span>
-      </div>
-      {prerequisites.length > 0 && (
-        <nav aria-label="Prerequisites" class="mt-6 text-sm">
-          <p class="font-mono text-xs uppercase tracking-widest text-fg-muted">Before this lesson</p>
-          <ul class="mt-2 flex flex-wrap gap-2">
-            {prerequisites.map((lesson) => lesson && (
-              <li>
-                <a
-                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border-soft bg-canvas-raised hover:border-border-strong transition-colors"
-                  href={`/weeks/${lesson.data.slug}`}
-                >
-                  <span class="font-mono text-xs text-fg-muted">W{weekLabel(lesson.data)}</span>
-                  <span>{lesson.data.title}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
+      </span>
     </div>
+
+    {prerequisites.length > 0 && (
+      <nav aria-label="Prerequisites" class="mt-6">
+        <p class="font-mono text-xs uppercase tracking-widest font-black" style="color: var(--ink-soft);">
+          Before this lesson
+        </p>
+        <ul class="mt-2 flex flex-wrap gap-2">
+          {prerequisites.map((lesson) => lesson && (
+            <li>
+              <a
+                class="toy-card-sm inline-flex items-center gap-2 px-3 py-1.5 text-sm no-underline"
+                href={`/weeks/${lesson.data.slug}`}
+              >
+                <span class="font-mono text-xs" style="color: var(--ink-soft);">W{weekLabel(lesson.data)}</span>
+                <span class="font-black">{lesson.data.title}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    )}
   </header>
   <article class="prose-book"><slot /></article>
 </BookShell>

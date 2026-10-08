@@ -4,6 +4,8 @@
   color: var(--fg);
   min-width: 0;
   overflow-wrap: anywhere;
+  font-weight: 600;
+  line-height: 1.65;
 }
 .prose-book table {
   display: block;
@@ -11,47 +13,115 @@
   overflow-x: auto;
   border-collapse: collapse;
   margin-block: 24px;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
 }
 .prose-book :where(th, td) {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-soft);
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border-soft);
   text-align: start;
   vertical-align: top;
+  font-weight: 700;
+}
+.prose-book :where(th) {
+  background: var(--paper-2);
+  font-weight: 900;
 }
 .prose-book :where(h1, h2, h3, h4) {
   font-family: var(--font-display);
-  color: var(--fg);
+  color: var(--ink);
   letter-spacing: -0.01em;
+  font-weight: 400; /* Titan One is already heavy */
+  text-wrap: balance;
 }
 .prose-book h1 {
-  font-size: 49px;
-  line-height: 1.1;
+  font-size: 61px;
+  line-height: 1;
   margin-block: 48px 24px;
 }
 .prose-book h2 {
-  font-size: 31px;
-  line-height: 1.2;
-  margin-block: 48px 16px;
+  font-size: 39px;
+  line-height: 1.1;
+  margin-block: 56px 20px;
 }
 .prose-book h3 {
-  font-size: 25px;
-  line-height: 1.3;
-  margin-block: 32px 12px;
+  font-size: 28px;
+  line-height: 1.2;
+  margin-block: 36px 14px;
+}
+.prose-book h4 {
+  font-size: 22px;
+  line-height: 1.25;
+  margin-block: 28px 10px;
 }
 .prose-book p {
-  margin-block: 12px;
+  margin-block: 14px;
 }
-.prose-book :where(code, pre) {
+.prose-book :where(ol, ul) {
+  padding-inline-start: 24px;
+  margin-block: 14px;
+}
+.prose-book :where(ol, ul) li {
+  margin-block: 6px;
+}
+.prose-book :where(code) {
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 14px;
+  background: var(--paper-2);
+  color: var(--ink);
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 2px solid var(--ink);
+  font-weight: 500;
+}
+.prose-book pre {
+  font-family: var(--font-mono);
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+  margin-block: 20px;
+  overflow-x: auto;
+}
+.prose-book pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 .prose-book a {
-  color: var(--accent-p1);
+  color: var(--blue-dark);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
   text-underline-offset: 3px;
+  font-weight: 800;
+}
+.prose-book a:hover {
+  color: var(--red);
 }
 .prose-book blockquote {
-  border-inline-start: 3px solid var(--accent-p1);
-  padding-inline-start: 16px;
-  color: var(--fg-muted);
-  font-style: italic;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-block: 24px;
+  box-shadow: var(--shadow-sm);
+  font-weight: 700;
+  color: var(--ink);
+}
+.prose-book blockquote p { margin: 0; }
+.prose-book blockquote + blockquote { margin-top: 12px; }
+.prose-book strong { font-weight: 900; color: var(--ink); }
+.prose-book em { color: var(--ink); font-style: italic; }
+.prose-book hr {
+  border: none;
+  height: 4px;
+  background: var(--gradient-roadmap);
+  margin-block: 36px;
+  border-radius: 2px;
+}
+.prose-book img {
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
 }

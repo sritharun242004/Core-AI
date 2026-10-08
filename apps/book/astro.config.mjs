@@ -38,24 +38,26 @@ export default defineConfig({
   },
   fonts: [
     {
-      name: 'Fraunces',
+      name: 'Titan One',
       cssVariable: '--font-display',
       provider: fontProviders.google(),
-      weights: [400, 600, 800],
-      styles: ['normal', 'italic'],
+      weights: [400],
+      subsets: ['latin'],
+      fallbacks: ['Arial Black', 'Impact', 'system-ui', 'sans-serif'],
     },
     {
-      name: 'Inter',
+      name: 'Nunito',
       cssVariable: '--font-body',
       provider: fontProviders.google(),
-      weights: [400, 500, 600, 700],
+      weights: [400, 600, 700, 800, 900],
       subsets: ['latin'],
+      fallbacks: ['Avenir Next', 'Segoe UI', 'system-ui', 'sans-serif'],
     },
     {
       name: 'JetBrains Mono',
       cssVariable: '--font-mono',
       provider: fontProviders.google(),
-      weights: [400, 600],
+      weights: [400, 500, 600],
     },
   ],
   markdown: {
